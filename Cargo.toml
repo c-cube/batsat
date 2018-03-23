@@ -5,6 +5,7 @@ authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
 
 [dependencies]
 clap = "2.31.2"
+flate2 = "1.0"
 ratsat = { path = "ratsat" }
 
 [workspace]
