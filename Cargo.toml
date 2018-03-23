@@ -1,0 +1,10 @@
+[package]
+name = "ratsat-bin"
+version = "0.0.1"
+authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
+
+[dependencies]
+clap = "2.31.2"
+ratsat = { path = "ratsat" }
+
+[workspace]

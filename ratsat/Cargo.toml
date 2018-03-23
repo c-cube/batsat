@@ -1,0 +1,6 @@
+[package]
+name = "ratsat"
+version = "0.1.0"
+authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
+
+[dependencies]
