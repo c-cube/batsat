@@ -95,9 +95,7 @@ fn read_input<R: BufRead, S: Solver>(
 ) -> io::Result<()> {
     if solver.verbosity() > 0 {
         println!("============================[ Problem Statistics ]=============================");
-        println!(
-            "|                                                                             |\n"
-        );
+        println!("|                                                                             |");
     }
     ratsat::dimacs::parse(&mut input, solver, is_strict)?;
     Ok(())
