@@ -1,5 +1,6 @@
 extern crate clap;
 extern crate flate2;
+extern crate ratsat;
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
@@ -61,12 +62,10 @@ fn read_input_autogz<R: BufRead>(mut input: R, verbosity: i32) -> io::Result<()>
 }
 
 fn read_input<R: BufRead>(mut input: R, verbosity: i32) -> io::Result<()> {
-    let mut line = String::new();
-    input.read_line(&mut line)?;
-    eprintln!("first line = {}", line);
     if verbosity > 0 {
         println!("============================[ Problem Statistics ]=============================");
         println!("|                                                                             |\n");
     }
+    ratsat::dimacs::parse(&mut input)?;
     Ok(())
 }

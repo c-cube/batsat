@@ -1,3 +1,5 @@
+pub mod dimacs;
+
 use std::fmt;
 use std::ops;
 use std::u32;
@@ -44,7 +46,7 @@ impl Lit {
 
 impl fmt::Debug for Lit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Lit({}, {})", self.0 / 2, (self.0 & 1) != 0)
+        write!(f, "Lit({}, {})", self.0 / 2, (self.0 & 1) != 0)
     }
 }
 
