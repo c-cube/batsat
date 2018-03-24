@@ -1,7 +1,11 @@
 use std::io::{self, BufRead};
-use {Lit, Var, Solver};
+use {Lit, Solver, Var};
 
-pub fn parse<R: BufRead, S: Solver>(input: &mut R, solver: &mut S, is_strict: bool) -> io::Result<()> {
+pub fn parse<R: BufRead, S: Solver>(
+    input: &mut R,
+    solver: &mut S,
+    is_strict: bool,
+) -> io::Result<()> {
     let mut num_vars = 0;
     let mut num_clauses = 0;
     let mut num_read_clauses = 0;
@@ -29,7 +33,9 @@ pub fn parse<R: BufRead, S: Solver>(input: &mut R, solver: &mut S, is_strict: bo
         }
     }
     if is_strict && num_clauses != num_read_clauses {
-        return parse_error(format!("PARSE ERROR! DIMACS header mismatch: wrong number of clauses"));
+        return parse_error(format!(
+            "PARSE ERROR! DIMACS header mismatch: wrong number of clauses"
+        ));
     }
     Ok(())
 }

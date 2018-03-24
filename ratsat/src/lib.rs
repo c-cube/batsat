@@ -23,7 +23,7 @@ pub trait Solver {
 pub struct Var(u32);
 
 impl Var {
-    pub const UNDEF : Var = Var(!0);
+    pub const UNDEF: Var = Var(!0);
     pub(crate) fn from_idx(idx: u32) -> Self {
         debug_assert!(idx < u32::MAX / 2, "Var::from_idx: index too large");
         Var(idx)
@@ -37,8 +37,8 @@ impl Var {
 pub struct Lit(u32);
 
 impl Lit {
-    pub const UNDEF : Lit = Lit(!1);
-    pub const ERROR : Lit = Lit(!0);
+    pub const UNDEF: Lit = Lit(!1);
+    pub const ERROR: Lit = Lit(!0);
     pub(crate) fn new(var: Var, sign: bool) -> Self {
         Lit(var.0 * 2 + sign as u32)
     }
@@ -88,9 +88,9 @@ impl ops::BitXorAssign<bool> for Lit {
 pub struct lbool(u8);
 
 impl lbool {
-    pub const TRUE : lbool = lbool(0);
-    pub const FALSE : lbool = lbool(1);
-    pub const UNDEF : lbool = lbool(2);
+    pub const TRUE: lbool = lbool(0);
+    pub const FALSE: lbool = lbool(1);
+    pub const UNDEF: lbool = lbool(2);
     pub fn from_u8(v: u8) -> Self {
         debug_assert!(v == (v & 3), "lbool::from_u8: invalid value");
         lbool(v)

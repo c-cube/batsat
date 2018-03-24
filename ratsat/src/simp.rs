@@ -1,6 +1,6 @@
 use std::ops;
 
-use {Solver, Lit, Var};
+use {Lit, Solver, Var};
 use core::CoreSolver;
 
 #[derive(Debug, Default)]

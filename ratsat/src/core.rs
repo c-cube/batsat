@@ -1,4 +1,4 @@
-use {Solver, Lit, Var};
+use {Lit, Solver, Var};
 
 #[derive(Debug, Default)]
 pub struct CoreSolver {
@@ -34,4 +34,3 @@ impl Solver for CoreSolver {
         self.clauses.push(clause);
     }
 }
-
