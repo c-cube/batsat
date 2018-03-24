@@ -5,6 +5,7 @@ extern crate ratsat;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::process::exit;
+use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
 use ratsat::Solver;
@@ -54,6 +55,8 @@ fn main2() -> io::Result<()> {
     let mut solver = Solver::default();
     solver.set_verbosity(verbosity);
 
+    let initial_time = Instant::now();
+
     if let Some(input_file) = input_file {
         let file = BufReader::new(File::open(input_file)?);
         read_input_autogz(file, &mut solver, is_strict)?;
@@ -71,6 +74,17 @@ fn main2() -> io::Result<()> {
             "|  Number of clauses:    {:12}                                         |",
             solver.num_clauses()
         );
+    }
+
+    let parsed_time = Instant::now();
+    if solver.verbosity() > 0 {
+        let duration = parsed_time - initial_time;
+        println!(
+            "|  Parse time:           {:9}.{:02} s                                       |",
+            duration.as_secs(),
+            duration.subsec_nanos() / 10_000_000
+        );
+        println!("|                                                                             |");
     }
     Ok(())
 }
