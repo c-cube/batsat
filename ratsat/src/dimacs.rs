@@ -1,10 +1,10 @@
 use std::io::{self, BufRead};
-use {Lit, Var};
+use {Lit, Var, Solver};
 
-pub fn parse<R: BufRead>(input: &mut R) -> io::Result<()> {
-    let mut lits = vec![];
+pub fn parse<R: BufRead, S: Solver>(input: &mut R, solver: &mut S, is_strict: bool) -> io::Result<()> {
     let mut num_vars = 0;
     let mut num_clauses = 0;
+    let mut num_read_clauses = 0;
     loop {
         skip_whitespace(input)?;
         let ch = next_byte(input)?;
@@ -21,23 +21,30 @@ pub fn parse<R: BufRead>(input: &mut R) -> io::Result<()> {
         } else if ch == Some(b'c') {
             skip_line(input)?;
         } else if let Some(_) = ch {
-            read_clause(input, &mut lits)?;
-            eprintln!("lits = {:?}", lits);
+            let lits = read_clause(input, solver)?;
+            solver.add_clause_owned(lits);
+            num_read_clauses += 1;
         } else {
             break;
         }
     }
+    if is_strict && num_clauses != num_read_clauses {
+        return parse_error(format!("PARSE ERROR! DIMACS header mismatch: wrong number of clauses"));
+    }
     Ok(())
 }
 
-fn read_clause<R: BufRead>(input: &mut R, lits: &mut Vec<Lit>) -> io::Result<()> {
-    lits.clear();
+fn read_clause<R: BufRead, S: Solver>(input: &mut R, solver: &mut S) -> io::Result<Vec<Lit>> {
+    let mut lits = vec![];
     loop {
         let parsed_lit = parse_int(input)?;
         if parsed_lit == 0 {
-            return Ok(());
+            return Ok(lits);
         }
         let var = (parsed_lit.abs() - 1) as u32;
+        while var >= solver.num_vars() {
+            solver.new_var();
+        }
         lits.push(Lit::new(Var::from_idx(var), parsed_lit < 0));
     }
 }

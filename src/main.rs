@@ -7,6 +7,7 @@ use std::io::{self, BufRead, BufReader};
 use std::process::exit;
 use clap::{Arg, App};
 use flate2::bufread::GzDecoder;
+use ratsat::{SimpSolver, Solver};
 
 fn main() {
     main2().unwrap_or_else(|err| {
@@ -26,6 +27,8 @@ fn main2() -> io::Result<()> {
              .long("verb")
              .default_value("1")
              .takes_value(true))
+        .arg(Arg::with_name("is-strict")
+             .long("strict"))
         .get_matches();
 
     let input_file = matches.value_of("input-file");
@@ -38,34 +41,43 @@ fn main2() -> io::Result<()> {
                   verbosity);
         exit(1);
     }
+    let is_strict = matches.value_of("is-strict").is_some();
     eprintln!("input_file = {:?}", input_file);
     eprintln!("result_output_file = {:?}", result_output_file);
+    eprintln!("is_strict = {:?}", is_strict);
+
+    let mut solver = SimpSolver::default();
+    solver.set_verbosity(verbosity);
 
     if let Some(input_file) = input_file {
         let file = BufReader::new(File::open(input_file)?);
-        read_input_autogz(file, verbosity)?;
+        read_input_autogz(file, &mut solver, is_strict)?;
     } else {
         println!("Reading from standard input... Use '--help' for help.");
         let stdin = io::stdin();
-        read_input_autogz(stdin.lock(), verbosity)?;
+        read_input_autogz(stdin.lock(), &mut solver, is_strict)?;
+    }
+    if solver.verbosity() > 0 {
+        println!("|  Number of variables:  {:12}                                         |", solver.num_vars());
+        println!("|  Number of clauses:    {:12}                                         |", solver.num_clauses());
     }
     Ok(())
 }
 
-fn read_input_autogz<R: BufRead>(mut input: R, verbosity: i32) -> io::Result<()> {
+fn read_input_autogz<R: BufRead, S: Solver>(mut input: R, solver: &mut S, is_strict: bool) -> io::Result<()> {
     let is_gz = input.fill_buf()?.starts_with(b"\x1F\x8B");
     if is_gz {
-        read_input(BufReader::new(GzDecoder::new(input)), verbosity)
+        read_input(BufReader::new(GzDecoder::new(input)), solver, is_strict)
     } else {
-        read_input(input, verbosity)
+        read_input(input, solver, is_strict)
     }
 }
 
-fn read_input<R: BufRead>(mut input: R, verbosity: i32) -> io::Result<()> {
-    if verbosity > 0 {
+fn read_input<R: BufRead, S: Solver>(mut input: R, solver: &mut S, is_strict: bool) -> io::Result<()> {
+    if solver.verbosity() > 0 {
         println!("============================[ Problem Statistics ]=============================");
         println!("|                                                                             |\n");
     }
-    ratsat::dimacs::parse(&mut input)?;
+    ratsat::dimacs::parse(&mut input, solver, is_strict)?;
     Ok(())
 }
