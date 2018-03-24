@@ -1,3 +1,4 @@
+pub mod intmap;
 pub mod dimacs;
 pub mod core;
 

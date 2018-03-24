@@ -37,7 +37,11 @@ pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) ->
     Ok(())
 }
 
-fn read_clause<R: BufRead>(input: &mut R, solver: &mut Solver, lits: &mut Vec<Lit>) -> io::Result<()> {
+fn read_clause<R: BufRead>(
+    input: &mut R,
+    solver: &mut Solver,
+    lits: &mut Vec<Lit>,
+) -> io::Result<()> {
     lits.clear();
     loop {
         let parsed_lit = parse_int(input)?;

@@ -1,4 +1,4 @@
-use {Lit, Var, lbool};
+use {lbool, Lit, Var};
 
 #[derive(Debug)]
 pub struct Solver {
