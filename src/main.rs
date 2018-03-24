@@ -7,7 +7,7 @@ use std::io::{self, BufRead, BufReader};
 use std::process::exit;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use ratsat::{SimpSolver, Solver};
+use ratsat::Solver;
 
 fn main() {
     main2().unwrap_or_else(|err| {
@@ -51,7 +51,7 @@ fn main2() -> io::Result<()> {
     eprintln!("result_output_file = {:?}", result_output_file);
     eprintln!("is_strict = {:?}", is_strict);
 
-    let mut solver = SimpSolver::default();
+    let mut solver = Solver::default();
     solver.set_verbosity(verbosity);
 
     if let Some(input_file) = input_file {
@@ -75,9 +75,9 @@ fn main2() -> io::Result<()> {
     Ok(())
 }
 
-fn read_input_autogz<R: BufRead, S: Solver>(
+fn read_input_autogz<R: BufRead>(
     mut input: R,
-    solver: &mut S,
+    solver: &mut Solver,
     is_strict: bool,
 ) -> io::Result<()> {
     let is_gz = input.fill_buf()?.starts_with(b"\x1F\x8B");
@@ -88,11 +88,7 @@ fn read_input_autogz<R: BufRead, S: Solver>(
     }
 }
 
-fn read_input<R: BufRead, S: Solver>(
-    mut input: R,
-    solver: &mut S,
-    is_strict: bool,
-) -> io::Result<()> {
+fn read_input<R: BufRead>(mut input: R, solver: &mut Solver, is_strict: bool) -> io::Result<()> {
     if solver.verbosity() > 0 {
         println!("============================[ Problem Statistics ]=============================");
         println!("|                                                                             |");

@@ -1,11 +1,7 @@
 use std::io::{self, BufRead};
 use {Lit, Solver, Var};
 
-pub fn parse<R: BufRead, S: Solver>(
-    input: &mut R,
-    solver: &mut S,
-    is_strict: bool,
-) -> io::Result<()> {
+pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) -> io::Result<()> {
     let mut num_vars = 0;
     let mut num_clauses = 0;
     let mut num_read_clauses = 0;
@@ -40,7 +36,7 @@ pub fn parse<R: BufRead, S: Solver>(
     Ok(())
 }
 
-fn read_clause<R: BufRead, S: Solver>(input: &mut R, solver: &mut S) -> io::Result<Vec<Lit>> {
+fn read_clause<R: BufRead>(input: &mut R, solver: &mut Solver) -> io::Result<Vec<Lit>> {
     let mut lits = vec![];
     loop {
         let parsed_lit = parse_int(input)?;

@@ -1,23 +1,11 @@
 pub mod dimacs;
 pub mod core;
-pub mod simp;
 
 use std::fmt;
 use std::ops;
 use std::u32;
 
-pub use core::CoreSolver;
-pub use simp::SimpSolver;
-
-pub trait Solver {
-    fn verbosity(&self) -> i32;
-    fn num_vars(&self) -> u32;
-    fn new_var(&mut self) -> Var;
-    fn add_clause(&mut self, clause: &[Lit]) {
-        self.add_clause_owned(clause.to_vec());
-    }
-    fn add_clause_owned(&mut self, clause: Vec<Lit>);
-}
+pub use core::Solver;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Var(u32);
