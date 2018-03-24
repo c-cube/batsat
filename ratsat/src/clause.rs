@@ -2,6 +2,8 @@ use std::fmt;
 use std::ops;
 use std::u32;
 
+use intmap::{AsIndex, IntMap};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Var(u32);
 
@@ -15,6 +17,14 @@ impl Var {
         self.0
     }
 }
+
+impl AsIndex for Var {
+    fn as_index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+pub type VMap<V> = IntMap<Var, V>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Lit(u32);
