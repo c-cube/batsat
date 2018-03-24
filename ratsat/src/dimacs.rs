@@ -2,6 +2,7 @@ use std::io::{self, BufRead};
 use {Lit, Solver, Var};
 
 pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) -> io::Result<()> {
+    let mut lits = vec![];
     let mut num_vars = 0;
     let mut num_clauses = 0;
     let mut num_read_clauses = 0;
@@ -21,8 +22,8 @@ pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) ->
         } else if ch == Some(b'c') {
             skip_line(input)?;
         } else if let Some(_) = ch {
-            let lits = read_clause(input, solver)?;
-            solver.add_clause_owned(lits);
+            read_clause(input, solver, &mut lits)?;
+            solver.add_clause_reuse(&mut lits);
             num_read_clauses += 1;
         } else {
             break;
@@ -36,12 +37,12 @@ pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) ->
     Ok(())
 }
 
-fn read_clause<R: BufRead>(input: &mut R, solver: &mut Solver) -> io::Result<Vec<Lit>> {
-    let mut lits = vec![];
+fn read_clause<R: BufRead>(input: &mut R, solver: &mut Solver, lits: &mut Vec<Lit>) -> io::Result<()> {
+    lits.clear();
     loop {
         let parsed_lit = parse_int(input)?;
         if parsed_lit == 0 {
-            return Ok(lits);
+            return Ok(());
         }
         let var = (parsed_lit.abs() - 1) as u32;
         while var >= solver.num_vars() {
