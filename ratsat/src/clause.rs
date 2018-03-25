@@ -4,8 +4,18 @@ use std::u32;
 
 use intmap::{AsIndex, IntMap};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Var(u32);
+
+impl fmt::Debug for Var {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.0 == !0 {
+            write!(f, "UNDEF")
+        } else {
+            write!(f, "Var({})", self.0)
+        }
+    }
+}
 
 impl Var {
     pub const UNDEF: Var = Var(!0);
@@ -54,7 +64,13 @@ impl Lit {
 
 impl fmt::Debug for Lit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Lit({}, {})", self.0 / 2, (self.0 & 1) != 0)
+        if self.0 == !0 {
+            write!(f, "ERROR")
+        } else if self.0 == !1 {
+            write!(f, "UNDEF")
+        } else {
+            write!(f, "Lit({}, {})", self.0 / 2, (self.0 & 1) != 0)
+        }
     }
 }
 
@@ -77,8 +93,28 @@ impl ops::BitXorAssign<bool> for Lit {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct lbool(u8);
+
+impl fmt::Debug for lbool {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.0 == 0 {
+            write!(f, "TRUE")
+        } else if self.0 == 1 {
+            write!(f, "FALSE")
+        } else if self.0 <= 3 {
+            write!(f, "UNDEF")
+        } else {
+            // unreachable
+            write!(f, "lbool({})", self.0)
+        }
+    }
+}
+impl Default for lbool {
+    fn default() -> Self {
+        lbool(0)
+    }
+}
 
 impl lbool {
     pub const TRUE: lbool = lbool(0);

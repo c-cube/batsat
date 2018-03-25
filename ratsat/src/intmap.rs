@@ -44,11 +44,30 @@ impl<K: AsIndex, V> IntMap<K, V> {
             self.map.resize(index + 1, pad);
         }
     }
+    pub fn reserve_default(&mut self, key: K)
+    where
+        V: Default,
+    {
+        let index = key.as_index();
+        if index >= self.map.len() {
+            // self.map.resize_default(index + 1);
+            self.map.reserve(index + 1);
+            let len = index + 1 - self.map.len();
+            self.map.extend((0..len).map(|_| V::default()));
+        }
+    }
     pub fn insert(&mut self, key: K, val: V, pad: V)
     where
         V: Clone,
     {
         self.reserve(key, pad);
+        self[key] = val;
+    }
+    pub fn insert_default(&mut self, key: K, val: V)
+    where
+        V: Default,
+    {
+        self.reserve_default(key);
         self[key] = val;
     }
 }

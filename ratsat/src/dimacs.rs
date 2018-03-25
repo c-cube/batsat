@@ -17,8 +17,8 @@ pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) ->
             }
             num_vars = parse_int(input)?;
             num_clauses = parse_int(input)?;
-            eprintln!("num_vars = {}", num_vars);
-            eprintln!("num_clauses = {}", num_clauses);
+        // eprintln!("num_vars = {}", num_vars);
+        // eprintln!("num_clauses = {}", num_clauses);
         } else if ch == Some(b'c') {
             skip_line(input)?;
         } else if let Some(_) = ch {
