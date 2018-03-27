@@ -52,10 +52,10 @@ pub struct Solver {
     propagations: u64,
     conflicts: u64,
     dec_vars: u64,
-    num_clauses: u64,
-    num_learnts: u64,
-    clauses_literals: u64,
-    learnts_literals: u64,
+    // v.num_clauses: u64,
+    // v.num_learnts: u64,
+    // v.clauses_literals: u64,
+    // v.learnts_literals: u64,
     max_literals: u64,
     tot_literals: u64,
 
@@ -138,6 +138,11 @@ struct SolverV {
     trail_lim: Vec<i32>,
     /// Stores reason and level for each variable.
     vardata: VMap<VarData>,
+
+    num_clauses: u64,
+    num_learnts: u64,
+    clauses_literals: u64,
+    learnts_literals: u64,
 }
 
 impl Default for Solver {
@@ -177,10 +182,10 @@ impl Default for Solver {
             propagations: 0,
             conflicts: 0,
             dec_vars: 0,
-            num_clauses: 0,
-            num_learnts: 0,
-            clauses_literals: 0,
-            learnts_literals: 0,
+            // v.num_clauses: 0,
+            // v.num_learnts: 0,
+            // v.clauses_literals: 0,
+            // v.learnts_literals: 0,
             max_literals: 0,
             tot_literals: 0,
 
@@ -228,6 +233,10 @@ impl Default for Solver {
                 trail: vec![],
                 trail_lim: vec![],
                 vardata: VMap::new(),
+                num_clauses: 0,
+                num_learnts: 0,
+                clauses_literals: 0,
+                learnts_literals: 0,
             },
         }
     }
@@ -239,7 +248,7 @@ impl Solver {
         self.verbosity = verbosity;
     }
     pub fn num_clauses(&self) -> u32 {
-        self.num_clauses as u32
+        self.v.num_clauses as u32
     }
     pub fn verbosity(&self) -> i32 {
         self.verbosity
@@ -394,13 +403,15 @@ impl Solver {
         } else {
             &mut self.clauses
         };
-        let mut j = 0;
         let ca = &mut self.ca;
-        let self_v = &self.v;
+        let watches_data = &mut self.watches_data;
+        let self_v = &mut self.v;
         cs.retain(|&cr| {
-            let mut c = ca.get_mut(cr);
-            if self_v.satisfied(c.as_clause_ref()) {
+            let satisfied = self_v.satisfied(ca.get_ref(cr));
+            if satisfied {
+                self_v.remove_clause(ca, watches_data, cr)
             } else {
+                let mut c = ca.get_mut(cr);
             }
             false
         });
@@ -432,11 +443,11 @@ impl Solver {
         self.watches()[!c0].push(Watcher::new(cr, c1));
         self.watches()[!c1].push(Watcher::new(cr, c0));
         if learnt {
-            self.num_learnts += 1;
-            self.learnts_literals += size as u64;
+            self.v.num_learnts += 1;
+            self.v.learnts_literals += size as u64;
         } else {
-            self.num_clauses += 1;
-            self.clauses_literals += size as u64;
+            self.v.num_clauses += 1;
+            self.v.clauses_literals += size as u64;
         }
     }
 
@@ -555,6 +566,76 @@ impl SolverV {
         self.assigns[x.var()] ^ x.sign()
     }
 
+    /// Detach a clause to watcher lists.
+    fn detach_clause_strict(
+        &mut self,
+        ca: &mut ClauseAllocator,
+        watches_data: &mut OccListsData<Lit, Watcher>,
+        cr: CRef,
+        strict: bool,
+    ) {
+        let (c0, c1, csize, clearnt) = {
+            let c = ca.get_ref(cr);
+            (c[0], c[1], c.size(), c.learnt())
+        };
+        debug_assert!(csize > 1);
+
+        let mut watches = watches_data.promote(WatcherDeleted { ca });
+
+        // Strict or lazy detaching:
+        if strict {
+            // watches[!c0].remove_item(&Watcher::new(cr, c1));
+            // watches[!c1].remove_item(&Watcher::new(cr, c0));
+            let pos = watches[!c0]
+                .iter()
+                .position(|x| x == &Watcher::new(cr, c1))
+                .expect("Watcher not found");
+            watches[!c0].remove(pos);
+            let pos = watches[!c1]
+                .iter()
+                .position(|x| x == &Watcher::new(cr, c0))
+                .expect("Watcher not found");
+            watches[!c1].remove(pos);
+        } else {
+            watches.smudge(!c0);
+            watches.smudge(!c1);
+        }
+
+        if clearnt {
+            self.num_learnts -= 1;
+            self.learnts_literals -= csize as u64;
+        } else {
+            self.num_clauses -= 1;
+            self.clauses_literals -= csize as u64;
+        }
+    }
+    fn detach_clause(
+        &mut self,
+        ca: &mut ClauseAllocator,
+        watches_data: &mut OccListsData<Lit, Watcher>,
+        cr: CRef,
+    ) {
+        self.detach_clause_strict(ca, watches_data, cr, false)
+    }
+    /// Detach and free a clause.
+    fn remove_clause(
+        &mut self,
+        ca: &mut ClauseAllocator,
+        watches_data: &mut OccListsData<Lit, Watcher>,
+        cr: CRef,
+    ) {
+        self.detach_clause(ca, watches_data, cr);
+        {
+            let c = ca.get_ref(cr);
+            // Don't leave pointers to free'd memory!
+            if self.locked(ca, c) {
+                self.vardata[c[0].var()].reason = CRef::UNDEF;
+            }
+        }
+        ca.get_mut(cr).set_mark(1);
+        ca.free(cr);
+    }
+
     pub fn satisfied(&self, c: ClauseRef) -> bool {
         c.iter().any(|&lit| self.value_lit(lit) == lbool::TRUE)
     }
@@ -563,12 +644,23 @@ impl SolverV {
         self.trail_lim.len() as u32
     }
 
+    fn reason(&self, x: Var) -> CRef {
+        self.vardata[x].reason
+    }
+
     fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
         debug_assert_eq!(self.value_lit(p), lbool::UNDEF);
         self.assigns[p.var()] = lbool::new(!p.sign());
         self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
         self.trail.push(p);
     }
+
+    /// Returns TRUE if a clause is a reason for some implication in the current state.
+    fn locked(&self, ca: &ClauseAllocator, c: ClauseRef) -> bool {
+        let reason = self.reason(c[0].var());
+        self.value_lit(c[0]) == lbool::TRUE && reason != CRef::UNDEF && ca.get_ref(reason) == c
+    }
+    // inline bool     Solver::locked          (const Clause& c) const { return value(c[0]) == l_True && reason(var(c[0])) != CRef_Undef && ca.lea(reason(var(c[0]))) == &c; }
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -22,6 +22,9 @@ impl<T: Copy + Default> RegionAllocator<T> {
         self.vec.extend((0..size).map(|_| T::default()));
         r
     }
+    pub fn free(&mut self, size: u32) {
+        self.wasted += size as usize;
+    }
     pub fn subslice(&self, r: Ref<T>, len: u32) -> &[T] {
         &self.vec[r.0 as usize..r.0 as usize + len as usize]
     }

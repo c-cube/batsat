@@ -206,16 +206,25 @@ impl ops::BitOrAssign for lbool {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct ClauseRef<'a> {
     header: ClauseHeader,
     data: &'a [ClauseData],
     extra: Option<ClauseData>,
 }
+#[derive(Debug)]
 pub struct ClauseMut<'a> {
     header: &'a mut ClauseHeader,
     data: &'a mut [ClauseData],
     extra: Option<&'a mut ClauseData>,
 }
+
+impl<'a, 'b> PartialEq<ClauseRef<'b>> for ClauseRef<'a> {
+    fn eq(&self, rhs: &ClauseRef<'b>) -> bool {
+        self.data.as_ptr() == rhs.data.as_ptr()
+    }
+}
+impl<'a> Eq for ClauseRef<'a> {}
 
 impl<'a> ClauseRef<'a> {
     pub fn mark(&self) -> u32 {
@@ -458,6 +467,12 @@ impl ClauseAllocator {
     pub fn alloc(&mut self, clause: &[Lit]) -> CRef {
         self.alloc_with_learnt(clause, false)
     }
+
+    pub fn free(&mut self, cr: CRef) {
+        let size = self.get_ref(cr).size();
+        self.ra.free(size);
+    }
+
     pub fn get_ref(&self, cr: CRef) -> ClauseRef {
         let header = unsafe { self.ra[cr].header };
         let has_extra = header.has_extra();
