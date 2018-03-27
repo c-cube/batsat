@@ -73,8 +73,8 @@ pub struct Solver {
 
     /// A heuristic measurement of the activity of a variable.
     activity: VMap<f64>,
-    /// The current assignments.
-    assigns: VMap<lbool>,
+    // /// The current assignments.
+    // v.assigns: VMap<lbool>,
     /// The preferred polarity of each variable.
     polarity: VMap<bool>,
     /// The users preferred polarity of each variable.
@@ -125,6 +125,13 @@ pub struct Solver {
     conflict_budget: i64,
     propagation_budget: i64,
     asynch_interrupt: bool,
+
+    v: SolverV,
+}
+#[derive(Debug)]
+struct SolverV {
+    /// The current assignments.
+    assigns: VMap<lbool>,
 }
 
 impl Default for Solver {
@@ -177,7 +184,7 @@ impl Default for Solver {
             trail_lim: vec![],
             assumptions: vec![],
             activity: VMap::new(),
-            assigns: VMap::new(),
+            // v.assigns: VMap::new(),
             polarity: VMap::new(),
             user_pol: VMap::new(),
             decision: VMap::new(),
@@ -210,6 +217,10 @@ impl Default for Solver {
             conflict_budget: -1,
             propagation_budget: -1,
             asynch_interrupt: false,
+
+            v: SolverV {
+                assigns: VMap::new(),
+            },
         }
     }
 }
@@ -259,7 +270,7 @@ impl Solver {
         });
         self.watches().init(Lit::new(v, false));
         self.watches().init(Lit::new(v, true));
-        self.assigns.insert_default(v, lbool::UNDEF);
+        self.v.assigns.insert_default(v, lbool::UNDEF);
         self.vardata.insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.rnd_init_act {
             self.activity
@@ -280,12 +291,6 @@ impl Solver {
     pub fn new_var_default(&mut self) -> Var {
         self.new_var(lbool::UNDEF, true)
     }
-    pub fn value(&self, x: Var) -> lbool {
-        self.assigns[x]
-    }
-    pub fn value_lit(&self, x: Lit) -> lbool {
-        self.assigns[x.var()] ^ x.sign()
-    }
     pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         // eprintln!("add_clause({:?})", clause);
         debug_assert_eq!(self.decision_level(), 0);
@@ -296,7 +301,7 @@ impl Solver {
         let mut last_lit = Lit::UNDEF;
         let mut j = 0;
         for i in 0..clause.len() {
-            let value = self.value_lit(clause[i]);
+            let value = self.v.value_lit(clause[i]);
             if value == lbool::TRUE || clause[i] == !last_lit {
                 return true;
             } else if value != lbool::FALSE && clause[i] != last_lit {
@@ -377,16 +382,10 @@ impl Solver {
     /// Shrink 'cs' to contain only non-satisfied clauses.
     // fn remove_satisfied(&mut self, cs: &mut Vec<CRef>) {
     fn remove_satisfied(&mut self, shrink_learnts: bool) {
-        macro_rules! value_lit_assigns {
-            ($assigns:expr, $x:expr) => {
-                // $self.value_lit($x)
-                $assigns[$x.var()] ^ $x.sign()
-            };
-        }
-        macro_rules! satisfied_assigns {
-            ($assigns:expr, $c:expr) => {{
+        macro_rules! satisfied_v {
+            ($self_v:expr, $c:expr) => {{
                 // $self.satisfied($c)
-                $c.iter().any(|lit| value_lit_assigns!($assigns, lit) == lbool::TRUE)
+                $c.iter().any(|&lit| $self_v.value_lit(lit) == lbool::TRUE)
             }};
         }
         let cs: &mut Vec<CRef> = if shrink_learnts {
@@ -396,14 +395,14 @@ impl Solver {
         };
         let mut j = 0;
         let ca = &mut self.ca;
-        let assigns = &self.assigns;
-        // cs.retain(|&cr| {
-        //     let mut c = ca.get_mut(cr);
-        //     if satisfied_assigns!(assigns, c.as_clause_ref()) {
-        //     } else {
-        //     }
-        //     false
-        // });
+        let self_v = &self.v;
+        cs.retain(|&cr| {
+            let mut c = ca.get_mut(cr);
+            if satisfied_v!(self_v, c.as_clause_ref()) {
+            } else {
+            }
+            false
+        });
 
         // int i, j;
         // for (i = j = 0; i < cs.size(); i++){
@@ -441,8 +440,8 @@ impl Solver {
     }
 
     fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
-        debug_assert_eq!(self.value_lit(p), lbool::UNDEF);
-        self.assigns[p.var()] = lbool::new(!p.sign());
+        debug_assert_eq!(self.v.value_lit(p), lbool::UNDEF);
+        self.v.assigns[p.var()] = lbool::new(!p.sign());
         self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
         self.trail.push(p);
     }
@@ -455,12 +454,6 @@ impl Solver {
     /// - the propagation queue is empty, even if there was a conflict.
     fn propagate(&mut self) -> CRef {
         // These macros are to avoid false sharing of references.
-        macro_rules! value_lit {
-            ($self:expr, $x:expr) => {
-                // $self.value_lit($x)
-                $self.assigns[$x.var()] ^ $x.sign()
-            };
-        }
         macro_rules! decision_level {
             ($self:expr) => {
                 // $self.decision_level()
@@ -470,8 +463,8 @@ impl Solver {
         macro_rules! unchecked_enqueue {
             ($self:expr, $p:expr, $from:expr) => {{
                 // $self.unchecked_enqueue($p, $from);
-                debug_assert_eq!(value_lit!($self, $p), lbool::UNDEF);
-                $self.assigns[$p.var()] = lbool::new(!$p.sign());
+                debug_assert_eq!($self.v.value_lit($p), lbool::UNDEF);
+                $self.v.assigns[$p.var()] = lbool::new(!$p.sign());
                 $self.vardata[$p.var()] = VarData::new($from, decision_level!($self) as i32);
                 $self.trail.push($p);
             }};
@@ -494,7 +487,7 @@ impl Solver {
             while i < end {
                 // Try to avoid inspecting the clause:
                 let blocker = ws[i].blocker;
-                if value_lit!(self, blocker) == lbool::TRUE {
+                if self.v.value_lit(blocker) == lbool::TRUE {
                     ws[j] = ws[i];
                     j += 1;
                     i += 1;
@@ -515,7 +508,7 @@ impl Solver {
                 // If 0th watch is true, then clause is already satisfied.
                 let first = c[0];
                 let w = Watcher::new(cr, first);
-                if first != blocker && value_lit!(self, first) == lbool::TRUE {
+                if first != blocker && self.v.value_lit(first) == lbool::TRUE {
                     ws[j] = w;
                     j += 1;
                     continue;
@@ -523,7 +516,7 @@ impl Solver {
 
                 // Look for new watch:
                 for k in 2..c.size() {
-                    if value_lit!(self, c[k]) != lbool::FALSE {
+                    if self.v.value_lit(c[k]) != lbool::FALSE {
                         c[1] = c[k];
                         c[k] = false_lit;
 
@@ -536,7 +529,7 @@ impl Solver {
                 // Did not find watch -- clause is unit under assignment:
                 ws[j] = w;
                 j += 1;
-                if value_lit!(self, first) == lbool::FALSE {
+                if self.v.value_lit(first) == lbool::FALSE {
                     confl = cr;
                     self.qhead = self.trail.len() as i32;
                     // Copy the remaining watches:
@@ -572,6 +565,15 @@ impl Solver {
     }
     fn watches(&mut self) -> OccLists<Lit, Watcher, WatcherDeleted> {
         self.watches_data.promote(WatcherDeleted { ca: &self.ca })
+    }
+}
+
+impl SolverV {
+    pub fn value(&self, x: Var) -> lbool {
+        self.assigns[x]
+    }
+    pub fn value_lit(&self, x: Lit) -> lbool {
+        self.assigns[x.var()] ^ x.sign()
     }
 }
 
