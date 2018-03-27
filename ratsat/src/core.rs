@@ -1,7 +1,7 @@
 use std::cmp;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
-use clause::{CRef, ClauseAllocator, DeletePred, LSet, OccLists, OccListsData, VMap};
+use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
 
 #[derive(Debug)]
 pub struct Solver {
@@ -389,12 +389,6 @@ impl Solver {
     /// Shrink 'cs' to contain only non-satisfied clauses.
     // fn remove_satisfied(&mut self, cs: &mut Vec<CRef>) {
     fn remove_satisfied(&mut self, shrink_learnts: bool) {
-        macro_rules! satisfied_v {
-            ($self_v:expr, $c:expr) => {{
-                // $self.satisfied($c)
-                $c.iter().any(|&lit| $self_v.value_lit(lit) == lbool::TRUE)
-            }};
-        }
         let cs: &mut Vec<CRef> = if shrink_learnts {
             &mut self.learnts
         } else {
@@ -405,7 +399,7 @@ impl Solver {
         let self_v = &self.v;
         cs.retain(|&cr| {
             let mut c = ca.get_mut(cr);
-            if satisfied_v!(self_v, c.as_clause_ref()) {
+            if self_v.satisfied(c.as_clause_ref()) {
             } else {
             }
             false
@@ -559,6 +553,10 @@ impl SolverV {
     }
     pub fn value_lit(&self, x: Lit) -> lbool {
         self.assigns[x.var()] ^ x.sign()
+    }
+
+    pub fn satisfied(&self, c: ClauseRef) -> bool {
+        c.iter().any(|&lit| self.value_lit(lit) == lbool::TRUE)
     }
 
     pub fn decision_level(&self) -> u32 {
