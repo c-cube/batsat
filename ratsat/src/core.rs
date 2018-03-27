@@ -96,9 +96,9 @@ pub struct Solver {
     /// Head of queue (as index into the trail -- no more explicit propagation queue in MiniSat).
     qhead: i32,
     /// Number of top-level assignments since last execution of 'simplify()'.
-    simpDB_assigns: i32,
+    simp_db_assigns: i32,
     /// Remaining number of propagations that must be made before next execution of 'simplify()'.
-    simpDB_props: i64,
+    simp_db_props: i64,
     /// Set by 'search()'.
     progress_estimate: f64,
     /// Indicates whether possibly inefficient linear scan for satisfied clauses should be performed in 'simplify'.
@@ -206,8 +206,8 @@ impl Default for Solver {
             cla_inc: 1.0,
             var_inc: 1.0,
             qhead: 0,
-            simpDB_assigns: -1,
-            simpDB_props: 0,
+            simp_db_assigns: -1,
+            simp_db_props: 0,
             progress_estimate: 0.0,
             remove_satisfied: true,
             next_var: Var::from_idx(0),
@@ -351,7 +351,7 @@ impl Solver {
             return false;
         }
 
-        if self.v.num_assigns() as i32 == self.simpDB_assigns || self.simpDB_props > 0 {
+        if self.v.num_assigns() as i32 == self.simp_db_assigns || self.simp_db_props > 0 {
             return true;
         }
 
@@ -387,8 +387,8 @@ impl Solver {
         // checkGarbage();
         // rebuildOrderHeap();
 
-        // simpDB_assigns = nAssigns();
-        // simpDB_props   = clauses_literals + learnts_literals;   // (shouldn't depend on stats really, but it will do for now)
+        // simp_db_assigns = nAssigns();
+        // simp_db_props   = clauses_literals + learnts_literals;   // (shouldn't depend on stats really, but it will do for now)
 
         true
     }
@@ -539,7 +539,7 @@ impl Solver {
             ws.resize(i - j, dummy);
         }
         self.propagations += num_props as u64;
-        self.simpDB_props -= num_props as i64;
+        self.simp_db_props -= num_props as i64;
 
         confl
     }
