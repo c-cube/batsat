@@ -1,4 +1,6 @@
+use std::cmp;
 use {lbool, Lit, Var};
+use intmap::{Comparator, Heap, HeapData, PartialComparator};
 use clause::{CRef, ClauseAllocator, LSet, VMap};
 
 #[derive(Debug)]
@@ -83,9 +85,8 @@ pub struct Solver {
     // vardata: VMap<VarData>,
     // /// 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
     // watches: OccLists<Lit, Vec<Watcher>, WatcherDeleted>
-
-    // /// A priority queue of variables ordered with respect to the variable activity.
-    // order_heap: Heap<Var>
+    /// A priority queue of variables ordered with respect to the variable activity.
+    order_heap_data: HeapData<Var>,
     /// If FALSE, the constraints are already unsatisfiable. No part of the solver state may be used!
     ok: bool,
     /// Amount to bump next clause with.
@@ -183,7 +184,7 @@ impl Default for Solver {
             // vardata: VMap::new(),
 
             // watches: OccLists::new(WatcherDeleted(ca)),
-            // order_heap: Heap::new(),
+            order_heap_data: HeapData::new(),
             ok: true,
             cla_inc: 1.0,
             var_inc: 1.0,
@@ -224,6 +225,23 @@ impl Solver {
     pub fn verbosity(&self) -> i32 {
         self.verbosity
     }
+
+    pub fn set_decision_var(&mut self, v: Var, b: bool) {
+        if b && !self.decision[v] {
+            self.dec_vars += 1;
+        } else if !b && self.decision[v] {
+            self.dec_vars -= 1;
+        }
+        self.decision[v] = b;
+        self.insert_var_order(v);
+    }
+
+    fn insert_var_order(&mut self, x: Var) {
+        if !self.order_heap().in_heap(x) && self.decision[x] {
+            self.order_heap().insert(x);
+        }
+    }
+
     pub fn num_vars(&self) -> u32 {
         self.next_var.idx()
     }
@@ -252,7 +270,7 @@ impl Solver {
         self.decision.reserve_default(v);
         let len = self.trail.len();
         self.trail.reserve(v.idx() as usize + 1 - len);
-        // self.set_decision_var(v, dvar);
+        self.set_decision_var(v, dvar);
         v
     }
 
@@ -299,6 +317,27 @@ impl Solver {
     }
     pub fn decision_level(&self) -> u32 {
         self.trail_lim.len() as u32
+    }
+
+    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
+        self.order_heap_data.promote(VarOrder {
+            activity: &self.activity,
+        })
+    }
+}
+
+struct VarOrder<'a> {
+    activity: &'a VMap<f64>,
+}
+
+impl<'a> PartialComparator<Var> for VarOrder<'a> {
+    fn partial_cmp(&self, lhs: &Var, rhs: &Var) -> Option<cmp::Ordering> {
+        Some(self.cmp(lhs, rhs))
+    }
+}
+impl<'a> Comparator<Var> for VarOrder<'a> {
+    fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
+        PartialOrd::partial_cmp(&self.activity[*rhs], &self.activity[*lhs]).expect("NaN activity")
     }
 }
 

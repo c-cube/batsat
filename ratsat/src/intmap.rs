@@ -1,3 +1,4 @@
+use std::cmp;
 use std::ops;
 use std::marker::PhantomData;
 
@@ -34,6 +35,9 @@ where
 impl<K: AsIndex, V> IntMap<K, V> {
     pub fn new() -> Self {
         Self::default()
+    }
+    pub fn has(&self, k: K) -> bool {
+        k.as_index() < self.map.len()
     }
     pub fn reserve(&mut self, key: K, pad: V)
     where
@@ -129,11 +133,7 @@ impl<K: AsIndex> IntSet<K> {
         }
     }
     pub fn has(&self, k: K) -> bool {
-        if k.as_index() < self.in_set.map.len() {
-            self.in_set[k]
-        } else {
-            false
-        }
+        self.in_set.has(k) && self.in_set[k]
     }
 }
 impl<K: AsIndex> ops::Index<usize> for IntSet<K> {
@@ -141,4 +141,270 @@ impl<K: AsIndex> ops::Index<usize> for IntSet<K> {
     fn index(&self, index: usize) -> &Self::Output {
         &self.xs[index]
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct HeapData<K: AsIndex> {
+    heap: Vec<K>,
+    indices: IntMap<K, i32>,
+}
+
+impl<K: AsIndex> Default for HeapData<K> {
+    fn default() -> Self {
+        Self {
+            heap: vec![],
+            indices: IntMap::new(),
+        }
+    }
+}
+
+impl<K: AsIndex> HeapData<K> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn len(&self) -> usize {
+        self.heap.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.heap.is_empty()
+    }
+    pub fn in_heap(&self, k: K) -> bool {
+        self.indices.has(k) && self.indices[k] >= 0
+    }
+
+    pub fn promote<Comp: Comparator<K>>(&mut self, comp: Comp) -> Heap<K, Comp> {
+        Heap {
+            data: self,
+            comp: comp,
+        }
+    }
+}
+
+impl<K: AsIndex> ops::Index<usize> for HeapData<K> {
+    type Output = K;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.heap[index]
+    }
+}
+
+pub trait Comparator<T: ?Sized>: PartialComparator<T> {
+    fn cmp(&self, lhs: &T, rhs: &T) -> cmp::Ordering;
+    fn max(&self, lhs: T, rhs: T) -> T
+    where
+        T: Sized,
+    {
+        if self.ge(&rhs, &lhs) {
+            rhs
+        } else {
+            lhs
+        }
+    }
+    fn min(&self, lhs: T, rhs: T) -> T
+    where
+        T: Sized,
+    {
+        if self.le(&lhs, &rhs) {
+            lhs
+        } else {
+            rhs
+        }
+    }
+}
+pub trait PartialComparator<Rhs: ?Sized, Lhs: ?Sized = Rhs> {
+    fn partial_cmp(&self, lhs: &Lhs, rhs: &Rhs) -> Option<cmp::Ordering>;
+    fn lt(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
+        match self.partial_cmp(lhs, rhs) {
+            Some(cmp::Ordering::Less) => true,
+            _ => false,
+        }
+    }
+    fn le(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
+        match self.partial_cmp(lhs, rhs) {
+            Some(cmp::Ordering::Less) | Some(cmp::Ordering::Equal) => true,
+            _ => false,
+        }
+    }
+    fn gt(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
+        match self.partial_cmp(lhs, rhs) {
+            Some(cmp::Ordering::Greater) => true,
+            _ => false,
+        }
+    }
+    fn ge(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
+        match self.partial_cmp(lhs, rhs) {
+            Some(cmp::Ordering::Greater) | Some(cmp::Ordering::Equal) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Heap<'a, K: AsIndex + 'a, Comp: Comparator<K>> {
+    data: &'a mut HeapData<K>,
+    comp: Comp,
+}
+
+impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> ops::Deref for Heap<'a, K, Comp> {
+    type Target = HeapData<K>;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> ops::DerefMut for Heap<'a, K, Comp> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
+    fn percolate_up(&mut self, mut i: u32) {
+        let x = self.heap[i as usize];
+        let mut p = parent_index(i);
+
+        while i != 0 && self.comp.lt(&x, &self.heap[p as usize]) {
+            self.heap[i as usize] = self.heap[p as usize];
+            let tmp = self.heap[p as usize];
+            self.indices[tmp] = i as i32;
+            i = p;
+            p = parent_index(p);
+        }
+        self.heap[i as usize] = x;
+        self.indices[x] = i as i32;
+    }
+
+    fn percolate_down(&mut self, mut i: u32) {
+        let x = self.heap[i as usize];
+        while (left_index(i) as usize) < self.heap.len() {
+            let child = if (right_index(i) as usize) < self.heap.len()
+                && self.comp.lt(
+                    &self.heap[right_index(i) as usize],
+                    &self.heap[left_index(i) as usize],
+                ) {
+                right_index(i)
+            } else {
+                left_index(i)
+            };
+            if !self.comp.lt(&self.heap[child as usize], &x) {
+                break;
+            }
+            self.heap[i as usize] = self.heap[child as usize];
+            let tmp = self.heap[i as usize];
+            self.indices[tmp] = i as i32;
+            i = child;
+        }
+        self.heap[i as usize] = x;
+        self.indices[x] = i as i32;
+    }
+    pub fn decrease(&mut self, k: K) {
+        debug_assert!(self.in_heap(k));
+        let k_index = self.indices[k];
+        self.percolate_up(k_index as u32);
+    }
+    pub fn increase(&mut self, k: K) {
+        debug_assert!(self.in_heap(k));
+        let k_index = self.indices[k];
+        self.percolate_down(k_index as u32);
+    }
+
+    /// Safe variant of insert/decrease/increase:
+    pub fn update(&mut self, k: K) {
+        if !self.in_heap(k) {
+            self.insert(k);
+        } else {
+            let k_index = self.indices[k];
+            self.percolate_up(k_index as u32);
+            let k_index = self.indices[k];
+            self.percolate_down(k_index as u32);
+        }
+    }
+
+    pub fn insert(&mut self, k: K) {
+        self.indices.reserve(k, -1);
+        debug_assert!(!self.in_heap(k));
+
+        self.indices[k] = self.heap.len() as i32;
+        self.heap.push(k);
+        let k_index = self.indices[k];
+        self.percolate_up(k_index as u32);
+    }
+
+    pub fn remove(&mut self, k: K) {
+        debug_assert!(self.in_heap(k));
+        let k_pos = self.indices[k] as u32;
+        self.indices[k] = -1;
+        if (k_pos as usize) < self.heap.len() - 1 {
+            self.heap[k_pos as usize] = *self.heap.last().unwrap();
+            let tmp = self.heap[k_pos as usize];
+            self.indices[tmp] = k_pos as i32;
+            self.heap.pop().expect("cannot pop from empty heap");
+            self.percolate_down(k_pos);
+        } else {
+            self.heap.pop().expect("cannot pop from empty heap");
+        }
+    }
+
+    pub fn remove_min(&mut self) -> K {
+        let x = *self.heap.first().expect("heap is empty");
+        let lastval = *self.heap.last().expect("heap is empty");
+        self.heap[0] = lastval;
+        self.indices[lastval] = 0;
+        self.indices[x] = -1;
+        self.heap.pop().expect("cannot pop from empty heap");
+        if self.heap.len() > 1 {
+            self.percolate_down(0);
+        }
+        x
+    }
+
+    /// Rebuild the heap from scratch, using the elements in 'ns':
+    pub fn build(&mut self, ns: &[K]) {
+        {
+            let data = &mut self.data;
+            for &x in &data.heap {
+                data.indices[x] = -1;
+            }
+        }
+        self.heap.clear();
+
+        for (i, &x) in ns.iter().enumerate() {
+            // TODO: this should probably call reserve instead of relying on it being reserved already.
+            debug_assert!(self.indices.has(x));
+            self.indices[x] = i as i32;
+            self.heap.push(x);
+        }
+
+        let mut i = self.heap.len() as i32 / 2 - 1;
+        while i >= 0 {
+            self.percolate_down(i as u32);
+            i -= 1;
+        }
+    }
+
+    pub fn clear_dispose(&mut self, dispose: bool) {
+        // TODO: shouldn't the 'indices' map also be dispose-cleared?
+        {
+            let data = &mut self.data;
+            for &x in &data.heap {
+                data.indices[x] = -1;
+            }
+        }
+        self.heap.clear();
+        if dispose {
+            self.heap.shrink_to_fit();
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.clear_dispose(false)
+    }
+}
+
+fn left_index(i: u32) -> u32 {
+    i * 2 + 1
+}
+fn right_index(i: u32) -> u32 {
+    (i + 1) * 2
+}
+fn parent_index(i: u32) -> u32 {
+    (i.wrapping_sub(1)) >> 1
 }
