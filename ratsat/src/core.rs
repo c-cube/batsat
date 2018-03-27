@@ -54,8 +54,8 @@ pub struct Solver {
     dec_vars: u64,
     num_clauses: u64,
     num_learnts: u64,
-    clause_literals: u64,
-    learnt_literals: u64,
+    clauses_literals: u64,
+    learnts_literals: u64,
     max_literals: u64,
     tot_literals: u64,
 
@@ -166,8 +166,8 @@ impl Default for Solver {
             dec_vars: 0,
             num_clauses: 0,
             num_learnts: 0,
-            clause_literals: 0,
-            learnt_literals: 0,
+            clauses_literals: 0,
+            learnts_literals: 0,
             max_literals: 0,
             tot_literals: 0,
 
@@ -311,11 +311,26 @@ impl Solver {
         } else {
             let cr = self.ca.alloc_with_learnt(&clause, false);
             self.clauses.push(cr);
-            // self.attach_clause(cr);
+            self.attach_clause(cr);
         }
 
         true
     }
+
+    fn attach_clause(&mut self, cr: CRef) {
+        let c = self.ca.get_ref(cr);
+        debug_assert!(c.size() > 1);
+        // self.watches[!c[0]].push(Watcher(cr, c[1]));
+        // self.watches[!c[1]].push(Watcher(cr, c[0]));
+        if c.learnt() {
+            self.num_learnts += 1;
+            self.learnts_literals += c.size() as u64;
+        } else {
+            self.num_clauses += 1;
+            self.clauses_literals += c.size() as u64;
+        }
+    }
+
     pub fn decision_level(&self) -> u32 {
         self.trail_lim.len() as u32
     }

@@ -204,6 +204,65 @@ impl ops::BitOrAssign for lbool {
     }
 }
 
+pub struct ClauseRef<'a> {
+    header: ClauseHeader,
+    data: &'a [ClauseData],
+    extra: Option<ClauseData>,
+}
+pub struct ClauseMut<'a> {
+    header: &'a mut ClauseHeader,
+    data: &'a mut [ClauseData],
+    extra: Option<&'a mut ClauseData>,
+}
+
+impl<'a> ClauseRef<'a> {
+    pub fn mark(&self) -> u32 {
+        self.header.mark()
+    }
+    pub fn learnt(&self) -> bool {
+        self.header.learnt()
+    }
+    pub fn has_extra(&self) -> bool {
+        self.header.has_extra()
+    }
+    pub fn reloced(&self) -> bool {
+        self.header.reloced()
+    }
+    pub fn size(&self) -> u32 {
+        self.data.len() as u32
+    }
+}
+impl<'a> ClauseMut<'a> {
+    pub fn mark(&self) -> u32 {
+        self.header.mark()
+    }
+    pub fn learnt(&self) -> bool {
+        self.header.learnt()
+    }
+    pub fn has_extra(&self) -> bool {
+        self.header.has_extra()
+    }
+    pub fn reloced(&self) -> bool {
+        self.header.reloced()
+    }
+    pub fn size(&self) -> u32 {
+        self.data.len() as u32
+    }
+    pub fn set_mark(&mut self, mark: u32) {
+        debug_assert!(mark < 4);
+        self.header.set_mark(mark);
+    }
+    pub fn set_learnt(&mut self, learnt: bool) {
+        self.header.set_learnt(learnt);
+    }
+    pub fn set_has_extra(&mut self, has_extra: bool) {
+        self.header.set_has_extra(has_extra);
+    }
+    pub fn set_reloced(&mut self, reloced: bool) {
+        self.header.set_reloced(reloced);
+    }
+}
+
 #[derive(Debug)]
 pub struct ClauseAllocator {
     ra: RegionAllocator<ClauseData>,
@@ -326,6 +385,38 @@ impl ClauseAllocator {
     }
     pub fn alloc(&mut self, clause: &[Lit]) -> CRef {
         self.alloc_with_learnt(clause, false)
+    }
+    pub fn get_ref(&self, cr: CRef) -> ClauseRef {
+        let header = unsafe { self.ra[cr].header };
+        let has_extra = header.has_extra();
+        let size = header.size();
+
+        let data = self.ra.subslice(cr + 1, size);
+        let extra = if has_extra {
+            Some(self.ra[cr + 1 + size])
+        } else {
+            None
+        };
+        ClauseRef {
+            header,
+            data,
+            extra,
+        }
+    }
+    pub fn get_mut(&mut self, cr: CRef) -> ClauseMut {
+        let header = unsafe { self.ra[cr].header };
+        let has_extra = header.has_extra();
+        let size = header.size();
+        let len = 1 + size + has_extra as u32;
+
+        let subslice = self.ra.subslice_mut(cr, len);
+        let (subslice0, subslice) = subslice.split_at_mut(1);
+        let (subslice1, subslice2) = subslice.split_at_mut(size as usize);
+        ClauseMut {
+            header: unsafe { &mut subslice0[0].header },
+            data: subslice1,
+            extra: subslice2.first_mut(),
+        }
     }
 }
 

@@ -20,6 +20,12 @@ impl<T: Copy + Default> RegionAllocator<T> {
         self.vec.extend((0..size).map(|_| T::default()));
         r
     }
+    pub fn subslice(&self, r: Ref<T>, len: u32) -> &[T] {
+        &self.vec[r.0 as usize..r.0 as usize + len as usize]
+    }
+    pub fn subslice_mut(&mut self, r: Ref<T>, len: u32) -> &mut [T] {
+        &mut self.vec[r.0 as usize..r.0 as usize + len as usize]
+    }
 }
 
 impl<T: Copy> ops::Index<Ref<T>> for RegionAllocator<T> {
