@@ -51,7 +51,6 @@ impl<K: AsIndex, V> IntMap<K, V> {
         let index = key.as_index();
         if index >= self.map.len() {
             // self.map.resize_default(index + 1);
-            self.map.reserve(index + 1);
             let len = index + 1 - self.map.len();
             self.map.extend((0..len).map(|_| V::default()));
         }

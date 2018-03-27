@@ -193,3 +193,32 @@ impl ops::BitOrAssign for lbool {
         *self = *self | rhs;
     }
 }
+
+#[derive(Debug)]
+pub struct ClauseAllocator {
+    vec: Vec<ClauseData>,
+    wasted: usize,
+}
+pub union ClauseData {
+    u32: u32,
+    cref: CRef,
+    f32: f32,
+}
+
+impl fmt::Debug for ClauseData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ClauseData({})", unsafe { self.u32 })
+    }
+}
+
+impl ClauseAllocator {
+    pub fn new() -> Self {
+        Self {
+            vec: vec![],
+            wasted: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CRef(u32);

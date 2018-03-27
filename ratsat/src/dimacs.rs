@@ -50,7 +50,7 @@ fn read_clause<R: BufRead>(
         }
         let var = (parsed_lit.abs() - 1) as u32;
         while var >= solver.num_vars() {
-            solver.new_var();
+            solver.new_var_default();
         }
         lits.push(Lit::new(Var::from_idx(var), parsed_lit < 0));
     }
