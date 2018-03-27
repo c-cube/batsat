@@ -241,7 +241,8 @@ impl Solver {
         self.assigns.insert_default(v, lbool::UNDEF);
         // self.vardata.insert_default(v, mkVarData(CRef::UNDEF, 0));
         if self.rnd_init_act {
-            // self.activity.insert_default(v, drand(self.random_seed) * 0.00001);
+            self.activity
+                .insert_default(v, drand(&mut self.random_seed) * 0.00001);
         } else {
             self.activity.insert_default(v, 0.0);
         }
@@ -299,4 +300,12 @@ impl Solver {
     pub fn decision_level(&self) -> u32 {
         self.trail_lim.len() as u32
     }
+}
+
+/// Generate a random double:
+fn drand(seed: &mut f64) -> f64 {
+    *seed *= 1389796.0;
+    let q = (*seed / 2147483647.0) as i32;
+    *seed -= q as f64 * 2147483647.0;
+    return *seed / 2147483647.0;
 }
