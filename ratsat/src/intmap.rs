@@ -73,6 +73,13 @@ impl<K: AsIndex, V> IntMap<K, V> {
         self.reserve_default(key);
         self[key] = val;
     }
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
+    pub fn free(&mut self) {
+        self.map.clear();
+        self.map.shrink_to_fit();
+    }
 }
 
 impl<K: AsIndex, V> ops::Index<K> for IntMap<K, V> {

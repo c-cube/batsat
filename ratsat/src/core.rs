@@ -1,7 +1,7 @@
 use std::cmp;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
-use clause::{CRef, ClauseAllocator, LSet, VMap};
+use clause::{CRef, ClauseAllocator, DeletePred, LSet, OccLists, OccListsData, VMap};
 
 #[derive(Debug)]
 pub struct Solver {
@@ -83,8 +83,8 @@ pub struct Solver {
     decision: VMap<bool>,
     /// Stores reason and level for each variable.
     vardata: VMap<VarData>,
-    // /// 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
-    // watches: OccLists<Lit, Vec<Watcher>, WatcherDeleted>
+    /// 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
+    watches_data: OccListsData<Lit, Watcher>,
     /// A priority queue of variables ordered with respect to the variable activity.
     order_heap_data: HeapData<Var>,
     /// If FALSE, the constraints are already unsatisfiable. No part of the solver state may be used!
@@ -183,7 +183,7 @@ impl Default for Solver {
             decision: VMap::new(),
             vardata: VMap::new(),
 
-            // watches: OccLists::new(WatcherDeleted(ca)),
+            watches_data: OccListsData::new(),
             order_heap_data: HeapData::new(),
             ok: true,
             cla_inc: 1.0,
@@ -254,8 +254,8 @@ impl Solver {
             self.next_var = Var::from_idx(self.next_var.idx() + 1);
             v
         });
-        // self.watches.init(mkLit(v, false));
-        // self.watches.init(mkLit(v, true));
+        self.watches().init(Lit::new(v, false));
+        self.watches().init(Lit::new(v, true));
         self.assigns.insert_default(v, lbool::UNDEF);
         self.vardata.insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.rnd_init_act {
@@ -318,16 +318,19 @@ impl Solver {
     }
 
     fn attach_clause(&mut self, cr: CRef) {
-        let c = self.ca.get_ref(cr);
-        debug_assert!(c.size() > 1);
-        // self.watches[!c[0]].push(Watcher(cr, c[1]));
-        // self.watches[!c[1]].push(Watcher(cr, c[0]));
-        if c.learnt() {
+        let (c0, c1, learnt, size) = {
+            let c = self.ca.get_ref(cr);
+            debug_assert!(c.size() > 1);
+            (c[0], c[1], c.learnt(), c.size())
+        };
+        self.watches()[!c0].push(Watcher::new(cr, c1));
+        self.watches()[!c1].push(Watcher::new(cr, c0));
+        if learnt {
             self.num_learnts += 1;
-            self.learnts_literals += c.size() as u64;
+            self.learnts_literals += size as u64;
         } else {
             self.num_clauses += 1;
-            self.clauses_literals += c.size() as u64;
+            self.clauses_literals += size as u64;
         }
     }
 
@@ -346,6 +349,9 @@ impl Solver {
         self.order_heap_data.promote(VarOrder {
             activity: &self.activity,
         })
+    }
+    fn watches(&mut self) -> OccLists<Lit, Watcher, WatcherDeleted> {
+        self.watches_data.promote(WatcherDeleted { ca: &self.ca })
     }
 }
 
@@ -370,6 +376,25 @@ impl VarData {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Watcher {
+    cref: CRef,
+    blocker: Lit,
+}
+
+impl Watcher {
+    fn new(cref: CRef, blocker: Lit) -> Self {
+        Self { cref, blocker }
+    }
+}
+
+impl PartialEq for Watcher {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.cref == rhs.cref
+    }
+}
+impl Eq for Watcher {}
+
 struct VarOrder<'a> {
     activity: &'a VMap<f64>,
 }
@@ -382,6 +407,16 @@ impl<'a> PartialComparator<Var> for VarOrder<'a> {
 impl<'a> Comparator<Var> for VarOrder<'a> {
     fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
         PartialOrd::partial_cmp(&self.activity[*rhs], &self.activity[*lhs]).expect("NaN activity")
+    }
+}
+
+struct WatcherDeleted<'a> {
+    ca: &'a ClauseAllocator,
+}
+
+impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
+    fn deleted(&self, w: &Watcher) -> bool {
+        self.ca.get_ref(w.cref).mark() == 1
     }
 }
 

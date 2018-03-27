@@ -1,3 +1,5 @@
+use std::cmp;
+use std::fmt;
 use std::marker::PhantomData;
 use std::ops;
 
@@ -40,8 +42,35 @@ impl<T: Copy> ops::IndexMut<Ref<T>> for RegionAllocator<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy)]
 pub struct Ref<T: Copy>(u32, PhantomData<fn(T) -> T>);
+
+impl<T: Copy> fmt::Debug for Ref<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Ref").field(&self.0).finish()
+    }
+}
+impl<T: Copy> PartialEq for Ref<T> {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.0 == rhs.0
+    }
+}
+impl<T: Copy> Eq for Ref<T> {}
+impl<T: Copy> PartialOrd for Ref<T> {
+    fn partial_cmp(&self, rhs: &Self) -> Option<cmp::Ordering> {
+        PartialOrd::partial_cmp(&self.0, &rhs.0)
+    }
+}
+impl<T: Copy> Ord for Ref<T> {
+    fn cmp(&self, rhs: &Self) -> cmp::Ordering {
+        Ord::cmp(&self.0, &rhs.0)
+    }
+}
+impl<T: Copy> Default for Ref<T> {
+    fn default() -> Self {
+        Ref(0, PhantomData)
+    }
+}
 
 impl<T: Copy> Ref<T> {
     pub const UNDEF: Self = Ref(!0, PhantomData);

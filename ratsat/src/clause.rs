@@ -263,6 +263,24 @@ impl<'a> ClauseMut<'a> {
     }
 }
 
+impl<'a> ops::Index<u32> for ClauseRef<'a> {
+    type Output = Lit;
+    fn index(&self, index: u32) -> &Self::Output {
+        unsafe { &self.data[index as usize].lit }
+    }
+}
+impl<'a> ops::Index<u32> for ClauseMut<'a> {
+    type Output = Lit;
+    fn index(&self, index: u32) -> &Self::Output {
+        unsafe { &self.data[index as usize].lit }
+    }
+}
+impl<'a> ops::IndexMut<u32> for ClauseMut<'a> {
+    fn index_mut(&mut self, index: u32) -> &mut Self::Output {
+        unsafe { &mut self.data[index as usize].lit }
+    }
+}
+
 #[derive(Debug)]
 pub struct ClauseAllocator {
     ra: RegionAllocator<ClauseData>,
@@ -421,3 +439,124 @@ impl ClauseAllocator {
 }
 
 pub type CRef = alloc::Ref<ClauseData>;
+
+pub trait DeletePred<V> {
+    fn deleted(&self, &V) -> bool;
+}
+
+#[derive(Debug, Clone)]
+pub struct OccListsData<K: AsIndex, V> {
+    occs: IntMap<K, Vec<V>>,
+    dirty: IntMap<K, bool>,
+    dirties: Vec<K>,
+}
+
+impl<K: AsIndex, V> OccListsData<K, V> {
+    pub fn new() -> Self {
+        Self {
+            occs: IntMap::new(),
+            dirty: IntMap::new(),
+            dirties: Vec::new(),
+        }
+    }
+    pub fn init(&mut self, idx: K) {
+        self.occs.reserve_default(idx);
+        self.occs[idx].clear();
+        self.dirty.reserve(idx, false);
+    }
+
+    pub fn promote<P: DeletePred<V>>(&mut self, pred: P) -> OccLists<K, V, P> {
+        OccLists {
+            data: self,
+            pred: pred,
+        }
+    }
+
+    fn lookup_mut<P: DeletePred<V>>(&mut self, idx: K, pred: &P) -> &mut Vec<V> {
+        if self.dirty[idx] {
+            self.clean(idx, pred);
+        }
+        &mut self.occs[idx]
+    }
+
+    fn clean_all<P: DeletePred<V>>(&mut self, pred: &P) {
+        for &x in &self.dirties {
+            // Dirties may contain duplicates so check here if a variable is already cleaned:
+            if self.dirty[x] {
+                // self.clean(x, pred)
+                self.occs[x].retain(|x| !pred.deleted(x));
+                self.dirty[x] = false;
+            }
+        }
+        self.dirties.clear();
+    }
+
+    fn clean<P: DeletePred<V>>(&mut self, idx: K, pred: &P) {
+        self.occs[idx].retain(|x| !pred.deleted(x));
+        self.dirty[idx] = false;
+    }
+
+    pub fn smudge(&mut self, idx: K) {
+        if !self.dirty[idx] {
+            self.dirty[idx] = true;
+            self.dirties.push(idx);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.occs.clear();
+        self.dirty.clear();
+        self.dirties.clear();
+    }
+
+    pub fn free(&mut self) {
+        self.occs.free();
+        self.dirty.free();
+        self.dirties.clear();
+        self.dirties.shrink_to_fit();
+    }
+}
+
+impl<K: AsIndex, V> ops::Index<K> for OccListsData<K, V> {
+    type Output = Vec<V>;
+    fn index(&self, index: K) -> &Self::Output {
+        &self.occs[index]
+    }
+}
+impl<K: AsIndex, V> ops::IndexMut<K> for OccListsData<K, V> {
+    fn index_mut(&mut self, index: K) -> &mut Self::Output {
+        &mut self.occs[index]
+    }
+}
+
+pub struct OccLists<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> {
+    data: &'a mut OccListsData<K, V>,
+    pred: P,
+}
+
+impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> OccLists<'a, K, V, P> {
+    pub fn lookup_mut(&mut self, idx: K) -> &mut Vec<V> {
+        self.data.lookup_mut(idx, &self.pred)
+    }
+
+    pub fn clean_all(&mut self) {
+        self.data.clean_all(&self.pred)
+    }
+
+    pub fn clean(&mut self, idx: K) {
+        self.data.clean(idx, &self.pred)
+    }
+}
+
+impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> ops::Deref for OccLists<'a, K, V, P> {
+    type Target = OccListsData<K, V>;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> ops::DerefMut for OccLists<'a, K, V, P> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
