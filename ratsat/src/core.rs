@@ -81,8 +81,8 @@ pub struct Solver {
     user_pol: VMap<lbool>,
     /// Declares if a variable is eligible for selection in the decision heuristic.
     decision: VMap<bool>,
-    // /// Stores reason and level for each variable.
-    // vardata: VMap<VarData>,
+    /// Stores reason and level for each variable.
+    vardata: VMap<VarData>,
     // /// 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
     // watches: OccLists<Lit, Vec<Watcher>, WatcherDeleted>
     /// A priority queue of variables ordered with respect to the variable activity.
@@ -181,7 +181,7 @@ impl Default for Solver {
             polarity: VMap::new(),
             user_pol: VMap::new(),
             decision: VMap::new(),
-            // vardata: VMap::new(),
+            vardata: VMap::new(),
 
             // watches: OccLists::new(WatcherDeleted(ca)),
             order_heap_data: HeapData::new(),
@@ -257,7 +257,7 @@ impl Solver {
         // self.watches.init(mkLit(v, false));
         // self.watches.init(mkLit(v, true));
         self.assigns.insert_default(v, lbool::UNDEF);
-        // self.vardata.insert_default(v, mkVarData(CRef::UNDEF, 0));
+        self.vardata.insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.rnd_init_act {
             self.activity
                 .insert_default(v, drand(&mut self.random_seed) * 0.00001);
@@ -334,7 +334,7 @@ impl Solver {
     fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
         debug_assert_eq!(self.value_lit(p), lbool::UNDEF);
         self.assigns[p.var()] = lbool::new(!p.sign());
-        // self.vardata[p.var()] = mkVarData(from, decision_level());
+        self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
         self.trail.push(p);
     }
 
@@ -346,6 +346,27 @@ impl Solver {
         self.order_heap_data.promote(VarOrder {
             activity: &self.activity,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct VarData {
+    reason: CRef,
+    level: i32,
+}
+
+impl Default for VarData {
+    fn default() -> Self {
+        Self {
+            reason: CRef::UNDEF,
+            level: 0,
+        }
+    }
+}
+
+impl VarData {
+    fn new(reason: CRef, level: i32) -> Self {
+        Self { reason, level }
     }
 }
 
