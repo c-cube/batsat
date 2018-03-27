@@ -361,28 +361,31 @@ impl Solver {
             // Can be turned off.
             self.remove_satisfied(false);
 
-            // // TODO: what todo in if 'remove_satisfied' is false?
+            // TODO: what todo in if 'remove_satisfied' is false?
 
-            // // Remove all released variables from the trail:
-            // for (int i = 0; i < released_vars.size(); i++){
-            //     assert(seen[released_vars[i]] == 0);
-            //     seen[released_vars[i]] = 1;
-            // }
+            // Remove all released variables from the trail:
+            for &rvar in &self.released_vars {
+                debug_assert_eq!(self.seen[rvar], false);
+                self.seen[rvar] = true;
+            }
 
-            // int i, j;
-            // for (i = j = 0; i < trail.size(); i++)
-            //     if (seen[var(trail[i])] == 0)
-            //         trail[j++] = trail[i];
-            // trail.shrink(i - j);
-            // //printf("trail.size()= %d, qhead = %d\n", trail.size(), qhead);
-            // qhead = trail.size();
+            {
+                let seen = &self.seen;
+                self.v.trail.retain(|&lit| !seen[lit.var()]);
+            }
+            // eprintln!(
+            //     "trail.size()= {}, qhead = {}",
+            //     self.v.trail.len(),
+            //     self.qhead
+            // );
+            self.qhead = self.v.trail.len() as i32;
 
-            // for (int i = 0; i < released_vars.size(); i++)
-            //     seen[released_vars[i]] = 0;
+            for &rvar in &self.released_vars {
+                self.seen[rvar] = false;
+            }
 
-            // // Released variables are now ready to be reused:
-            // append(released_vars, free_vars);
-            // released_vars.clear();
+            // Released variables are now ready to be reused:
+            self.free_vars.extend(self.released_vars.drain(..));
         }
         // checkGarbage();
         // rebuildOrderHeap();
