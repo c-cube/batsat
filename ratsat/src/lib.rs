@@ -1,3 +1,4 @@
+pub mod alloc;
 pub mod intmap;
 pub mod clause;
 pub mod dimacs;

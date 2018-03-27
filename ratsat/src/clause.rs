@@ -3,6 +3,7 @@ use std::ops;
 use std::u32;
 
 use intmap::{AsIndex, IntMap, IntSet};
+use alloc::{self, RegionAllocator};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Var(u32);
@@ -205,29 +206,127 @@ impl ops::BitOrAssign for lbool {
 
 #[derive(Debug)]
 pub struct ClauseAllocator {
-    vec: Vec<ClauseData>,
-    wasted: usize,
+    ra: RegionAllocator<ClauseData>,
+    extra_clause_field: bool,
 }
+#[derive(Clone, Copy)]
 pub union ClauseData {
     u32: u32,
-    cref: CRef,
     f32: f32,
+    cref: CRef,
+    header: ClauseHeader,
+    lit: Lit,
 }
 
+impl Default for ClauseData {
+    fn default() -> Self {
+        ClauseData { u32: 0 }
+    }
+}
 impl fmt::Debug for ClauseData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ClauseData({})", unsafe { self.u32 })
     }
 }
 
-impl ClauseAllocator {
-    pub fn new() -> Self {
-        Self {
-            vec: vec![],
-            wasted: 0,
-        }
+// unsigned mark      : 2;
+// unsigned learnt    : 1;
+// unsigned has_extra : 1;
+// unsigned reloced   : 1;
+// unsigned size      : 27;
+#[derive(Clone, Copy)]
+pub struct ClauseHeader(u32);
+
+impl fmt::Debug for ClauseHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ClauseHeader")
+            .field("mark", &self.mark())
+            .field("learnt", &self.learnt())
+            .field("has_extra", &self.has_extra())
+            .field("reloced", &self.reloced())
+            .field("size", &self.size())
+            .finish()
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct CRef(u32);
+impl ClauseHeader {
+    pub fn new(mark: u32, learnt: bool, has_extra: bool, reloced: bool, size: u32) -> Self {
+        debug_assert!(mark < 4);
+        debug_assert!(size < (1 << 27));
+        ClauseHeader(
+            (mark << 30) | ((learnt as u32) << 29) | ((has_extra as u32) << 28)
+                | ((reloced as u32) << 27) | size,
+        )
+    }
+    pub fn mark(&self) -> u32 {
+        self.0 >> 30
+    }
+    pub fn learnt(&self) -> bool {
+        (self.0 & (1 << 29)) != 0
+    }
+    pub fn has_extra(&self) -> bool {
+        (self.0 & (1 << 28)) != 0
+    }
+    pub fn reloced(&self) -> bool {
+        (self.0 & (1 << 27)) != 0
+    }
+    pub fn size(&self) -> u32 {
+        self.0 & ((1 << 27) - 1)
+    }
+    pub fn set_mark(&mut self, mark: u32) {
+        debug_assert!(mark < 4);
+        self.0 = (self.0 & !(3 << 30)) | (mark << 30);
+    }
+    pub fn set_learnt(&mut self, learnt: bool) {
+        self.0 = (self.0 & !(1 << 29)) | ((learnt as u32) << 29);
+    }
+    pub fn set_has_extra(&mut self, has_extra: bool) {
+        self.0 = (self.0 & !(1 << 28)) | ((has_extra as u32) << 28);
+    }
+    pub fn set_reloced(&mut self, reloced: bool) {
+        self.0 = (self.0 & !(1 << 27)) | ((reloced as u32) << 27);
+    }
+    pub fn set_size(&mut self, size: u32) {
+        debug_assert!(size < (1 << 27));
+        self.0 = (self.0 & !((1 << 27) - 1)) | size;
+    }
+}
+
+impl ClauseAllocator {
+    pub fn with_start_cap(start_cap: u32) -> Self {
+        Self {
+            ra: RegionAllocator::new(start_cap),
+            extra_clause_field: false,
+        }
+    }
+    pub fn new() -> Self {
+        Self::with_start_cap(1024 * 1024)
+    }
+    pub fn alloc_with_learnt(&mut self, clause: &[Lit], learnt: bool) -> CRef {
+        let use_extra = learnt | self.extra_clause_field;
+        let cid = self.ra.alloc(1 + clause.len() as u32 + use_extra as u32);
+        self.ra[cid].header = ClauseHeader::new(0, learnt, use_extra, false, clause.len() as u32);
+        let clause_ptr = cid + 1;
+        for (i, &lit) in clause.iter().enumerate() {
+            self.ra[clause_ptr + i as u32].lit = lit;
+        }
+        if use_extra {
+            if learnt {
+                self.ra[clause_ptr + clause.len() as u32].f32 = 0.0;
+            } else {
+                let mut abstraction: u32 = 0;
+                for &lit in clause {
+                    abstraction |= 1 << (lit.var().idx() & 31);
+                }
+                self.ra[clause_ptr + clause.len() as u32].u32 = abstraction;
+            }
+        }
+
+        cid
+    }
+    pub fn alloc(&mut self, clause: &[Lit]) -> CRef {
+        self.alloc_with_learnt(clause, false)
+    }
+}
+
+pub type CRef = alloc::Ref<ClauseData>;

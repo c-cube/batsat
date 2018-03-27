@@ -295,6 +295,7 @@ impl Solver {
         for i in 0..clause.len() {
             let value = self.value_lit(clause[i]);
             if value == lbool::TRUE || clause[i] == !last_lit {
+                return true;
             } else if value != lbool::FALSE && clause[i] != last_lit {
                 last_lit = clause[i];
                 clause[j] = clause[i];
@@ -308,9 +309,9 @@ impl Solver {
         } else if clause.len() == 1 {
             // self.unchecked_enqueue(clause[0]);
         } else {
-            // ca alloc
-            // self.clauses.push(clause.to_vec());
-            // self.attach_clause(clause);
+            let cr = self.ca.alloc_with_learnt(&clause, false);
+            self.clauses.push(cr);
+            // self.attach_clause(cr);
         }
 
         true
