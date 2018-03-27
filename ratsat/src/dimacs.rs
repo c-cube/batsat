@@ -3,7 +3,7 @@ use {Lit, Solver, Var};
 
 pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) -> io::Result<()> {
     let mut lits = vec![];
-    let mut num_vars = 0;
+    // let mut num_vars = 0;
     let mut num_clauses = 0;
     let mut num_read_clauses = 0;
     loop {
@@ -15,7 +15,8 @@ pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) ->
             if &header != b"p cnf" {
                 return parse_error(format!("PARSE ERROR! Unexpected char: p"));
             }
-            num_vars = parse_int(input)?;
+            // num_vars = parse_int(input)?;
+            parse_int(input)?;
             num_clauses = parse_int(input)?;
         // eprintln!("num_vars = {}", num_vars);
         // eprintln!("num_clauses = {}", num_clauses);
