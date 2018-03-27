@@ -307,7 +307,7 @@ impl Solver {
             self.ok = false;
             return false;
         } else if clause.len() == 1 {
-            // self.unchecked_enqueue(clause[0]);
+            self.unchecked_enqueue(clause[0], CRef::UNDEF);
         } else {
             let cr = self.ca.alloc_with_learnt(&clause, false);
             self.clauses.push(cr);
@@ -329,6 +329,13 @@ impl Solver {
             self.num_clauses += 1;
             self.clauses_literals += c.size() as u64;
         }
+    }
+
+    fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
+        debug_assert_eq!(self.value_lit(p), lbool::UNDEF);
+        self.assigns[p.var()] = lbool::new(!p.sign());
+        // self.vardata[p.var()] = mkVarData(from, decision_level());
+        self.trail.push(p);
     }
 
     pub fn decision_level(&self) -> u32 {

@@ -43,6 +43,10 @@ impl<T: Copy> ops::IndexMut<Ref<T>> for RegionAllocator<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Ref<T: Copy>(u32, PhantomData<fn(T) -> T>);
 
+impl<T: Copy> Ref<T> {
+    pub const UNDEF: Self = Ref(!0, PhantomData);
+}
+
 impl<T: Copy> ops::Add<u32> for Ref<T> {
     type Output = Ref<T>;
     fn add(self, rhs: u32) -> Self::Output {
