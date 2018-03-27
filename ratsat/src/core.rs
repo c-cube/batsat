@@ -64,10 +64,10 @@ pub struct Solver {
     clauses: Vec<CRef>,
     /// List of learnt clauses.
     learnts: Vec<CRef>,
-    /// Assignment stack; stores all assigments made in the order they were made.
-    trail: Vec<Lit>,
-    /// Separator indices for different decision levels in 'trail'.
-    trail_lim: Vec<i32>,
+    // /// Assignment stack; stores all assigments made in the order they were made.
+    // v.trail: Vec<Lit>,
+    // /// Separator indices for different decision levels in 'trail'.
+    // v.trail_lim: Vec<i32>,
     /// Current set of assumptions provided to solve by the user.
     assumptions: Vec<Lit>,
 
@@ -81,8 +81,8 @@ pub struct Solver {
     user_pol: VMap<lbool>,
     /// Declares if a variable is eligible for selection in the decision heuristic.
     decision: VMap<bool>,
-    /// Stores reason and level for each variable.
-    vardata: VMap<VarData>,
+    // /// Stores reason and level for each variable.
+    // v.vardata: VMap<VarData>,
     /// 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
     watches_data: OccListsData<Lit, Watcher>,
     /// A priority queue of variables ordered with respect to the variable activity.
@@ -132,6 +132,12 @@ pub struct Solver {
 struct SolverV {
     /// The current assignments.
     assigns: VMap<lbool>,
+    /// Assignment stack; stores all assigments made in the order they were made.
+    trail: Vec<Lit>,
+    /// Separator indices for different decision levels in 'trail'.
+    trail_lim: Vec<i32>,
+    /// Stores reason and level for each variable.
+    vardata: VMap<VarData>,
 }
 
 impl Default for Solver {
@@ -180,16 +186,15 @@ impl Default for Solver {
 
             clauses: vec![],
             learnts: vec![],
-            trail: vec![],
-            trail_lim: vec![],
+            // v.trail: vec![],
+            // v.trail_lim: vec![],
             assumptions: vec![],
             activity: VMap::new(),
             // v.assigns: VMap::new(),
             polarity: VMap::new(),
             user_pol: VMap::new(),
             decision: VMap::new(),
-            vardata: VMap::new(),
-
+            // v.vardata: VMap::new(),
             watches_data: OccListsData::new(),
             order_heap_data: HeapData::new(),
             ok: true,
@@ -220,6 +225,9 @@ impl Default for Solver {
 
             v: SolverV {
                 assigns: VMap::new(),
+                trail: vec![],
+                trail_lim: vec![],
+                vardata: VMap::new(),
             },
         }
     }
@@ -229,9 +237,6 @@ impl Solver {
     pub fn set_verbosity(&mut self, verbosity: i32) {
         debug_assert!(0 <= verbosity && verbosity <= 2);
         self.verbosity = verbosity;
-    }
-    pub fn num_assigns(&self) -> u32 {
-        self.trail.len() as u32
     }
     pub fn num_clauses(&self) -> u32 {
         self.num_clauses as u32
@@ -271,7 +276,9 @@ impl Solver {
         self.watches().init(Lit::new(v, false));
         self.watches().init(Lit::new(v, true));
         self.v.assigns.insert_default(v, lbool::UNDEF);
-        self.vardata.insert_default(v, VarData::new(CRef::UNDEF, 0));
+        self.v
+            .vardata
+            .insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.rnd_init_act {
             self.activity
                 .insert_default(v, drand(&mut self.random_seed) * 0.00001);
@@ -282,8 +289,8 @@ impl Solver {
         self.polarity.insert_default(v, true);
         self.user_pol.insert_default(v, upol);
         self.decision.reserve_default(v);
-        let len = self.trail.len();
-        self.trail.reserve(v.idx() as usize + 1 - len);
+        let len = self.v.trail.len();
+        self.v.trail.reserve(v.idx() as usize + 1 - len);
         self.set_decision_var(v, dvar);
         v
     }
@@ -293,7 +300,7 @@ impl Solver {
     }
     pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         // eprintln!("add_clause({:?})", clause);
-        debug_assert_eq!(self.decision_level(), 0);
+        debug_assert_eq!(self.v.decision_level(), 0);
         if !self.ok {
             return false;
         }
@@ -315,7 +322,7 @@ impl Solver {
             self.ok = false;
             return false;
         } else if clause.len() == 1 {
-            self.unchecked_enqueue(clause[0], CRef::UNDEF);
+            self.v.unchecked_enqueue(clause[0], CRef::UNDEF);
         } else {
             let cr = self.ca.alloc_with_learnt(&clause, false);
             self.clauses.push(cr);
@@ -328,14 +335,14 @@ impl Solver {
     /// Simplify the clause database according to the current top-level assigment. Currently, the only
     /// thing done here is the removal of satisfied clauses, but more things can be put here.
     pub fn simplify(&mut self) -> bool {
-        debug_assert_eq!(self.decision_level(), 0);
+        debug_assert_eq!(self.v.decision_level(), 0);
 
         if !self.ok || self.propagate() != CRef::UNDEF {
             self.ok = false;
             return false;
         }
 
-        if self.num_assigns() as i32 == self.simpDB_assigns || self.simpDB_props > 0 {
+        if self.v.num_assigns() as i32 == self.simpDB_assigns || self.simpDB_props > 0 {
             return true;
         }
 
@@ -439,13 +446,6 @@ impl Solver {
         }
     }
 
-    fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
-        debug_assert_eq!(self.v.value_lit(p), lbool::UNDEF);
-        self.v.assigns[p.var()] = lbool::new(!p.sign());
-        self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
-        self.trail.push(p);
-    }
-
     /// Propagates all enqueued facts. If a conflict arises, the conflicting clause is returned,
     /// otherwise CRef_Undef.
     ///
@@ -454,27 +454,12 @@ impl Solver {
     /// - the propagation queue is empty, even if there was a conflict.
     fn propagate(&mut self) -> CRef {
         // These macros are to avoid false sharing of references.
-        macro_rules! decision_level {
-            ($self:expr) => {
-                // $self.decision_level()
-                $self.trail_lim.len() as u32
-            }
-        }
-        macro_rules! unchecked_enqueue {
-            ($self:expr, $p:expr, $from:expr) => {{
-                // $self.unchecked_enqueue($p, $from);
-                debug_assert_eq!($self.v.value_lit($p), lbool::UNDEF);
-                $self.v.assigns[$p.var()] = lbool::new(!$p.sign());
-                $self.vardata[$p.var()] = VarData::new($from, decision_level!($self) as i32);
-                $self.trail.push($p);
-            }};
-        }
         let mut confl = CRef::UNDEF;
         let mut num_props: u32 = 0;
 
-        while (self.qhead as usize) < self.trail.len() {
+        while (self.qhead as usize) < self.v.trail.len() {
             // 'p' is enqueued fact to propagate.
-            let p = self.trail[self.qhead as usize];
+            let p = self.v.trail[self.qhead as usize];
             self.qhead += 1;
             let watches_data_ptr: *mut OccListsData<_, _> = &mut self.watches_data;
             // let ws = self.watches().lookup_mut(p);
@@ -531,7 +516,7 @@ impl Solver {
                 j += 1;
                 if self.v.value_lit(first) == lbool::FALSE {
                     confl = cr;
-                    self.qhead = self.trail.len() as i32;
+                    self.qhead = self.v.trail.len() as i32;
                     // Copy the remaining watches:
                     while i < end {
                         ws[j] = ws[i];
@@ -539,7 +524,7 @@ impl Solver {
                         i += 1;
                     }
                 } else {
-                    unchecked_enqueue!(self, first, cr);
+                    self.v.unchecked_enqueue(first, cr);
                 }
             }
             let dummy = Watcher {
@@ -554,10 +539,6 @@ impl Solver {
         confl
     }
 
-    pub fn decision_level(&self) -> u32 {
-        self.trail_lim.len() as u32
-    }
-
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {
         self.order_heap_data.promote(VarOrder {
             activity: &self.activity,
@@ -569,11 +550,26 @@ impl Solver {
 }
 
 impl SolverV {
+    pub fn num_assigns(&self) -> u32 {
+        self.trail.len() as u32
+    }
+
     pub fn value(&self, x: Var) -> lbool {
         self.assigns[x]
     }
     pub fn value_lit(&self, x: Lit) -> lbool {
         self.assigns[x.var()] ^ x.sign()
+    }
+
+    pub fn decision_level(&self) -> u32 {
+        self.trail_lim.len() as u32
+    }
+
+    fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
+        debug_assert_eq!(self.value_lit(p), lbool::UNDEF);
+        self.assigns[p.var()] = lbool::new(!p.sign());
+        self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
+        self.trail.push(p);
     }
 }
 
