@@ -219,8 +219,11 @@ impl Solver {
         debug_assert!(0 <= verbosity && verbosity <= 2);
         self.verbosity = verbosity;
     }
+    pub fn num_assigns(&self) -> u32 {
+        self.trail.len() as u32
+    }
     pub fn num_clauses(&self) -> u32 {
-        self.clauses.len() as u32
+        self.num_clauses as u32
     }
     pub fn verbosity(&self) -> i32 {
         self.verbosity
@@ -327,8 +330,12 @@ impl Solver {
             return false;
         }
 
-        // if (nAssigns() == simpDB_assigns || (simpDB_props > 0))
-        //     return true;
+        if self.num_assigns() as i32 == self.simpDB_assigns || self.simpDB_props > 0 {
+            return true;
+        }
+
+        // Remove satisfied clauses:
+        self.remove_satisfied(true);
 
         // // Remove satisfied clauses:
         // removeSatisfied(learnts);
@@ -367,6 +374,55 @@ impl Solver {
         true
     }
 
+    /// Shrink 'cs' to contain only non-satisfied clauses.
+    // fn remove_satisfied(&mut self, cs: &mut Vec<CRef>) {
+    fn remove_satisfied(&mut self, shrink_learnts: bool) {
+        macro_rules! value_lit_assigns {
+            ($assigns:expr, $x:expr) => {
+                // $self.value_lit($x)
+                $assigns[$x.var()] ^ $x.sign()
+            };
+        }
+        macro_rules! satisfied_assigns {
+            ($assigns:expr, $c:expr) => {{
+                // $self.satisfied($c)
+                $c.iter().any(|lit| value_lit_assigns!($assigns, lit) == lbool::TRUE)
+            }};
+        }
+        let cs: &mut Vec<CRef> = if shrink_learnts {
+            &mut self.learnts
+        } else {
+            &mut self.clauses
+        };
+        let mut j = 0;
+        let ca = &mut self.ca;
+        let assigns = &self.assigns;
+        // cs.retain(|&cr| {
+        //     let mut c = ca.get_mut(cr);
+        //     if satisfied_assigns!(assigns, c.as_clause_ref()) {
+        //     } else {
+        //     }
+        //     false
+        // });
+
+        // int i, j;
+        // for (i = j = 0; i < cs.size(); i++){
+        //     Clause& c = ca[cs[i]];
+        //     if (satisfied(c))
+        //         removeClause(cs[i]);
+        //     else{
+        //         // Trim clause:
+        //         assert(value(c[0]) == l_Undef && value(c[1]) == l_Undef);
+        //         for (int k = 2; k < c.size(); k++)
+        //             if (value(c[k]) == l_False){
+        //                 c[k--] = c[c.size()-1];
+        //                 c.pop();
+        //             }
+        //         cs[j++] = cs[i];
+        //     }
+        // }
+        // cs.shrink(i - j);
+    }
     fn attach_clause(&mut self, cr: CRef) {
         let (c0, c1, learnt, size) = {
             let c = self.ca.get_ref(cr);
@@ -433,7 +489,7 @@ impl Solver {
                 .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca });
             let mut i: usize = 0;
             let mut j: usize = 0;
-            let mut end: usize = ws.len();
+            let end: usize = ws.len();
             num_props += 1;
             while i < end {
                 // Try to avoid inspecting the clause:

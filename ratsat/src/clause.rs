@@ -1,5 +1,7 @@
 use std::fmt;
+use std::iter::DoubleEndedIterator;
 use std::ops;
+use std::slice;
 use std::u32;
 
 use intmap::{AsIndex, IntMap, IntSet};
@@ -231,6 +233,9 @@ impl<'a> ClauseRef<'a> {
     pub fn size(&self) -> u32 {
         self.data.len() as u32
     }
+    pub fn iter(&self) -> ClauseIter {
+        ClauseIter(self.data.iter())
+    }
 }
 impl<'a> ClauseMut<'a> {
     pub fn mark(&self) -> u32 {
@@ -261,6 +266,19 @@ impl<'a> ClauseMut<'a> {
     pub fn set_reloced(&mut self, reloced: bool) {
         self.header.set_reloced(reloced);
     }
+    pub fn iter(&self) -> ClauseIter {
+        ClauseIter(self.data.iter())
+    }
+    pub fn iter_mut(&mut self) -> ClauseIterMut {
+        ClauseIterMut(self.data.iter_mut())
+    }
+    pub fn as_clause_ref(&mut self) -> ClauseRef {
+        ClauseRef {
+            header: *self.header,
+            data: self.data,
+            extra: self.extra.as_mut().map(|extra| **extra),
+        }
+    }
 }
 
 impl<'a> ops::Index<u32> for ClauseRef<'a> {
@@ -278,6 +296,42 @@ impl<'a> ops::Index<u32> for ClauseMut<'a> {
 impl<'a> ops::IndexMut<u32> for ClauseMut<'a> {
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
         unsafe { &mut self.data[index as usize].lit }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ClauseIter<'a>(slice::Iter<'a, ClauseData>);
+
+impl<'a> Iterator for ClauseIter<'a> {
+    type Item = &'a Lit;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|lit| unsafe { &lit.lit })
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+impl<'a> DoubleEndedIterator for ClauseIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|lit| unsafe { &lit.lit })
+    }
+}
+
+#[derive(Debug)]
+pub struct ClauseIterMut<'a>(slice::IterMut<'a, ClauseData>);
+
+impl<'a> Iterator for ClauseIterMut<'a> {
+    type Item = &'a mut Lit;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|lit| unsafe { &mut lit.lit })
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+impl<'a> DoubleEndedIterator for ClauseIterMut<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|lit| unsafe { &mut lit.lit })
     }
 }
 
