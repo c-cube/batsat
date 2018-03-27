@@ -472,14 +472,14 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         }
     }
 
-    fn lookup_mut<P: DeletePred<V>>(&mut self, idx: K, pred: &P) -> &mut Vec<V> {
+    pub fn lookup_mut_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) -> &mut Vec<V> {
         if self.dirty[idx] {
-            self.clean(idx, pred);
+            self.clean_pred(idx, pred);
         }
         &mut self.occs[idx]
     }
 
-    fn clean_all<P: DeletePred<V>>(&mut self, pred: &P) {
+    pub fn clean_all_pred<P: DeletePred<V>>(&mut self, pred: &P) {
         for &x in &self.dirties {
             // Dirties may contain duplicates so check here if a variable is already cleaned:
             if self.dirty[x] {
@@ -491,7 +491,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         self.dirties.clear();
     }
 
-    fn clean<P: DeletePred<V>>(&mut self, idx: K, pred: &P) {
+    pub fn clean_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) {
         self.occs[idx].retain(|x| !pred.deleted(x));
         self.dirty[idx] = false;
     }
@@ -536,15 +536,15 @@ pub struct OccLists<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> {
 
 impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> OccLists<'a, K, V, P> {
     pub fn lookup_mut(&mut self, idx: K) -> &mut Vec<V> {
-        self.data.lookup_mut(idx, &self.pred)
+        self.data.lookup_mut_pred(idx, &self.pred)
     }
 
     pub fn clean_all(&mut self) {
-        self.data.clean_all(&self.pred)
+        self.data.clean_all_pred(&self.pred)
     }
 
     pub fn clean(&mut self, idx: K) {
-        self.data.clean(idx, &self.pred)
+        self.data.clean_pred(idx, &self.pred)
     }
 }
 

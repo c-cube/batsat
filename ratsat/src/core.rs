@@ -317,6 +317,56 @@ impl Solver {
         true
     }
 
+    /// Simplify the clause database according to the current top-level assigment. Currently, the only
+    /// thing done here is the removal of satisfied clauses, but more things can be put here.
+    pub fn simplify(&mut self) -> bool {
+        debug_assert_eq!(self.decision_level(), 0);
+
+        if !self.ok || self.propagate() != CRef::UNDEF {
+            self.ok = false;
+            return false;
+        }
+
+        // if (nAssigns() == simpDB_assigns || (simpDB_props > 0))
+        //     return true;
+
+        // // Remove satisfied clauses:
+        // removeSatisfied(learnts);
+        // if (remove_satisfied){       // Can be turned off.
+        //     removeSatisfied(clauses);
+
+        //     // TODO: what todo in if 'remove_satisfied' is false?
+
+        //     // Remove all released variables from the trail:
+        //     for (int i = 0; i < released_vars.size(); i++){
+        //         assert(seen[released_vars[i]] == 0);
+        //         seen[released_vars[i]] = 1;
+        //     }
+
+        //     int i, j;
+        //     for (i = j = 0; i < trail.size(); i++)
+        //         if (seen[var(trail[i])] == 0)
+        //             trail[j++] = trail[i];
+        //     trail.shrink(i - j);
+        //     //printf("trail.size()= %d, qhead = %d\n", trail.size(), qhead);
+        //     qhead = trail.size();
+
+        //     for (int i = 0; i < released_vars.size(); i++)
+        //         seen[released_vars[i]] = 0;
+
+        //     // Released variables are now ready to be reused:
+        //     append(released_vars, free_vars);
+        //     released_vars.clear();
+        // }
+        // checkGarbage();
+        // rebuildOrderHeap();
+
+        // simpDB_assigns = nAssigns();
+        // simpDB_props   = clauses_literals + learnts_literals;   // (shouldn't depend on stats really, but it will do for now)
+
+        true
+    }
+
     fn attach_clause(&mut self, cr: CRef) {
         let (c0, c1, learnt, size) = {
             let c = self.ca.get_ref(cr);
@@ -339,6 +389,120 @@ impl Solver {
         self.assigns[p.var()] = lbool::new(!p.sign());
         self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
         self.trail.push(p);
+    }
+
+    /// Propagates all enqueued facts. If a conflict arises, the conflicting clause is returned,
+    /// otherwise CRef_Undef.
+    ///
+    /// # Post-conditions:
+    ///
+    /// - the propagation queue is empty, even if there was a conflict.
+    fn propagate(&mut self) -> CRef {
+        // These macros are to avoid false sharing of references.
+        macro_rules! value_lit {
+            ($self:expr, $x:expr) => {
+                // $self.value_lit($x)
+                $self.assigns[$x.var()] ^ $x.sign()
+            };
+        }
+        macro_rules! decision_level {
+            ($self:expr) => {
+                // $self.decision_level()
+                $self.trail_lim.len() as u32
+            }
+        }
+        macro_rules! unchecked_enqueue {
+            ($self:expr, $p:expr, $from:expr) => {{
+                // $self.unchecked_enqueue($p, $from);
+                debug_assert_eq!(value_lit!($self, $p), lbool::UNDEF);
+                $self.assigns[$p.var()] = lbool::new(!$p.sign());
+                $self.vardata[$p.var()] = VarData::new($from, decision_level!($self) as i32);
+                $self.trail.push($p);
+            }};
+        }
+        let mut confl = CRef::UNDEF;
+        let mut num_props: u32 = 0;
+
+        while (self.qhead as usize) < self.trail.len() {
+            // 'p' is enqueued fact to propagate.
+            let p = self.trail[self.qhead as usize];
+            self.qhead += 1;
+            let watches_data_ptr: *mut OccListsData<_, _> = &mut self.watches_data;
+            // let ws = self.watches().lookup_mut(p);
+            let ws = self.watches_data
+                .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca });
+            let mut i: usize = 0;
+            let mut j: usize = 0;
+            let mut end: usize = ws.len();
+            num_props += 1;
+            while i < end {
+                // Try to avoid inspecting the clause:
+                let blocker = ws[i].blocker;
+                if value_lit!(self, blocker) == lbool::TRUE {
+                    ws[j] = ws[i];
+                    j += 1;
+                    i += 1;
+                    continue;
+                }
+
+                // Make sure the false literal is data[1]:
+                let cr = ws[i].cref;
+                let mut c = self.ca.get_mut(cr);
+                let false_lit = !p;
+                if c[0] == false_lit {
+                    c[0] = c[1];
+                    c[1] = false_lit;
+                }
+                debug_assert_eq!(c[1], false_lit);
+                i += 1;
+
+                // If 0th watch is true, then clause is already satisfied.
+                let first = c[0];
+                let w = Watcher::new(cr, first);
+                if first != blocker && value_lit!(self, first) == lbool::TRUE {
+                    ws[j] = w;
+                    j += 1;
+                    continue;
+                }
+
+                // Look for new watch:
+                for k in 2..c.size() {
+                    if value_lit!(self, c[k]) != lbool::FALSE {
+                        c[1] = c[k];
+                        c[k] = false_lit;
+
+                        // self.watches()[!c[1]].push(w);
+                        assert_ne!(!c[1], p);
+                        unsafe { &mut (*watches_data_ptr)[!c[1]] }.push(w);
+                    }
+                }
+
+                // Did not find watch -- clause is unit under assignment:
+                ws[j] = w;
+                j += 1;
+                if value_lit!(self, first) == lbool::FALSE {
+                    confl = cr;
+                    self.qhead = self.trail.len() as i32;
+                    // Copy the remaining watches:
+                    while i < end {
+                        ws[j] = ws[i];
+                        j += 1;
+                        i += 1;
+                    }
+                } else {
+                    unchecked_enqueue!(self, first, cr);
+                }
+            }
+            let dummy = Watcher {
+                cref: CRef::UNDEF,
+                blocker: Lit::UNDEF,
+            };
+            ws.resize(i - j, dummy);
+        }
+        self.propagations += num_props as u64;
+        self.simpDB_props -= num_props as i64;
+
+        confl
     }
 
     pub fn decision_level(&self) -> u32 {

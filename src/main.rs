@@ -86,6 +86,9 @@ fn main2() -> io::Result<()> {
         );
         println!("|                                                                             |");
     }
+
+    solver.simplify();
+
     Ok(())
 }
 
