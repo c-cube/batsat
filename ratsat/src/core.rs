@@ -357,35 +357,33 @@ impl Solver {
 
         // Remove satisfied clauses:
         self.remove_satisfied(true);
+        if self.remove_satisfied {
+            // Can be turned off.
+            self.remove_satisfied(false);
 
-        // // Remove satisfied clauses:
-        // removeSatisfied(learnts);
-        // if (remove_satisfied){       // Can be turned off.
-        //     removeSatisfied(clauses);
+            // // TODO: what todo in if 'remove_satisfied' is false?
 
-        //     // TODO: what todo in if 'remove_satisfied' is false?
+            // // Remove all released variables from the trail:
+            // for (int i = 0; i < released_vars.size(); i++){
+            //     assert(seen[released_vars[i]] == 0);
+            //     seen[released_vars[i]] = 1;
+            // }
 
-        //     // Remove all released variables from the trail:
-        //     for (int i = 0; i < released_vars.size(); i++){
-        //         assert(seen[released_vars[i]] == 0);
-        //         seen[released_vars[i]] = 1;
-        //     }
+            // int i, j;
+            // for (i = j = 0; i < trail.size(); i++)
+            //     if (seen[var(trail[i])] == 0)
+            //         trail[j++] = trail[i];
+            // trail.shrink(i - j);
+            // //printf("trail.size()= %d, qhead = %d\n", trail.size(), qhead);
+            // qhead = trail.size();
 
-        //     int i, j;
-        //     for (i = j = 0; i < trail.size(); i++)
-        //         if (seen[var(trail[i])] == 0)
-        //             trail[j++] = trail[i];
-        //     trail.shrink(i - j);
-        //     //printf("trail.size()= %d, qhead = %d\n", trail.size(), qhead);
-        //     qhead = trail.size();
+            // for (int i = 0; i < released_vars.size(); i++)
+            //     seen[released_vars[i]] = 0;
 
-        //     for (int i = 0; i < released_vars.size(); i++)
-        //         seen[released_vars[i]] = 0;
-
-        //     // Released variables are now ready to be reused:
-        //     append(released_vars, free_vars);
-        //     released_vars.clear();
-        // }
+            // // Released variables are now ready to be reused:
+            // append(released_vars, free_vars);
+            // released_vars.clear();
+        }
         // checkGarbage();
         // rebuildOrderHeap();
 
@@ -411,28 +409,30 @@ impl Solver {
             if satisfied {
                 self_v.remove_clause(ca, watches_data, cr)
             } else {
-                let mut c = ca.get_mut(cr);
+                let amount = {
+                    let mut c = ca.get_mut(cr);
+                    // Trim clause:
+                    debug_assert_eq!(self_v.value_lit(c[0]), lbool::UNDEF);
+                    debug_assert_eq!(self_v.value_lit(c[1]), lbool::UNDEF);
+                    let mut k = 2;
+                    let orig_size = c.size();
+                    let mut end = c.size();
+                    while k < end {
+                        if self_v.value_lit(c[k]) == lbool::FALSE {
+                            end -= 1;
+                            c[k] = c[end];
+                        } else {
+                            k += 1;
+                        }
+                    }
+                    c.shrink(end);
+                    orig_size - end
+                };
+                // It was not in MiniSAT, but it is needed for correct wasted calculation.
+                ca.free_amount(amount);
             }
-            false
+            !satisfied
         });
-
-        // int i, j;
-        // for (i = j = 0; i < cs.size(); i++){
-        //     Clause& c = ca[cs[i]];
-        //     if (satisfied(c))
-        //         removeClause(cs[i]);
-        //     else{
-        //         // Trim clause:
-        //         assert(value(c[0]) == l_Undef && value(c[1]) == l_Undef);
-        //         for (int k = 2; k < c.size(); k++)
-        //             if (value(c[k]) == l_False){
-        //                 c[k--] = c[c.size()-1];
-        //                 c.pop();
-        //             }
-        //         cs[j++] = cs[i];
-        //     }
-        // }
-        // cs.shrink(i - j);
     }
     fn attach_clause(&mut self, cr: CRef) {
         let (c0, c1, learnt, size) = {

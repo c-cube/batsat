@@ -281,6 +281,15 @@ impl<'a> ClauseMut<'a> {
     pub fn iter_mut(&mut self) -> ClauseIterMut {
         ClauseIterMut(self.data.iter_mut())
     }
+    pub fn shrink(self, new_size: u32) {
+        debug_assert!(new_size <= self.size());
+        if new_size < self.size() {
+            self.header.set_size(new_size);
+            if let Some(extra) = self.extra {
+                self.data[new_size as usize] = *extra;
+            }
+        }
+    }
     pub fn as_clause_ref(&mut self) -> ClauseRef {
         ClauseRef {
             header: *self.header,
@@ -469,7 +478,14 @@ impl ClauseAllocator {
     }
 
     pub fn free(&mut self, cr: CRef) {
-        let size = self.get_ref(cr).size();
+        let size = {
+            let c = self.get_ref(cr);
+            1 + c.size() + c.has_extra() as u32
+        };
+        self.ra.free(size);
+    }
+
+    pub fn free_amount(&mut self, size: u32) {
         self.ra.free(size);
     }
 
