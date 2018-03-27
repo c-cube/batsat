@@ -82,3 +82,63 @@ impl<K: AsIndex, V> ops::IndexMut<K> for IntMap<K, V> {
         &mut self.map[index.as_index()]
     }
 }
+
+#[derive(Debug)]
+pub struct IntSet<K: AsIndex> {
+    in_set: IntMap<K, bool>,
+    xs: Vec<K>,
+}
+impl<K: AsIndex> Default for IntSet<K> {
+    fn default() -> Self {
+        Self {
+            in_set: IntMap::default(),
+            xs: vec![],
+        }
+    }
+}
+impl<K: AsIndex> Clone for IntSet<K> {
+    fn clone(&self) -> Self {
+        Self {
+            in_set: self.in_set.clone(),
+            xs: self.xs.clone(),
+        }
+    }
+}
+
+impl<K: AsIndex> IntSet<K> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn len(&self) -> usize {
+        self.xs.len()
+    }
+    pub fn clear(&mut self) {
+        for x in &mut self.in_set.map {
+            *x = false;
+        }
+        self.xs.clear()
+    }
+    pub fn as_slice(&self) -> &[K] {
+        &self.xs
+    }
+    pub fn insert(&mut self, k: K) {
+        self.in_set.reserve(k, false);
+        if !self.in_set[k] {
+            self.in_set[k] = true;
+            self.xs.push(k);
+        }
+    }
+    pub fn has(&self, k: K) -> bool {
+        if k.as_index() < self.in_set.map.len() {
+            self.in_set[k]
+        } else {
+            false
+        }
+    }
+}
+impl<K: AsIndex> ops::Index<usize> for IntSet<K> {
+    type Output = K;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.xs[index]
+    }
+}

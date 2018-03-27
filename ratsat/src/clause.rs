@@ -2,7 +2,7 @@ use std::fmt;
 use std::ops;
 use std::u32;
 
-use intmap::{AsIndex, IntMap};
+use intmap::{AsIndex, IntMap, IntSet};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Var(u32);
@@ -91,6 +91,15 @@ impl ops::BitXorAssign<bool> for Lit {
         *self = *self ^ rhs;
     }
 }
+
+impl AsIndex for Lit {
+    fn as_index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+pub type LMap<V> = IntMap<Lit, V>;
+pub type LSet = IntSet<Lit>;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]

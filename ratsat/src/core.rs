@@ -1,14 +1,14 @@
 use {lbool, Lit, Var};
-use clause::{CRef, ClauseAllocator, VMap};
+use clause::{CRef, ClauseAllocator, LSet, VMap};
 
 #[derive(Debug)]
 pub struct Solver {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
     model: Vec<lbool>,
-    // /// If problem is unsatisfiable (possibly under assumptions),
-    // /// this vector represent the final conflict clause expressed in the assumptions.
-    // conflict: LSet,
+    /// If problem is unsatisfiable (possibly under assumptions),
+    /// this vector represent the final conflict clause expressed in the assumptions.
+    conflict: LSet,
 
     // Mode of operation:
     verbosity: i32,
@@ -131,6 +131,7 @@ impl Default for Solver {
         Self {
             // Parameters (user settable):
             model: vec![],
+            conflict: LSet::new(),
             verbosity: 0,
             var_decay: 0.95,
             clause_decay: 0.999,
