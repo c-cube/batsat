@@ -1,9 +1,12 @@
 use std::cmp;
+use std::iter;
 use std::ops;
+use std::slice;
 use std::marker::PhantomData;
 
 pub trait AsIndex: Copy {
     fn as_index(self) -> usize;
+    fn from_index(index: usize) -> Self;
 }
 
 #[derive(Debug)]
@@ -80,6 +83,12 @@ impl<K: AsIndex, V> IntMap<K, V> {
         self.map.clear();
         self.map.shrink_to_fit();
     }
+    pub fn iter(&self) -> IntMapIter<K, V> {
+        IntMapIter(self.map.iter().enumerate(), PhantomData)
+    }
+    pub fn iter_mut(&mut self) -> IntMapIterMut<K, V> {
+        IntMapIterMut(self.map.iter_mut().enumerate(), PhantomData)
+    }
 }
 
 impl<K: AsIndex, V> ops::Index<K> for IntMap<K, V> {
@@ -91,6 +100,38 @@ impl<K: AsIndex, V> ops::Index<K> for IntMap<K, V> {
 impl<K: AsIndex, V> ops::IndexMut<K> for IntMap<K, V> {
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         &mut self.map[index.as_index()]
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IntMapIter<'a, K: AsIndex, V: 'a>(
+    iter::Enumerate<slice::Iter<'a, V>>,
+    PhantomData<fn(K)>,
+);
+
+impl<'a, K: AsIndex, V: 'a> Iterator for IntMapIter<'a, K, V> {
+    type Item = (K, &'a V);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(k, v)| (K::from_index(k), v))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+#[derive(Debug)]
+pub struct IntMapIterMut<'a, K: AsIndex, V: 'a>(
+    iter::Enumerate<slice::IterMut<'a, V>>,
+    PhantomData<fn(K)>,
+);
+
+impl<'a, K: AsIndex, V: 'a> Iterator for IntMapIterMut<'a, K, V> {
+    type Item = (K, &'a mut V);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(k, v)| (K::from_index(k), v))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
     }
 }
 

@@ -9,16 +9,17 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use ratsat::Solver;
+use ratsat::{lbool, Solver};
 
 fn main() {
-    main2().unwrap_or_else(|err| {
+    let exitcode = main2().unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1);
-    })
+    });
+    exit(exitcode);
 }
 
-fn main2() -> io::Result<()> {
+fn main2() -> io::Result<i32> {
     let matches = App::new("RatSat")
         .version("0.0.1")
         .author("Masaki Hara <ackie.h.gmai@gmail.com>")
@@ -115,8 +116,55 @@ fn main2() -> io::Result<()> {
 
     let ret = solver.solve_limited(&[]);
     eprintln!("ret = {:?}", ret);
+    if solver.verbosity() > 0 {
+        solver.print_stats();
+        println!("");
+    }
+    if ret == lbool::TRUE {
+        println!("SATISFIABLE");
+    } else if ret == lbool::FALSE {
+        println!("UNSATISFIABLE");
+    } else {
+        println!("INDETERMINATE");
+    }
+    if let Some(resfile) = resfile.as_mut() {
+        if ret == lbool::TRUE {
+            writeln!(resfile, "SAT")?;
+            for i in 0..solver.num_vars() {
+                if solver.model[i as usize] != lbool::UNDEF {
+                    if i != 0 {
+                        write!(resfile, " ")?;
+                    }
+                    if solver.model[i as usize] == lbool::FALSE {
+                        write!(resfile, "-")?;
+                    }
+                    write!(resfile, "{}", i + 1)?;
+                }
+            }
+            writeln!(resfile, " 0")?;
+        } else if ret == lbool::FALSE {
+            writeln!(resfile, "UNSAT")?;
+        } else {
+            writeln!(resfile, "INDET")?;
+        }
+        resfile.flush()?;
+    }
+    mem::drop(resfile);
 
-    Ok(())
+    let exitcode = if ret == lbool::TRUE {
+        10
+    } else if ret == lbool::FALSE {
+        20
+    } else {
+        0
+    };
+
+    if !cfg!(debug_assertions) {
+        // (faster than "return", which will invoke the destructor for 'Solver')
+        exit(exitcode);
+    }
+
+    Ok(exitcode)
 }
 
 fn read_input_autogz<R: BufRead>(

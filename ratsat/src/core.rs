@@ -8,7 +8,7 @@ use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccLi
 pub struct Solver {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
-    model: Vec<lbool>,
+    pub model: Vec<lbool>,
     /// If problem is unsatisfiable (possibly under assumptions),
     /// this vector represent the final conflict clause expressed in the assumptions.
     conflict: LSet,
@@ -72,8 +72,8 @@ pub struct Solver {
     /// Current set of assumptions provided to solve by the user.
     assumptions: Vec<Lit>,
 
-    /// A heuristic measurement of the activity of a variable.
-    activity: VMap<f64>,
+    // /// A heuristic measurement of the activity of a variable.
+    // v.activity: VMap<f64>,
     // /// The current assignments.
     // v.assigns: VMap<lbool>,
     /// The preferred polarity of each variable.
@@ -92,8 +92,8 @@ pub struct Solver {
     ok: bool,
     /// Amount to bump next clause with.
     cla_inc: f64,
-    /// Amount to bump next variable with.
-    var_inc: f64,
+    // /// Amount to bump next variable with.
+    // v.var_inc: f64,
     /// Head of queue (as index into the trail -- no more explicit propagation queue in MiniSat).
     qhead: i32,
     /// Number of top-level assignments since last execution of 'simplify()'.
@@ -113,8 +113,8 @@ pub struct Solver {
 
     // Temporaries (to reduce allocation overhead). Each variable is prefixed by the method in which it is
     // used, exept 'seen' wich is used in several places.
-    seen: VMap<bool>,
-    // analyze_stack: Vec<ShrinkStackElem>,
+    seen: VMap<Seen>,
+    analyze_stack: Vec<ShrinkStackElem>,
     analyze_toclear: Vec<Lit>,
     add_tmp: Vec<Lit>,
 
@@ -131,6 +131,8 @@ pub struct Solver {
 }
 #[derive(Debug)]
 struct SolverV {
+    /// A heuristic measurement of the activity of a variable.
+    activity: VMap<f64>,
     /// The current assignments.
     assigns: VMap<lbool>,
     /// Assignment stack; stores all assigments made in the order they were made.
@@ -139,6 +141,8 @@ struct SolverV {
     trail_lim: Vec<i32>,
     /// Stores reason and level for each variable.
     vardata: VMap<VarData>,
+    /// Amount to bump next variable with.
+    var_inc: f64,
 
     num_clauses: u64,
     num_learnts: u64,
@@ -195,7 +199,7 @@ impl Default for Solver {
             // v.trail: vec![],
             // v.trail_lim: vec![],
             assumptions: vec![],
-            activity: VMap::new(),
+            // v.activity: VMap::new(),
             // v.assigns: VMap::new(),
             polarity: VMap::new(),
             user_pol: VMap::new(),
@@ -205,7 +209,7 @@ impl Default for Solver {
             order_heap_data: HeapData::new(),
             ok: true,
             cla_inc: 1.0,
-            var_inc: 1.0,
+            // v.var_inc: 1.0,
             qhead: 0,
             simp_db_assigns: -1,
             simp_db_props: 0,
@@ -217,7 +221,7 @@ impl Default for Solver {
             released_vars: vec![],
             free_vars: vec![],
             seen: VMap::new(),
-            // analyze_stack: vec![],
+            analyze_stack: vec![],
             analyze_toclear: vec![],
             add_tmp: vec![],
             max_learnts: 0.0,
@@ -230,10 +234,12 @@ impl Default for Solver {
             asynch_interrupt: false,
 
             v: SolverV {
+                activity: VMap::new(),
                 assigns: VMap::new(),
                 trail: vec![],
                 trail_lim: vec![],
                 vardata: VMap::new(),
+                var_inc: 1.0,
                 num_clauses: 0,
                 num_learnts: 0,
                 clauses_literals: 0,
@@ -251,8 +257,19 @@ impl Solver {
     pub fn num_clauses(&self) -> u32 {
         self.v.num_clauses as u32
     }
+    pub fn num_learnts(&self) -> u32 {
+        self.v.num_learnts as u32
+    }
     pub fn verbosity(&self) -> i32 {
         self.verbosity
+    }
+
+    fn var_decay_activity(&mut self) {
+        self.v.var_inc *= 1.0 / self.var_decay;
+    }
+
+    fn cla_decay_activity(&mut self) {
+        self.cla_inc *= 1.0 / self.clause_decay;
     }
 
     pub fn set_decision_var(&mut self, v: Var, b: bool) {
@@ -362,12 +379,13 @@ impl Solver {
             .vardata
             .insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.rnd_init_act {
-            self.activity
+            self.v
+                .activity
                 .insert_default(v, drand(&mut self.random_seed) * 0.00001);
         } else {
-            self.activity.insert_default(v, 0.0);
+            self.v.activity.insert_default(v, 0.0);
         }
-        self.seen.insert_default(v, false);
+        self.seen.insert_default(v, Seen::UNDEF);
         self.polarity.insert_default(v, true);
         self.user_pol.insert_default(v, upol);
         self.decision.reserve_default(v);
@@ -438,13 +456,13 @@ impl Solver {
 
             // Remove all released variables from the trail:
             for &rvar in &self.released_vars {
-                debug_assert_eq!(self.seen[rvar], false);
-                self.seen[rvar] = true;
+                debug_assert_eq!(self.seen[rvar], Seen::UNDEF);
+                self.seen[rvar] = Seen::SOURCE;
             }
 
             {
                 let seen = &self.seen;
-                self.v.trail.retain(|&lit| !seen[lit.var()]);
+                self.v.trail.retain(|&lit| !seen[lit.var()].is_seen());
             }
             // eprintln!(
             //     "trail.size()= {}, qhead = {}",
@@ -454,7 +472,7 @@ impl Solver {
             self.qhead = self.v.trail.len() as i32;
 
             for &rvar in &self.released_vars {
-                self.seen[rvar] = false;
+                self.seen[rvar] = Seen::UNDEF;
             }
 
             // Released variables are now ready to be reused:
@@ -487,13 +505,9 @@ impl Solver {
     /// if the clause set is unsatisfiable. 'l_Undef' if the bound on number of conflicts is reached.
     fn search(&mut self, nof_conflicts: i32) -> lbool {
         debug_assert!(self.ok);
-        // int         backtrack_level;
         let mut conflict_c = 0;
         let mut learnt_clause: Vec<Lit> = vec![];
         self.starts += 1;
-        // int         conflictC = 0;
-        // vec<Lit>    learnt_clause;
-        // starts++;
 
         loop {
             let confl = self.propagate();
@@ -506,34 +520,48 @@ impl Solver {
                 }
 
                 learnt_clause.clear();
-                unimplemented!();
-            // analyze(confl, learnt_clause, backtrack_level);
-            // cancelUntil(backtrack_level);
+                let backtrack_level = self.analyze(confl, &mut learnt_clause);
+                self.cancel_until(backtrack_level as u32);
 
-            // if (learnt_clause.size() == 1){
-            //     uncheckedEnqueue(learnt_clause[0]);
-            // }else{
-            //     CRef cr = ca.alloc(learnt_clause, true);
-            //     learnts.push(cr);
-            //     attachClause(cr);
-            //     claBumpActivity(ca[cr]);
-            //     uncheckedEnqueue(learnt_clause[0], cr);
-            // }
+                if learnt_clause.len() == 1 {
+                    self.v.unchecked_enqueue(learnt_clause[0], CRef::UNDEF);
+                } else {
+                    let cr = self.ca.alloc_with_learnt(&learnt_clause, true);
+                    self.learnts.push(cr);
+                    self.attach_clause(cr);
+                    unimplemented!();
+                    // claBumpActivity(ca[cr]);
+                    self.v.unchecked_enqueue(learnt_clause[0], cr);
+                }
 
-            // varDecayActivity();
-            // claDecayActivity();
+                self.var_decay_activity();
+                self.cla_decay_activity();
 
-            // if (--learntsize_adjust_cnt == 0){
-            //     learntsize_adjust_confl *= learntsize_adjust_inc;
-            //     learntsize_adjust_cnt    = (int)learntsize_adjust_confl;
-            //     max_learnts             *= learntsize_inc;
+                self.learntsize_adjust_cnt -= 1;
+                if self.learntsize_adjust_cnt == 0 {
+                    self.learntsize_adjust_confl *= self.learntsize_adjust_inc;
+                    self.learntsize_adjust_cnt = self.learntsize_adjust_confl as i32;
+                    self.max_learnts *= self.learntsize_inc;
 
-            //     if (verbosity >= 1)
-            //         printf("| %9d | %7d %8d %8d | %8d %8d %6.0f | %6.3f %% |\n",
-            //                (int)conflicts,
-            //                (int)dec_vars - (trail_lim.size() == 0 ? trail.size() : trail_lim[0]), nClauses(), (int)clauses_literals,
-            //                (int)max_learnts, nLearnts(), (double)learnts_literals/nLearnts(), progressEstimate()*100);
-            // }
+                    if self.verbosity >= 1 {
+                        let trail_lim_head = self.v
+                            .trail_lim
+                            .first()
+                            .cloned()
+                            .unwrap_or(self.v.trail.len() as i32);
+                        println!(
+                            "| {:9} | {:7} {:8} {:8} | {:8} {:8} {:6.0} | {:6.3} % |",
+                            self.conflicts as i32,
+                            self.dec_vars as i32 - trail_lim_head,
+                            self.num_clauses(),
+                            self.v.clauses_literals as i32,
+                            self.max_learnts as i32,
+                            self.num_learnts(),
+                            self.v.learnts_literals as f64 / self.num_learnts() as f64,
+                            self.progress_estimate() * 100.0
+                        );
+                    }
+                }
             } else {
                 // NO CONFLICT
                 if (nof_conflicts >= 0 && conflict_c >= nof_conflicts) || !self.within_budget() {
@@ -634,23 +662,29 @@ impl Solver {
             };
             let nof_clauses = (rest_base * self.restart_first as f64) as i32;
             status = self.search(nof_clauses);
-            // if (!withinBudget()) break;
-            // curr_restarts++;
+            if !self.within_budget() {
+                break;
+            }
+            curr_restarts += 1;
         }
 
-        // if (verbosity >= 1)
-        //     printf("===============================================================================\n");
+        if self.verbosity >= 1 {
+            println!(
+                "==============================================================================="
+            );
+        }
 
-        // if (status == l_True){
-        //     // Extend & copy model:
-        //     model.growTo(nVars());
-        //     for (int i = 0; i < nVars(); i++) model[i] = value(i);
-        // }else if (status == l_False && conflict.size() == 0)
-        //     ok = false;
+        if status == lbool::TRUE {
+            // Extend & copy model:
+            unimplemented!();
+        // model.growTo(nVars());
+        // for (int i = 0; i < nVars(); i++) model[i] = value(i);
+        } else if status == lbool::FALSE && self.conflict.len() == 0 {
+            self.ok = false;
+        }
 
-        // cancelUntil(0);
-        // return status;
-        unimplemented!();
+        self.cancel_until(0);
+        status
     }
 
     /// Shrink 'cs' to contain only non-satisfied clauses.
@@ -739,6 +773,190 @@ impl Solver {
             self.v.trail.resize(trail_lim_level, Lit::UNDEF);
             self.v.trail_lim.resize(level as usize, 0);
         }
+    }
+
+    /// Analyze conflict and produce a reason clause.
+    ///
+    /// # Pre-conditions:
+    ///
+    /// - `out_learnt` is assumed to be cleared.
+    /// - Current decision level must be greater than root level.
+    ///
+    /// # Post-conditions:
+    ///
+    /// - `btlevel` is returned.
+    /// - `out_learnt[0]` is the asserting literal at level `btlevel`.
+    /// - If out_learnt.size() > 1 then `out_learnt[1]` has the greatest decision level of the
+    ///   rest of literals. There may be others from the same level though.
+    fn analyze(&mut self, mut confl: CRef, out_learnt: &mut Vec<Lit>) -> i32 {
+        let mut path_c = 0;
+        let mut p = Lit::UNDEF;
+
+        // Generate conflict clause:
+        //
+        out_learnt.push(Lit::from_idx(0)); // (leave room for the asserting literal)
+        let mut index = self.v.trail.len() - 1;
+
+        loop {
+            debug_assert_ne!(confl, CRef::UNDEF); // (otherwise should be UIP)
+            let c = self.ca.get_mut(confl);
+
+            if c.learnt() {
+                unimplemented!();
+                // self.cla_bump_activity(c);
+            }
+
+            let mut iter = c.iter();
+            if p != Lit::UNDEF {
+                iter.next();
+            }
+            for &q in iter {
+                if !self.seen[q.var()].is_seen() && self.v.level(q.var()) > 0 {
+                    self.v.var_bump_activity(&mut self.order_heap_data, q.var());
+                    self.seen[q.var()] = Seen::SOURCE;
+                    if self.v.level(q.var()) >= self.v.decision_level() as i32 {
+                        path_c += 1;
+                    } else {
+                        out_learnt.push(q);
+                    }
+                }
+            }
+
+            // Select next clause to look at:
+            while !self.seen[self.v.trail[index].var()].is_seen() {
+                index -= 1;
+            }
+            p = self.v.trail[index + 1];
+            confl = self.v.reason(p.var());
+            self.seen[p.var()] = Seen::UNDEF;
+            path_c -= 1;
+
+            if path_c <= 0 {
+                break;
+            }
+        }
+        out_learnt[0] = !p;
+
+        // Simplify conflict clause:
+        //
+        self.analyze_toclear.clear();
+        self.analyze_toclear.extend_from_slice(&out_learnt);
+        let new_size = if self.ccmin_mode == 2 {
+            let mut j = 1;
+            for i in 1..out_learnt.len() {
+                let lit = out_learnt[i];
+                if self.v.reason(lit.var()) == CRef::UNDEF || !self.lit_redundant(lit) {
+                    out_learnt[j] = lit;
+                    j += 1;
+                }
+            }
+            j
+        } else if self.ccmin_mode == 1 {
+            unimplemented!();
+        // for (i = j = 1; i < out_learnt.size(); i++){
+        //     Var x = var(out_learnt[i]);
+
+        //     if (reason(x) == CRef_Undef)
+        //         out_learnt[j++] = out_learnt[i];
+        //     else{
+        //         Clause& c = ca[reason(var(out_learnt[i]))];
+        //         for (int k = 1; k < c.size(); k++)
+        //             if (!seen[var(c[k])] && level(var(c[k])) > 0){
+        //                 out_learnt[j++] = out_learnt[i];
+        //                 break; }
+        //     }
+        // }
+        } else {
+            out_learnt.len()
+        };
+
+        self.max_literals += out_learnt.len() as u64;
+        self.tot_literals += new_size as u64;
+        out_learnt.resize(new_size, Lit::UNDEF);
+
+        // Find correct backtrack level:
+        //
+        let btlevel = if new_size == 1 {
+            0
+        } else {
+            unimplemented!();
+            // int max_i = 1;
+            // // Find the first literal assigned at the next-highest level:
+            // for (int i = 2; i < out_learnt.size(); i++)
+            //     if (level(var(out_learnt[i])) > level(var(out_learnt[max_i])))
+            //         max_i = i;
+            // // Swap-in this literal at index 1:
+            // Lit p             = out_learnt[max_i];
+            // out_learnt[max_i] = out_learnt[1];
+            // out_learnt[1]     = p;
+            // out_btlevel       = level(var(p));
+        };
+
+        for &lit in &self.analyze_toclear {
+            self.seen[lit.var()] = Seen::UNDEF; // ('seen[]' is now cleared)
+        }
+        btlevel
+    }
+
+    // Check if 'p' can be removed from a conflict clause.
+    fn lit_redundant(&mut self, p: Lit) -> bool {
+        debug_assert!(self.seen[p.var()] == Seen::UNDEF || self.seen[p.var()] == Seen::SOURCE);
+        debug_assert!(self.v.reason(p.var()) != CRef::UNDEF);
+
+        let c = self.ca.get_mut(self.v.reason(p.var()));
+        let stack = &mut self.analyze_stack;
+        stack.clear();
+
+        let mut i: u32 = 1;
+        loop {
+            if i < c.size() {
+                unimplemented!();
+            // // Checking 'p'-parents 'l':
+            // Lit l = (*c)[i];
+            //
+            // // Variable at level 0 or previously removable:
+            // if (level(var(l)) == 0 || seen[var(l)] == seen_source || seen[var(l)] == seen_removable){
+            //     continue; }
+            //
+            // // Check variable can not be removed for some local reason:
+            // if (reason(var(l)) == CRef_Undef || seen[var(l)] == seen_failed){
+            //     stack.push(ShrinkStackElem(0, p));
+            //     for (int i = 0; i < stack.size(); i++)
+            //         if (seen[var(stack[i].l)] == seen_undef){
+            //             seen[var(stack[i].l)] = seen_failed;
+            //             analyze_toclear.push(stack[i].l);
+            //         }
+            //
+            //     return false;
+            // }
+
+            // // Recursively check 'l':
+            // stack.push(ShrinkStackElem(i, p));
+            // i  = 0;
+            // p  = l;
+            // c  = &ca[reason(var(p))];
+            } else {
+                unimplemented!();
+                // // Finished with current element 'p' and reason 'c':
+                // if (seen[var(p)] == seen_undef){
+                //     seen[var(p)] = seen_removable;
+                //     analyze_toclear.push(p);
+                // }
+
+                // // Terminate with success if stack is empty:
+                // if (stack.size() == 0) break;
+                //
+                // // Continue with top element on stack:
+                // i  = stack.last().i;
+                // p  = stack.last().l;
+                // c  = &ca[reason(var(p))];
+
+                // stack.pop();
+            }
+            i += 1;
+        }
+
+        true
     }
 
     /// Propagates all enqueued facts. If a conflict arises, the conflicting clause is returned,
@@ -969,7 +1187,7 @@ impl Solver {
 
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {
         self.order_heap_data.promote(VarOrder {
-            activity: &self.activity,
+            activity: &self.v.activity,
         })
     }
     fn watches(&mut self) -> OccLists<Lit, Watcher, WatcherDeleted> {
@@ -987,6 +1205,26 @@ impl SolverV {
     }
     pub fn value_lit(&self, x: Lit) -> lbool {
         self.assigns[x.var()] ^ x.sign()
+    }
+
+    /// Increase a variable with the current 'bump' value.
+    fn var_bump_activity(&mut self, order_heap_data: &mut HeapData<Var>, v: Var) {
+        self.activity[v] += self.var_inc;
+        if self.activity[v] > 1e100 {
+            // Rescale:
+            for (_, x) in self.activity.iter_mut() {
+                *x *= 1e-100;
+            }
+            self.var_inc *= 1e-100;
+        }
+
+        // Update order_heap with respect to new activity:
+        let mut order_heap = order_heap_data.promote(VarOrder {
+            activity: &self.activity,
+        });
+        if order_heap.in_heap(v) {
+            order_heap.decrease(v);
+        }
     }
 
     /// Detach a clause to watcher lists.
@@ -1071,6 +1309,10 @@ impl SolverV {
         self.vardata[x].reason
     }
 
+    fn level(&self, x: Var) -> i32 {
+        self.vardata[x].level
+    }
+
     fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
         debug_assert_eq!(self.value_lit(p), lbool::UNDEF);
         self.assigns[p.var()] = lbool::new(!p.sign());
@@ -1148,6 +1390,38 @@ struct WatcherDeleted<'a> {
 impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
     fn deleted(&self, w: &Watcher) -> bool {
         self.ca.get_ref(w.cref).mark() == 1
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShrinkStackElem {
+    i: u32,
+    l: Lit,
+}
+
+impl ShrinkStackElem {
+    fn new(i: u32, l: Lit) -> Self {
+        Self { i, l }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Seen {
+    UNDEF,
+    SOURCE,
+    REMOVABLE,
+    FAILED,
+}
+
+impl Default for Seen {
+    fn default() -> Self {
+        Seen::UNDEF
+    }
+}
+
+impl Seen {
+    fn is_seen(&self) -> bool {
+        *self != Seen::UNDEF
     }
 }
 

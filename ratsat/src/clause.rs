@@ -35,6 +35,9 @@ impl AsIndex for Var {
     fn as_index(self) -> usize {
         self.0 as usize
     }
+    fn from_index(index: usize) -> Self {
+        Var(index as u32)
+    }
 }
 
 pub type VMap<V> = IntMap<Var, V>;
@@ -98,6 +101,9 @@ impl ops::BitXorAssign<bool> for Lit {
 impl AsIndex for Lit {
     fn as_index(self) -> usize {
         self.0 as usize
+    }
+    fn from_index(index: usize) -> Self {
+        Lit(index as u32)
     }
 }
 
