@@ -271,6 +271,46 @@ impl Solver {
         }
     }
 
+    fn pick_branch_lit(&mut self) -> Lit {
+        let mut next = Var::UNDEF;
+
+        // Random decision:
+        if drand(&mut self.random_seed) < self.random_var_freq && !self.order_heap().is_empty() {
+            let idx_tmp = irand(&mut self.random_seed, self.order_heap_data.len() as i32) as usize;
+            next = self.order_heap_data[idx_tmp];
+            if self.v.value(next) == lbool::UNDEF && self.decision[next] {
+                self.rnd_decisions += 1;
+            }
+        }
+
+        // Activity based decision:
+        while next == Var::UNDEF || self.v.value(next) != lbool::UNDEF || !self.decision[next] {
+            let mut order_heap = self.order_heap();
+            if order_heap.is_empty() {
+                next = Var::UNDEF;
+                break;
+            } else {
+                next = order_heap.remove_min();
+            }
+        }
+
+        // Choose polarity based on different polarity modes (global or per-variable):
+        if next == Var::UNDEF {
+            Lit::UNDEF
+        } else if self.user_pol[next] != lbool::UNDEF {
+            Lit::new(next, self.user_pol[next] == lbool::TRUE)
+        } else if self.rnd_pol {
+            Lit::new(next, drand(&mut self.random_seed) < 0.5)
+        } else {
+            Lit::new(next, self.polarity[next])
+        }
+    }
+
+    /// Begins a new decision level.
+    fn new_decision_level(&mut self) {
+        self.v.trail_lim.push(self.v.trail.len() as i32);
+    }
+
     pub fn num_vars(&self) -> u32 {
         self.next_var.idx()
     }
@@ -430,6 +470,189 @@ impl Solver {
         true
     }
 
+    /// Search for a model that respects a given set of assumptions (With resource constraints).
+    pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
+        self.assumptions.clear();
+        self.assumptions.extend_from_slice(assumps);
+        self.solve_internal()
+    }
+
+    /// Search for a model the specified number of conflicts.
+    /// NOTE! Use negative value for 'nof_conflicts' indicate infinity.
+    ///
+    /// # Output:
+    ///
+    /// 'l_True' if a partial assigment that is consistent with respect to the clauseset is found. If
+    /// all variables are decision variables, this means that the clause set is satisfiable. 'l_False'
+    /// if the clause set is unsatisfiable. 'l_Undef' if the bound on number of conflicts is reached.
+    fn search(&mut self, nof_conflicts: i32) -> lbool {
+        debug_assert!(self.ok);
+        // int         backtrack_level;
+        let mut conflict_c = 0;
+        let mut learnt_clause: Vec<Lit> = vec![];
+        self.starts += 1;
+        // int         conflictC = 0;
+        // vec<Lit>    learnt_clause;
+        // starts++;
+
+        loop {
+            let confl = self.propagate();
+            if confl != CRef::UNDEF {
+                // CONFLICT
+                self.conflicts += 1;
+                conflict_c += 1;
+                if self.v.decision_level() == 0 {
+                    return lbool::FALSE;
+                }
+
+                learnt_clause.clear();
+                unimplemented!();
+            // analyze(confl, learnt_clause, backtrack_level);
+            // cancelUntil(backtrack_level);
+
+            // if (learnt_clause.size() == 1){
+            //     uncheckedEnqueue(learnt_clause[0]);
+            // }else{
+            //     CRef cr = ca.alloc(learnt_clause, true);
+            //     learnts.push(cr);
+            //     attachClause(cr);
+            //     claBumpActivity(ca[cr]);
+            //     uncheckedEnqueue(learnt_clause[0], cr);
+            // }
+
+            // varDecayActivity();
+            // claDecayActivity();
+
+            // if (--learntsize_adjust_cnt == 0){
+            //     learntsize_adjust_confl *= learntsize_adjust_inc;
+            //     learntsize_adjust_cnt    = (int)learntsize_adjust_confl;
+            //     max_learnts             *= learntsize_inc;
+
+            //     if (verbosity >= 1)
+            //         printf("| %9d | %7d %8d %8d | %8d %8d %6.0f | %6.3f %% |\n",
+            //                (int)conflicts,
+            //                (int)dec_vars - (trail_lim.size() == 0 ? trail.size() : trail_lim[0]), nClauses(), (int)clauses_literals,
+            //                (int)max_learnts, nLearnts(), (double)learnts_literals/nLearnts(), progressEstimate()*100);
+            // }
+            } else {
+                // NO CONFLICT
+                if (nof_conflicts >= 0 && conflict_c >= nof_conflicts) || !self.within_budget() {
+                    // Reached bound on number of conflicts:
+                    self.progress_estimate = self.progress_estimate();
+                    self.cancel_until(0);
+                    return lbool::UNDEF;
+                }
+
+                // Simplify the set of problem clauses:
+                if self.v.decision_level() == 0 && !self.simplify() {
+                    return lbool::FALSE;
+                }
+
+                if self.learnts.len() as f64 - self.v.num_assigns() as f64 >= self.max_learnts {
+                    // Reduce the set of learnt clauses:
+                    unimplemented!();
+                    // self.reduce_db();
+                }
+
+                let mut next = Lit::UNDEF;
+                while (self.v.decision_level() as usize) < self.assumptions.len() {
+                    // Perform user provided assumption:
+                    let p = self.assumptions[self.v.decision_level() as usize];
+                    if self.v.value_lit(p) == lbool::TRUE {
+                        // Dummy decision level:
+                        self.new_decision_level();
+                    } else if self.v.value_lit(p) == lbool::FALSE {
+                        unimplemented!();
+                        // analyzeFinal(~p, conflict);
+                        return lbool::FALSE;
+                    } else {
+                        next = p;
+                        break;
+                    }
+                }
+
+                if next == Lit::UNDEF {
+                    // New variable decision:
+                    self.decisions += 1;
+                    next = self.pick_branch_lit();
+
+                    if next == Lit::UNDEF {
+                        // Model found:
+                        return lbool::TRUE;
+                    }
+                }
+
+                // Increase decision level and enqueue 'next'
+                self.new_decision_level();
+                self.v.unchecked_enqueue(next, CRef::UNDEF);
+            }
+        }
+    }
+
+    // NOTE: assumptions passed in member-variable 'assumptions'.
+    /// Main solve method (assumptions given in 'assumptions').
+    fn solve_internal(&mut self) -> lbool {
+        self.model.clear();
+        self.conflict.clear();
+        if !self.ok {
+            return lbool::FALSE;
+        }
+
+        self.solves += 1;
+
+        self.max_learnts = self.num_clauses() as f64 * self.learntsize_factor;
+        if self.max_learnts < self.min_learnts_lim as f64 {
+            self.max_learnts = self.min_learnts_lim as f64;
+        }
+
+        self.learntsize_adjust_confl = self.learntsize_adjust_start_confl as f64;
+        self.learntsize_adjust_cnt = self.learntsize_adjust_confl as i32;
+        let mut status = lbool::UNDEF;
+
+        if self.verbosity >= 1 {
+            println!(
+                "============================[ Search Statistics ]=============================="
+            );
+            println!(
+                "| Conflicts |          ORIGINAL         |          LEARNT          | Progress |"
+            );
+            println!(
+                "|           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |"
+            );
+            println!(
+                "==============================================================================="
+            );
+        }
+
+        // Search:
+        let mut curr_restarts: i32 = 0;
+        while status == lbool::UNDEF {
+            let rest_base = if self.luby_restart {
+                luby(self.restart_inc, curr_restarts)
+            } else {
+                f64::powi(self.restart_inc, curr_restarts)
+            };
+            let nof_clauses = (rest_base * self.restart_first as f64) as i32;
+            status = self.search(nof_clauses);
+            // if (!withinBudget()) break;
+            // curr_restarts++;
+        }
+
+        // if (verbosity >= 1)
+        //     printf("===============================================================================\n");
+
+        // if (status == l_True){
+        //     // Extend & copy model:
+        //     model.growTo(nVars());
+        //     for (int i = 0; i < nVars(); i++) model[i] = value(i);
+        // }else if (status == l_False && conflict.size() == 0)
+        //     ok = false;
+
+        // cancelUntil(0);
+        // return status;
+        unimplemented!();
+    }
+
     /// Shrink 'cs' to contain only non-satisfied clauses.
     // fn remove_satisfied(&mut self, cs: &mut Vec<CRef>) {
     fn remove_satisfied(&mut self, shrink_learnts: bool) {
@@ -496,6 +719,25 @@ impl Solver {
         } else {
             self.v.num_clauses += 1;
             self.v.clauses_literals += size as u64;
+        }
+    }
+
+    /// Revert to the state at given level (keeping all assignment at 'level' but not beyond).
+    fn cancel_until(&mut self, level: u32) {
+        if self.v.decision_level() > level {
+            let trail_lim_last = *self.v.trail_lim.last().expect("trail_lim is empty") as usize;
+            let trail_lim_level = self.v.trail_lim[level as usize] as usize;
+            for c in (trail_lim_level..self.v.trail.len()).rev() {
+                let x = self.v.trail[c].var();
+                self.v.assigns[x] = lbool::UNDEF;
+                if self.phase_saving > 1 || (self.phase_saving == 1 && c > trail_lim_last) {
+                    self.polarity[x] = self.v.trail[c].sign();
+                }
+                self.insert_var_order(x);
+            }
+            self.qhead = trail_lim_level as i32;
+            self.v.trail.resize(trail_lim_level, Lit::UNDEF);
+            self.v.trail_lim.resize(level as usize, 0);
         }
     }
 
@@ -612,6 +854,33 @@ impl Solver {
             );
         }
         self.ca = to;
+    }
+
+    fn progress_estimate(&self) -> f64 {
+        let mut progress = 0.0;
+        let f = 1.0 / self.num_vars() as f64;
+
+        for i in 0..self.v.decision_level() + 1 {
+            let beg: i32 = if i == 0 {
+                0
+            } else {
+                self.v.trail_lim[i as usize - 1]
+            };
+            let end: i32 = if i == self.v.decision_level() {
+                self.v.trail.len() as i32
+            } else {
+                self.v.trail_lim[i as usize]
+            };
+            progress += f64::powi(f, i as i32) * (end - beg) as f64;
+        }
+
+        progress / self.num_vars() as f64
+    }
+
+    fn within_budget(&self) -> bool {
+        !self.asynch_interrupt
+            && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
+            && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
     }
     fn reloc_all(&mut self, to: &mut ClauseAllocator) {
         macro_rules! is_removed {
@@ -882,10 +1151,43 @@ impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
     }
 }
 
+/// Finite subsequences of the Luby-sequence:
+///
+/// ```
+/// 0: 1
+/// 1: 1 1 2
+/// 2: 1 1 2 1 1 2 4
+/// 3: 1 1 2 1 1 2 4 1 1 2 1 1 2 4 8
+/// ...
+/// ```
+fn luby(y: f64, mut x: i32) -> f64 {
+    // Find the finite subsequence that contains index 'x', and the
+    // size of that subsequence:
+    let mut size = 1;
+    let mut seq = 0;
+    while size < x + 1 {
+        seq += 1;
+        size = 2 * size + 1;
+    }
+
+    while size - 1 != x {
+        size = (size - 1) >> 1;
+        seq -= 1;
+        x = x % size;
+    }
+
+    return f64::powi(y, seq);
+}
+
 /// Generate a random double:
 fn drand(seed: &mut f64) -> f64 {
     *seed *= 1389796.0;
     let q = (*seed / 2147483647.0) as i32;
     *seed -= q as f64 * 2147483647.0;
     return *seed / 2147483647.0;
+}
+
+/// Generate a random integer:
+fn irand(seed: &mut f64, size: i32) -> i32 {
+    (drand(seed) * size as f64) as i32
 }

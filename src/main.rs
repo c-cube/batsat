@@ -113,6 +113,9 @@ fn main2() -> io::Result<()> {
         exit(20);
     }
 
+    let ret = solver.solve_limited(&[]);
+    eprintln!("ret = {:?}", ret);
+
     Ok(())
 }
 
