@@ -3,7 +3,8 @@ extern crate flate2;
 extern crate ratsat;
 
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::mem;
 use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
@@ -65,6 +66,13 @@ fn main2() -> io::Result<()> {
         let stdin = io::stdin();
         read_input_autogz(stdin.lock(), &mut solver, is_strict)?;
     }
+
+    let mut resfile = if let Some(result_output_file) = result_output_file {
+        Some(BufWriter::new(File::create(result_output_file)?))
+    } else {
+        None
+    };
+
     if solver.verbosity() > 0 {
         println!(
             "|  Number of variables:  {:12}                                         |",
@@ -87,7 +95,23 @@ fn main2() -> io::Result<()> {
         println!("|                                                                             |");
     }
 
-    solver.simplify();
+    if !solver.simplify() {
+        if let Some(resfile) = resfile.as_mut() {
+            writeln!(resfile, "UNSAT")?;
+            resfile.flush()?;
+        }
+        mem::drop(resfile);
+        if solver.verbosity() > 0 {
+            println!(
+                "==============================================================================="
+            );
+            println!("Solved by unit propagation");
+            // solver.print_stats();
+            println!("");
+        }
+        println!("UNSATISFIABLE");
+        exit(20);
+    }
 
     Ok(())
 }

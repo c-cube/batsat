@@ -388,10 +388,11 @@ impl Solver {
             self.free_vars.extend(self.released_vars.drain(..));
         }
         self.check_garbage();
-        // rebuildOrderHeap();
+        self.rebuild_order_heap();
 
-        // simp_db_assigns = nAssigns();
-        // simp_db_props   = clauses_literals + learnts_literals;   // (shouldn't depend on stats really, but it will do for now)
+        self.simp_db_assigns = self.v.num_assigns() as i32;
+        // (shouldn't depend on stats really, but it will do for now)
+        self.simp_db_props = (self.v.clauses_literals + self.v.learnts_literals) as i64;
 
         true
     }
@@ -437,6 +438,17 @@ impl Solver {
             !satisfied
         });
     }
+
+    fn rebuild_order_heap(&mut self) {
+        let mut vs = vec![];
+        for v in (0..self.num_vars()).map(Var::from_idx) {
+            if self.decision[v] && self.v.value(v) == lbool::UNDEF {
+                vs.push(v);
+            }
+        }
+        self.order_heap().build(&vs);
+    }
+
     fn attach_clause(&mut self, cr: CRef) {
         let (c0, c1, learnt, size) = {
             let c = self.ca.get_ref(cr);
