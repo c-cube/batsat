@@ -272,6 +272,24 @@ impl Solver {
         self.cla_inc *= 1.0 / self.clause_decay;
     }
 
+    fn cla_bump_activity(&mut self, cr: CRef) {
+        let new_activity = {
+            let mut c = self.ca.get_mut(cr);
+            let r = c.activity() + self.cla_inc as f32;
+            c.set_activity(r);
+            r
+        };
+        if new_activity > 1e20 {
+            // Rescale:
+            for &learnt in &self.learnts {
+                let mut c = self.ca.get_mut(learnt);
+                let r = c.activity() * 1e-20;
+                c.set_activity(r);
+            }
+            self.cla_inc *= 1e-20;
+        }
+    }
+
     pub fn set_decision_var(&mut self, v: Var, b: bool) {
         if b && !self.decision[v] {
             self.dec_vars += 1;
@@ -529,8 +547,7 @@ impl Solver {
                     let cr = self.ca.alloc_with_learnt(&learnt_clause, true);
                     self.learnts.push(cr);
                     self.attach_clause(cr);
-                    unimplemented!();
-                    // claBumpActivity(ca[cr]);
+                    self.cla_bump_activity(cr);
                     self.v.unchecked_enqueue(learnt_clause[0], cr);
                 }
 
@@ -838,12 +855,11 @@ impl Solver {
 
         loop {
             debug_assert_ne!(confl, CRef::UNDEF); // (otherwise should be UIP)
-            let c = self.ca.get_mut(confl);
-
-            if c.learnt() {
-                unimplemented!();
-                // self.cla_bump_activity(c);
+            if self.ca.get_ref(confl).learnt() {
+                self.cla_bump_activity(confl);
             }
+
+            let c = self.ca.get_mut(confl);
 
             let mut iter = c.iter();
             if p != Lit::UNDEF {
@@ -919,17 +935,21 @@ impl Solver {
         let btlevel = if new_size == 1 {
             0
         } else {
-            unimplemented!();
-            // int max_i = 1;
-            // // Find the first literal assigned at the next-highest level:
-            // for (int i = 2; i < out_learnt.size(); i++)
-            //     if (level(var(out_learnt[i])) > level(var(out_learnt[max_i])))
-            //         max_i = i;
-            // // Swap-in this literal at index 1:
-            // Lit p             = out_learnt[max_i];
-            // out_learnt[max_i] = out_learnt[1];
-            // out_learnt[1]     = p;
-            // out_btlevel       = level(var(p));
+            let mut max_i = 1;
+            let mut max_level = self.v.level(out_learnt[max_i].var());
+            // Find the first literal assigned at the next-highest level:
+            for i in 2..out_learnt.len() {
+                let level = self.v.level(out_learnt[i].var());
+                if level > max_level {
+                    max_i = i;
+                    max_level = level;
+                }
+            }
+            // Swap-in this literal at index 1:
+            let p = out_learnt[max_i];
+            out_learnt[max_i] = out_learnt[1];
+            out_learnt[1] = p;
+            self.v.level(p.var())
         };
 
         for &lit in &self.analyze_toclear {
