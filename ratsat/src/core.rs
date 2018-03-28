@@ -387,7 +387,7 @@ impl Solver {
             // Released variables are now ready to be reused:
             self.free_vars.extend(self.released_vars.drain(..));
         }
-        // checkGarbage();
+        self.check_garbage();
         // rebuildOrderHeap();
 
         // simp_db_assigns = nAssigns();
@@ -545,6 +545,112 @@ impl Solver {
         self.simp_db_props -= num_props as i64;
 
         confl
+    }
+
+    fn check_garbage(&mut self) {
+        if self.ca.wasted() as f64 > self.ca.len() as f64 * self.garbage_frac {
+            self.garbage_collect();
+        }
+    }
+
+    fn garbage_collect(&mut self) {
+        // Initialize the next region to a size corresponding to the estimated utilization degree. This
+        // is not precise but should avoid some unnecessary reallocations for the new region:
+        let mut to = ClauseAllocator::with_start_cap(self.ca.len() - self.ca.wasted());
+
+        self.reloc_all(&mut to);
+        if self.verbosity >= 2 {
+            println!(
+                "|  Garbage collection:   {:12} bytes => {:12} bytes             |",
+                self.ca.len() * ClauseAllocator::UNIT_SIZE,
+                to.len() * ClauseAllocator::UNIT_SIZE
+            );
+        }
+        self.ca = to;
+    }
+    fn reloc_all(&mut self, to: &mut ClauseAllocator) {
+        macro_rules! is_removed {
+            ($ca:expr, $cr:expr) => {
+                $ca.get_ref($cr).mark() == 1
+            };
+        }
+        // All watchers:
+        //
+        self.watches().clean_all();
+        for v in (0..self.num_vars()).map(Var::from_idx) {
+            for s in 0..2 {
+                let p = Lit::new(v, s != 0);
+                for watch in &mut self.watches_data[p] {
+                    self.ca.reloc(&mut watch.cref, to);
+                }
+            }
+        }
+
+        // All reasons:
+        //
+        for &lit in &self.v.trail {
+            let v = lit.var();
+
+            // Note: it is not safe to call 'locked()' on a relocated clause. This is why we keep
+            // 'dangling' reasons here. It is safe and does not hurt.
+            let reason = self.v.reason(v);
+            if reason != CRef::UNDEF {
+                let cond = {
+                    let c = self.ca.get_ref(reason);
+                    c.reloced() || self.v.locked(&self.ca, c)
+                };
+                if cond {
+                    debug_assert!(!is_removed!(self.ca, reason));
+                    self.ca.reloc(&mut self.v.vardata[v].reason, to);
+                }
+            }
+        }
+
+        // All learnt:
+        //
+        {
+            // let ca = &mut self.ca;
+            // self.learnts.drain_filter(|cr| {
+            //     if !is_removed!(ca, *cr) {
+            //         ca.reloc(cr, to);
+            //         false
+            //     } else {
+            //         true
+            //     }
+            // }).count();
+            let mut j = 0;
+            for i in 0..self.learnts.len() {
+                let cr = self.learnts[i];
+                if !is_removed!(self.ca, cr) {
+                    self.learnts[j] = cr;
+                    j += 1;
+                }
+            }
+            self.learnts.resize(j, CRef::UNDEF);
+        }
+
+        // All original:
+        //
+        {
+            // let ca = &mut self.ca;
+            // self.clauses.drain_filter(|cr| {
+            //     if !is_removed!(ca, *cr) {
+            //         ca.reloc(cr, to);
+            //         false
+            //     } else {
+            //         true
+            //     }
+            // }).count();
+            let mut j = 0;
+            for i in 0..self.clauses.len() {
+                let cr = self.clauses[i];
+                if !is_removed!(self.ca, cr) {
+                    self.clauses[j] = cr;
+                    j += 1;
+                }
+            }
+            self.clauses.resize(j, CRef::UNDEF);
+        }
     }
 
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {

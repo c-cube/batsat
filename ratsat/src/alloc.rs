@@ -16,6 +16,12 @@ impl<T: Copy + Default> RegionAllocator<T> {
             wasted: 0,
         }
     }
+    pub fn len(&self) -> u32 {
+        self.vec.len() as u32
+    }
+    pub fn wasted(&self) -> u32 {
+        self.wasted as u32
+    }
     pub fn alloc(&mut self, size: u32) -> Ref<T> {
         debug_assert!(size > 0);
         let r = Ref(self.vec.len() as u32, PhantomData);

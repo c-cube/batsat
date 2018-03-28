@@ -242,6 +242,10 @@ impl<'a> ClauseRef<'a> {
     pub fn size(&self) -> u32 {
         self.data.len() as u32
     }
+    pub fn relocation(&self) -> CRef {
+        debug_assert!(self.reloced());
+        unsafe { self.data[0].cref }
+    }
     pub fn iter(&self) -> ClauseIter {
         ClauseIter(self.data.iter())
     }
@@ -275,6 +279,15 @@ impl<'a> ClauseMut<'a> {
     pub fn set_reloced(&mut self, reloced: bool) {
         self.header.set_reloced(reloced);
     }
+    pub fn relocation(&self) -> CRef {
+        debug_assert!(self.reloced());
+        unsafe { self.data[0].cref }
+    }
+    pub fn relocate(mut self, c: CRef) {
+        debug_assert!(!self.reloced());
+        self.set_reloced(true);
+        self.data[0].cref = c;
+    }
     pub fn iter(&self) -> ClauseIter {
         ClauseIter(self.data.iter())
     }
@@ -282,6 +295,7 @@ impl<'a> ClauseMut<'a> {
         ClauseIterMut(self.data.iter_mut())
     }
     pub fn shrink(self, new_size: u32) {
+        debug_assert!(2 <= new_size);
         debug_assert!(new_size <= self.size());
         if new_size < self.size() {
             self.header.set_size(new_size);
@@ -442,6 +456,7 @@ impl ClauseHeader {
 }
 
 impl ClauseAllocator {
+    pub const UNIT_SIZE: u32 = 32;
     pub fn with_start_cap(start_cap: u32) -> Self {
         Self {
             ra: RegionAllocator::new(start_cap),
@@ -450,6 +465,12 @@ impl ClauseAllocator {
     }
     pub fn new() -> Self {
         Self::with_start_cap(1024 * 1024)
+    }
+    pub fn len(&self) -> u32 {
+        self.ra.len()
+    }
+    pub fn wasted(&self) -> u32 {
+        self.ra.wasted()
     }
     pub fn alloc_with_learnt(&mut self, clause: &[Lit], learnt: bool) -> CRef {
         let use_extra = learnt | self.extra_clause_field;
@@ -476,6 +497,24 @@ impl ClauseAllocator {
     pub fn alloc(&mut self, clause: &[Lit]) -> CRef {
         self.alloc_with_learnt(clause, false)
     }
+    pub fn alloc_copy(&mut self, from: ClauseRef) -> CRef {
+        let use_extra = from.learnt() | self.extra_clause_field;
+        let cid = self.ra.alloc(1 + from.size() + use_extra as u32);
+        self.ra[cid].header = from.header;
+        // NOTE: the copied clause may lose the extra field.
+        unsafe { &mut self.ra[cid].header }.set_has_extra(use_extra);
+        for (i, &lit) in from.iter().enumerate() {
+            self.ra[cid + 1 + i as u32].lit = lit;
+        }
+        if use_extra {
+            if from.learnt() {
+                self.ra[cid + from.size()].f32 = unsafe { from.extra.unwrap().f32 };
+            } else {
+                self.ra[cid + from.size()].u32 = unsafe { from.extra.unwrap().u32 };
+            }
+        }
+        cid
+    }
 
     pub fn free(&mut self, cr: CRef) {
         let size = {
@@ -487,6 +526,18 @@ impl ClauseAllocator {
 
     pub fn free_amount(&mut self, size: u32) {
         self.ra.free(size);
+    }
+
+    pub fn reloc(&mut self, cr: &mut CRef, to: &mut ClauseAllocator) {
+        let mut c = self.get_mut(*cr);
+
+        if c.reloced() {
+            *cr = c.relocation();
+            return;
+        }
+
+        *cr = to.alloc_copy(c.as_clause_ref());
+        c.relocate(*cr);
     }
 
     pub fn get_ref(&self, cr: CRef) -> ClauseRef {
