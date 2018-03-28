@@ -1,4 +1,5 @@
 use std::cmp;
+use system::{cpu_time, mem_used_peak};
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
@@ -272,6 +273,38 @@ impl Solver {
 
     pub fn num_vars(&self) -> u32 {
         self.next_var.idx()
+    }
+
+    /// Print some current statistics to standard output.
+    pub fn print_stats(&self) {
+        let cpu_time = cpu_time();
+        let mem_used = mem_used_peak();
+        println!("restarts              : {}", self.starts);
+        println!(
+            "conflicts             : {:<12}   ({:.0} /sec)",
+            self.conflicts,
+            self.conflicts as f64 / cpu_time
+        );
+        println!(
+            "decisions             : {:<12}   ({:4.2} % random) ({:.0} /sec)",
+            self.decisions,
+            self.rnd_decisions as f32 * 100.0 / self.decisions as f32,
+            self.decisions as f64 / cpu_time as f64
+        );
+        println!(
+            "propagations          : {:<12}   ({:.0} /sec)",
+            self.propagations,
+            self.propagations as f64 / cpu_time
+        );
+        println!(
+            "conflict literals     : {:<12}   ({:4.2} % deleted)",
+            self.tot_literals,
+            (self.max_literals - self.tot_literals) as f64 * 100.0 / self.max_literals as f64
+        );
+        if mem_used != 0.0 {
+            println!("Memory used           : {:.2} MB", mem_used);
+        }
+        println!("CPU time              : {} s", cpu_time);
     }
 
     /// Creates a new SAT variable in the solver. If 'decision' is cleared, variable will not be

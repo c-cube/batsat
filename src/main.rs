@@ -106,7 +106,7 @@ fn main2() -> io::Result<()> {
                 "==============================================================================="
             );
             println!("Solved by unit propagation");
-            // solver.print_stats();
+            solver.print_stats();
             println!("");
         }
         println!("UNSATISFIABLE");
