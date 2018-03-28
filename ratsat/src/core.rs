@@ -795,7 +795,7 @@ impl Solver {
         // Generate conflict clause:
         //
         out_learnt.push(Lit::from_idx(0)); // (leave room for the asserting literal)
-        let mut index = self.v.trail.len() - 1;
+        let mut index = self.v.trail.len();
 
         loop {
             debug_assert_ne!(confl, CRef::UNDEF); // (otherwise should be UIP)
@@ -823,10 +823,11 @@ impl Solver {
             }
 
             // Select next clause to look at:
-            while !self.seen[self.v.trail[index].var()].is_seen() {
+            while !self.seen[self.v.trail[index - 1].var()].is_seen() {
                 index -= 1;
             }
-            p = self.v.trail[index + 1];
+            p = self.v.trail[index - 1];
+            index -= 1;
             confl = self.v.reason(p.var());
             self.seen[p.var()] = Seen::UNDEF;
             path_c -= 1;
@@ -966,7 +967,6 @@ impl Solver {
     ///
     /// - the propagation queue is empty, even if there was a conflict.
     fn propagate(&mut self) -> CRef {
-        // These macros are to avoid false sharing of references.
         let mut confl = CRef::UNDEF;
         let mut num_props: u32 = 0;
 
@@ -982,7 +982,7 @@ impl Solver {
             let mut j: usize = 0;
             let end: usize = ws.len();
             num_props += 1;
-            while i < end {
+            'clauses: while i < end {
                 // Try to avoid inspecting the clause:
                 let blocker = ws[i].blocker;
                 if self.v.value_lit(blocker) == lbool::TRUE {
@@ -1021,6 +1021,7 @@ impl Solver {
                         // self.watches()[!c[1]].push(w);
                         assert_ne!(!c[1], p);
                         unsafe { &mut (*watches_data_ptr)[!c[1]] }.push(w);
+                        continue 'clauses;
                     }
                 }
 
@@ -1044,7 +1045,7 @@ impl Solver {
                 cref: CRef::UNDEF,
                 blocker: Lit::UNDEF,
             };
-            ws.resize(i - j, dummy);
+            ws.resize(j, dummy);
         }
         self.propagations += num_props as u64;
         self.simp_db_props -= num_props as i64;
