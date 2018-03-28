@@ -248,6 +248,14 @@ impl<'a> ClauseRef<'a> {
     pub fn size(&self) -> u32 {
         self.data.len() as u32
     }
+    pub fn activity(&self) -> f32 {
+        debug_assert!(self.has_extra());
+        unsafe { self.extra.expect("no extra field").f32 }
+    }
+    pub fn abstraction(&self) -> u32 {
+        debug_assert!(self.has_extra());
+        unsafe { self.extra.expect("no extra field").u32 }
+    }
     pub fn relocation(&self) -> CRef {
         debug_assert!(self.reloced());
         unsafe { self.data[0].cref }
@@ -284,6 +292,22 @@ impl<'a> ClauseMut<'a> {
     }
     pub fn set_reloced(&mut self, reloced: bool) {
         self.header.set_reloced(reloced);
+    }
+    pub fn activity(&self) -> f32 {
+        debug_assert!(self.has_extra());
+        unsafe { self.extra.as_ref().expect("no extra field").f32 }
+    }
+    pub fn set_activity(&mut self, activity: f32) {
+        debug_assert!(self.has_extra());
+        self.extra.as_mut().expect("no extra field").f32 = activity;
+    }
+    pub fn abstraction(&self) -> u32 {
+        debug_assert!(self.has_extra());
+        unsafe { self.extra.as_ref().expect("no extra field").u32 }
+    }
+    pub fn set_abstraction(&mut self, abstraction: u32) {
+        debug_assert!(self.has_extra());
+        self.extra.as_mut().expect("no extra field").u32 = abstraction;
     }
     pub fn relocation(&self) -> CRef {
         debug_assert!(self.reloced());

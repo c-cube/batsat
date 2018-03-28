@@ -578,8 +578,7 @@ impl Solver {
 
                 if self.learnts.len() as f64 - self.v.num_assigns() as f64 >= self.max_learnts {
                     // Reduce the set of learnt clauses:
-                    unimplemented!();
-                    // self.reduce_db();
+                    self.reduce_db();
                 }
 
                 let mut next = Lit::UNDEF;
@@ -687,6 +686,44 @@ impl Solver {
 
         self.cancel_until(0);
         status
+    }
+
+    /// Remove half of the learnt clauses, minus the clauses locked by the current assignment. Locked
+    /// clauses are clauses that are reason to some assignment. Binary clauses are never removed.
+    fn reduce_db(&mut self) {
+        let extra_lim = self.cla_inc / self.learnts.len() as f64; // Remove any clause below this activity
+
+        {
+            let ca = &self.ca;
+            self.learnts.sort_unstable_by(|&x, &y| {
+                let x = ca.get_ref(x);
+                let y = ca.get_ref(y);
+                Ord::cmp(&(x.size() > 2), &(y.size() > 2)).then(
+                    PartialOrd::partial_cmp(&x.activity(), &y.activity()).expect("NaN activity"),
+                )
+            });
+        }
+        // Don't delete binary or locked clauses. From the rest, delete clauses from the first half
+        // and clauses with activity smaller than 'extra_lim':
+        let mut j = 0;
+        for i in 0..self.learnts.len() {
+            let cr = self.learnts[i];
+            let cond = {
+                let c = self.ca.get_ref(cr);
+                c.size() > 2 && !self.v.locked(&self.ca, c)
+                    && (i < self.learnts.len() / 2 || (c.activity() as f64) < extra_lim)
+            };
+            if cond {
+                self.v
+                    .remove_clause(&mut self.ca, &mut self.watches_data, cr);
+            } else {
+                self.learnts[j] = cr;
+                j += 1;
+            }
+        }
+        // self.learnts.resize_default(j);
+        self.learnts.resize(j, CRef::UNDEF);
+        self.check_garbage();
     }
 
     /// Shrink 'cs' to contain only non-satisfied clauses.
