@@ -676,9 +676,11 @@ impl Solver {
 
         if status == lbool::TRUE {
             // Extend & copy model:
-            unimplemented!();
-        // model.growTo(nVars());
-        // for (int i = 0; i < nVars(); i++) model[i] = value(i);
+            let num_vars = self.num_vars();
+            self.model.resize(num_vars as usize, lbool::UNDEF);
+            for i in 0..num_vars {
+                self.model[i as usize] = self.v.value(Var::from_idx(i));
+            }
         } else if status == lbool::FALSE && self.conflict.len() == 0 {
             self.ok = false;
         }
