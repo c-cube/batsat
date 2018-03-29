@@ -750,7 +750,9 @@ impl Solver {
             self.learnts.sort_unstable_by(|&x, &y| {
                 let x = ca.get_ref(x);
                 let y = ca.get_ref(y);
-                Ord::cmp(&(x.size() > 2), &(y.size() > 2)).then(
+                debug_assert!(x.learnt());
+                debug_assert!(y.learnt());
+                Ord::cmp(&(x.size() <= 2), &(y.size() <= 2)).then(
                     PartialOrd::partial_cmp(&x.activity(), &y.activity()).expect("NaN activity"),
                 )
             });
@@ -1304,8 +1306,9 @@ impl Solver {
             // }).count();
             let mut j = 0;
             for i in 0..self.learnts.len() {
-                let cr = self.learnts[i];
+                let mut cr = self.learnts[i];
                 if !is_removed!(self.ca, cr) {
+                    self.ca.reloc(&mut cr, to);
                     self.learnts[j] = cr;
                     j += 1;
                 }
@@ -1327,8 +1330,9 @@ impl Solver {
             // }).count();
             let mut j = 0;
             for i in 0..self.clauses.len() {
-                let cr = self.clauses[i];
+                let mut cr = self.clauses[i];
                 if !is_removed!(self.ca, cr) {
+                    self.ca.reloc(&mut cr, to);
                     self.clauses[j] = cr;
                     j += 1;
                 }

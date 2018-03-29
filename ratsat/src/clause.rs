@@ -555,11 +555,7 @@ impl ClauseAllocator {
             self.ra[cid + 1 + i as u32].lit = lit;
         }
         if use_extra {
-            if from.learnt() {
-                self.ra[cid + from.size()].f32 = unsafe { from.extra.unwrap().f32 };
-            } else {
-                self.ra[cid + from.size()].u32 = unsafe { from.extra.unwrap().u32 };
-            }
+            self.ra[cid + 1 + from.size()] = from.extra.unwrap();
         }
         cid
     }
