@@ -21,6 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use std::cmp;
 use std::f64;
+use std::mem;
 use system::{cpu_time, mem_used_peak};
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
@@ -638,9 +639,10 @@ impl Solver {
                         // Dummy decision level:
                         self.new_decision_level();
                     } else if self.v.value_lit(p) == lbool::FALSE {
-                        unimplemented!();
-                    // analyzeFinal(~p, conflict);
-                    // return lbool::FALSE;
+                        let mut conflict = mem::replace(&mut self.conflict, LSet::new());
+                        self.analyze_final(!p, &mut conflict);
+                        self.conflict = conflict;
+                        return lbool::FALSE;
                     } else {
                         next = p;
                         break;
@@ -1001,6 +1003,42 @@ impl Solver {
             self.seen[lit.var()] = Seen::UNDEF; // ('seen[]' is now cleared)
         }
         btlevel
+    }
+
+    // COULD THIS BE IMPLEMENTED BY THE ORDINARIY "analyze" BY SOME REASONABLE GENERALIZATION?
+    /// Specialized analysis procedure to express the final conflict in terms of assumptions.
+    /// Calculates the (possibly empty) set of assumptions that led to the assignment of 'p', and
+    /// stores the result in 'out_conflict'.
+    fn analyze_final(&mut self, p: Lit, out_conflict: &mut LSet) {
+        out_conflict.clear();
+        out_conflict.insert(p);
+
+        if self.v.decision_level() == 0 {
+            return;
+        }
+
+        self.seen[p.var()] = Seen::SOURCE;
+
+        for &lit in &self.v.trail[self.v.trail_lim[0] as usize..] {
+            let x = lit.var();
+            if self.seen[x].is_seen() {
+                let reason = self.v.reason(x);
+                if reason == CRef::UNDEF {
+                    debug_assert!(self.v.level(x) > 0);
+                    out_conflict.insert(!lit);
+                } else {
+                    let c = self.ca.get_mut(reason);
+                    for j in 1..c.size() {
+                        if self.v.level(c[j].var()) > 0 {
+                            self.seen[c[j].var()] = Seen::SOURCE;
+                        }
+                    }
+                }
+                self.seen[x] = Seen::UNDEF;
+            }
+        }
+
+        self.seen[p.var()] = Seen::UNDEF;
     }
 
     // Check if 'p' can be removed from a conflict clause.
