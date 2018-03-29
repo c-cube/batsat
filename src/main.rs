@@ -170,9 +170,6 @@ fn main2() -> io::Result<i32> {
         exit(1);
     }
     let is_strict = matches.value_of("is-strict").is_some();
-    eprintln!("input_file = {:?}", input_file);
-    eprintln!("result_output_file = {:?}", result_output_file);
-    eprintln!("is_strict = {:?}", is_strict);
 
     let mut solver = Solver::new(solver_opts);
     solver.set_verbosity(verbosity);
