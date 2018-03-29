@@ -214,7 +214,6 @@ fn main2() -> io::Result<i32> {
     }
 
     let ret = solver.solve_limited(&[]);
-    eprintln!("ret = {:?}", ret);
     if solver.verbosity() > 0 {
         solver.print_stats();
         println!("");

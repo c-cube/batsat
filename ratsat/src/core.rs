@@ -921,20 +921,31 @@ impl Solver {
             }
             j
         } else if self.ccmin_mode == 1 {
-            unimplemented!();
-        // for (i = j = 1; i < out_learnt.size(); i++){
-        //     Var x = var(out_learnt[i]);
+            let mut j = 1;
+            for i in 1..out_learnt.len() {
+                let lit = out_learnt[i];
+                let x = lit.var();
+                let reason = self.v.reason(x);
 
-        //     if (reason(x) == CRef_Undef)
-        //         out_learnt[j++] = out_learnt[i];
-        //     else{
-        //         Clause& c = ca[reason(var(out_learnt[i]))];
-        //         for (int k = 1; k < c.size(); k++)
-        //             if (!seen[var(c[k])] && level(var(c[k])) > 0){
-        //                 out_learnt[j++] = out_learnt[i];
-        //                 break; }
-        //     }
-        // }
+                let mut retain = true;
+                if reason == CRef::UNDEF {
+                    retain = true;
+                } else {
+                    let c = self.ca.get_ref(reason);
+                    for k in 1..c.size() {
+                        let v = c[k].var();
+                        if !self.seen[v].is_seen() && self.v.level(v) > 0 {
+                            retain = true;
+                            break;
+                        }
+                    }
+                }
+                if retain {
+                    out_learnt[j] = lit;
+                    j += 1;
+                }
+            }
+            j
         } else {
             out_learnt.len()
         };
