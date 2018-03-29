@@ -1,6 +1,6 @@
 [package]
 name = "ratsat"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
 description = "MiniSat reimplemented in Rust"
 homepage = "https://github.com/qnighy/ratsat"

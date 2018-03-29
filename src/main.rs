@@ -42,7 +42,7 @@ fn main() {
 
 fn main2() -> io::Result<i32> {
     let matches = App::new("RatSat")
-        .version("0.0.1")
+        .version("0.0.2")
         .author("Masaki Hara <ackie.h.gmai@gmail.com>")
         .about("MiniSat reimplemented in Rust")
         .arg(Arg::with_name("input-file"))
