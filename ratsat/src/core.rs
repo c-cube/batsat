@@ -343,6 +343,11 @@ impl Solver {
 
     /// Begins a new decision level.
     fn new_decision_level(&mut self) {
+        // eprintln!(
+        //     "decision_level {} -> {}",
+        //     self.v.trail_lim.len(),
+        //     self.v.trail_lim.len() + 1
+        // );
         self.v.trail_lim.push(self.v.trail.len() as i32);
     }
 
@@ -628,6 +633,7 @@ impl Solver {
 
                 // Increase decision level and enqueue 'next'
                 self.new_decision_level();
+                // eprintln!("assumption: {:?}", next);
                 self.v.unchecked_enqueue(next, CRef::UNDEF);
             }
         }
@@ -827,6 +833,7 @@ impl Solver {
             }
             self.qhead = trail_lim_level as i32;
             self.v.trail.resize(trail_lim_level, Lit::UNDEF);
+            // eprintln!("decision_level {} -> {}", self.v.trail_lim.len(), level);
             self.v.trail_lim.resize(level as usize, 0);
         }
     }
@@ -1037,11 +1044,13 @@ impl Solver {
         while (self.qhead as usize) < self.v.trail.len() {
             // 'p' is enqueued fact to propagate.
             let p = self.v.trail[self.qhead as usize];
+            // eprintln!("propagating trail[{}] = {:?}", self.qhead, p);
             self.qhead += 1;
             let watches_data_ptr: *mut OccListsData<_, _> = &mut self.watches_data;
             // let ws = self.watches().lookup_mut(p);
             let ws = self.watches_data
                 .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca });
+            // eprintln!("watcher of {:?} = {:?}", p, ws);
             let mut i: usize = 0;
             let mut j: usize = 0;
             let end: usize = ws.len();
@@ -1093,6 +1102,7 @@ impl Solver {
                 ws[j] = w;
                 j += 1;
                 if self.v.value_lit(first) == lbool::FALSE {
+                    // eprintln!("propagation: conflict at {:?}", first);
                     confl = cr;
                     self.qhead = self.v.trail.len() as i32;
                     // Copy the remaining watches:
@@ -1102,6 +1112,7 @@ impl Solver {
                         i += 1;
                     }
                 } else {
+                    // eprintln!("propagation: got {:?}", first);
                     self.v.unchecked_enqueue(first, cr);
                 }
             }
