@@ -959,59 +959,64 @@ impl Solver {
     }
 
     // Check if 'p' can be removed from a conflict clause.
-    fn lit_redundant(&mut self, p: Lit) -> bool {
+    fn lit_redundant(&mut self, mut p: Lit) -> bool {
         debug_assert!(self.seen[p.var()] == Seen::UNDEF || self.seen[p.var()] == Seen::SOURCE);
         debug_assert!(self.v.reason(p.var()) != CRef::UNDEF);
 
-        let c = self.ca.get_mut(self.v.reason(p.var()));
+        let mut cr = self.v.reason(p.var());
         let stack = &mut self.analyze_stack;
         stack.clear();
 
         let mut i: u32 = 1;
         loop {
+            let c = self.ca.get_mut(cr);
             if i < c.size() {
-                unimplemented!();
-            // // Checking 'p'-parents 'l':
-            // Lit l = (*c)[i];
-            //
-            // // Variable at level 0 or previously removable:
-            // if (level(var(l)) == 0 || seen[var(l)] == seen_source || seen[var(l)] == seen_removable){
-            //     continue; }
-            //
-            // // Check variable can not be removed for some local reason:
-            // if (reason(var(l)) == CRef_Undef || seen[var(l)] == seen_failed){
-            //     stack.push(ShrinkStackElem(0, p));
-            //     for (int i = 0; i < stack.size(); i++)
-            //         if (seen[var(stack[i].l)] == seen_undef){
-            //             seen[var(stack[i].l)] = seen_failed;
-            //             analyze_toclear.push(stack[i].l);
-            //         }
-            //
-            //     return false;
-            // }
+                // Checking 'p'-parents 'l':
+                let l: Lit = c[i];
 
-            // // Recursively check 'l':
-            // stack.push(ShrinkStackElem(i, p));
-            // i  = 0;
-            // p  = l;
-            // c  = &ca[reason(var(p))];
+                // Variable at level 0 or previously removable:
+                if self.v.level(l.var()) == 0 || self.seen[l.var()] == Seen::SOURCE
+                    || self.seen[l.var()] == Seen::REMOVABLE
+                {
+                    i += 1;
+                    continue;
+                }
+
+                // Check variable can not be removed for some local reason:
+                if self.v.reason(l.var()) == CRef::UNDEF || self.seen[l.var()] == Seen::FAILED {
+                    stack.push(ShrinkStackElem::new(0, p));
+                    for elem in stack.iter() {
+                        if self.seen[elem.l.var()] == Seen::UNDEF {
+                            self.seen[elem.l.var()] = Seen::FAILED;
+                            self.analyze_toclear.push(elem.l);
+                        }
+                    }
+
+                    return false;
+                }
+
+                // Recursively check 'l':
+                stack.push(ShrinkStackElem::new(i, p));
+                i = 0;
+                p = l;
+                cr = self.v.reason(p.var());
             } else {
-                unimplemented!();
-                // // Finished with current element 'p' and reason 'c':
-                // if (seen[var(p)] == seen_undef){
-                //     seen[var(p)] = seen_removable;
-                //     analyze_toclear.push(p);
-                // }
+                // Finished with current element 'p' and reason 'c':
+                if self.seen[p.var()] == Seen::UNDEF {
+                    self.seen[p.var()] = Seen::REMOVABLE;
+                    self.analyze_toclear.push(p);
+                }
 
-                // // Terminate with success if stack is empty:
-                // if (stack.size() == 0) break;
-                //
-                // // Continue with top element on stack:
-                // i  = stack.last().i;
-                // p  = stack.last().l;
-                // c  = &ca[reason(var(p))];
+                // Terminate with success if stack is empty:
+                if stack.len() == 0 {
+                    break;
+                }
 
-                // stack.pop();
+                // Continue with top element on stack:
+                let last = stack.pop().expect("stack is empty");
+                i = last.i;
+                p = last.l;
+                cr = self.v.reason(p.var());
             }
             i += 1;
         }
