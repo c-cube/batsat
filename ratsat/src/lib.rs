@@ -5,7 +5,7 @@ pub mod clause;
 pub mod dimacs;
 pub mod core;
 
-pub use core::Solver;
+pub use core::{Solver, SolverOpts};
 pub use clause::{lbool, Lit, Var};
 
 #[cfg(test)]

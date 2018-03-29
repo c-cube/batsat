@@ -9,7 +9,7 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use ratsat::{lbool, Solver};
+use ratsat::{lbool, Solver, SolverOpts};
 
 fn main() {
     let exitcode = main2().unwrap_or_else(|err| {
@@ -33,7 +33,106 @@ fn main2() -> io::Result<i32> {
                 .takes_value(true),
         )
         .arg(Arg::with_name("is-strict").long("strict"))
+        .arg(Arg::with_name("var-decay").long("var-decay")
+             .help("The variable activity decay factor")
+             .default_value("0.95")
+             .takes_value(true))
+        .arg(Arg::with_name("clause-decay").long("cla-decay")
+             .help("The clause activity decay factor")
+             .default_value("0.999")
+             .takes_value(true))
+        .arg(Arg::with_name("random-var-freq").long("rnd-freq")
+             .help("The frequency with which the decision heuristic tries to choose a random variable")
+             .default_value("0.0")
+             .takes_value(true))
+        .arg(Arg::with_name("random-seed").long("rnd-seed")
+             .help("The frequency with which the decision heuristic tries to choose a random variable")
+             .default_value("91648253.0")
+             .takes_value(true))
+        .arg(Arg::with_name("ccmin-mode").long("ccmin-mode")
+             .help("Controls conflict clause minimization (0=none, 1=basic, 2=deep)")
+             .default_value("2")
+             .takes_value(true))
+        .arg(Arg::with_name("phase-saving").long("phase-saving")
+             .help("Controls the level of phase saving (0=none, 1=limited, 2=full)")
+             .default_value("2")
+             .takes_value(true))
+        .arg(Arg::with_name("rnd-init").long("rnd-init")
+             .conflicts_with("no-rnd-init")
+             .help("Randomize the initial activity"))
+        .arg(Arg::with_name("no-rnd-init").long("no-rnd-init")
+             .help("Do not randomize the initial activity [default]"))
+        .arg(Arg::with_name("luby-restart").long("luby")
+             .conflicts_with("no-luby-restart")
+             .help("Use the Luby restart sequence [default]"))
+        .arg(Arg::with_name("no-luby-restart").long("no-luby")
+             .help("Do not use the Luby restart sequence"))
+        .arg(Arg::with_name("restart-first").long("rfirst")
+             .help("The base restart interval")
+             .default_value("100")
+             .takes_value(true))
+        .arg(Arg::with_name("restart-inc").long("rinc")
+             .help("Restart interval increase factor")
+             .default_value("2.0")
+             .takes_value(true))
+        .arg(Arg::with_name("garbage-frac").long("gc-frac")
+             .help("The fraction of wasted memory allowed before a garbage collection is triggered")
+             .default_value("0.20")
+             .takes_value(true))
+        .arg(Arg::with_name("min-learnts-lim").long("min-learnts")
+             .help("Minimum learnt clause limit")
+             .default_value("0")
+             .takes_value(true))
         .get_matches();
+
+    let mut solver_opts = SolverOpts::default();
+    solver_opts.var_decay = matches
+        .value_of("var-decay")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.var_decay);
+    solver_opts.clause_decay = matches
+        .value_of("clause-decay")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.clause_decay);
+    solver_opts.random_var_freq = matches
+        .value_of("random-var-freq")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.random_var_freq);
+    solver_opts.random_seed = matches
+        .value_of("random-seed")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.random_seed);
+    solver_opts.ccmin_mode = matches
+        .value_of("ccmin-mode")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.ccmin_mode);
+    solver_opts.phase_saving = matches
+        .value_of("phase-saving")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.phase_saving);
+    solver_opts.rnd_init_act = matches.is_present("rnd-init-act");
+    solver_opts.luby_restart = !matches.is_present("no-luby-restart");
+    solver_opts.restart_first = matches
+        .value_of("restart-first")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.restart_first);
+    solver_opts.restart_inc = matches
+        .value_of("restart-inc")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.restart_inc);
+    solver_opts.garbage_frac = matches
+        .value_of("garbage-frac")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.garbage_frac);
+    solver_opts.min_learnts_lim = matches
+        .value_of("min-learnts-lim")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(solver_opts.min_learnts_lim);
+
+    if !solver_opts.check() {
+        eprintln!("Invalid option value");
+        exit(1);
+    }
 
     let input_file = matches.value_of("input-file");
     let result_output_file = matches.value_of("result-output-file");
@@ -54,7 +153,7 @@ fn main2() -> io::Result<i32> {
     eprintln!("result_output_file = {:?}", result_output_file);
     eprintln!("is_strict = {:?}", is_strict);
 
-    let mut solver = Solver::default();
+    let mut solver = Solver::new(solver_opts);
     solver.set_verbosity(verbosity);
 
     let initial_time = Instant::now();

@@ -1,4 +1,5 @@
 use std::cmp;
+use std::f64;
 use system::{cpu_time, mem_used_peak};
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
@@ -152,24 +153,31 @@ struct SolverV {
 
 impl Default for Solver {
     fn default() -> Self {
+        Self::new(SolverOpts::default())
+    }
+}
+
+impl Solver {
+    pub fn new(opts: SolverOpts) -> Self {
+        assert!(opts.check());
         Self {
             // Parameters (user settable):
             model: vec![],
             conflict: LSet::new(),
             verbosity: 0,
-            var_decay: 0.95,
-            clause_decay: 0.999,
-            random_var_freq: 0.0,
-            random_seed: 91648253.0,
-            luby_restart: true,
-            ccmin_mode: 2,
-            phase_saving: 2,
+            var_decay: opts.var_decay,
+            clause_decay: opts.clause_decay,
+            random_var_freq: opts.random_var_freq,
+            random_seed: opts.random_seed,
+            luby_restart: opts.luby_restart,
+            ccmin_mode: opts.ccmin_mode,
+            phase_saving: opts.phase_saving,
             rnd_pol: false,
-            rnd_init_act: false,
-            garbage_frac: 0.20,
-            min_learnts_lim: 0,
-            restart_first: 100,
-            restart_inc: 2.0,
+            rnd_init_act: opts.rnd_init_act,
+            garbage_frac: opts.garbage_frac,
+            min_learnts_lim: opts.min_learnts_lim,
+            restart_first: opts.restart_first,
+            restart_inc: opts.restart_inc,
 
             // Parameters (the rest):
             learntsize_factor: 1.0 / 3.0,
@@ -247,9 +255,7 @@ impl Default for Solver {
             },
         }
     }
-}
 
-impl Solver {
     pub fn set_verbosity(&mut self, verbosity: i32) {
         debug_assert!(0 <= verbosity && verbosity <= 2);
         self.verbosity = verbosity;
@@ -1498,6 +1504,54 @@ impl Default for Seen {
 impl Seen {
     fn is_seen(&self) -> bool {
         *self != Seen::UNDEF
+    }
+}
+
+pub struct SolverOpts {
+    pub var_decay: f64,
+    pub clause_decay: f64,
+    pub random_var_freq: f64,
+    pub random_seed: f64,
+    pub ccmin_mode: i32,
+    pub phase_saving: i32,
+    pub rnd_init_act: bool,
+    pub luby_restart: bool,
+    pub restart_first: i32,
+    pub restart_inc: f64,
+    pub garbage_frac: f64,
+    pub min_learnts_lim: i32,
+}
+
+impl Default for SolverOpts {
+    fn default() -> SolverOpts {
+        Self {
+            var_decay: 0.95,
+            clause_decay: 0.999,
+            random_var_freq: 0.0,
+            random_seed: 91648253.0,
+            ccmin_mode: 2,
+            phase_saving: 2,
+            rnd_init_act: false,
+            luby_restart: true,
+            restart_first: 100,
+            restart_inc: 2.0,
+            garbage_frac: 0.20,
+            min_learnts_lim: 0,
+        }
+    }
+}
+
+impl SolverOpts {
+    pub fn check(&self) -> bool {
+        (0.0 < self.var_decay && self.var_decay < 1.0)
+            && (0.0 < self.clause_decay && self.clause_decay < 1.0)
+            && (0.0 <= self.random_var_freq && self.random_var_freq <= 1.0)
+            && (0.0 < self.random_seed && self.random_seed < f64::INFINITY)
+            && (0 <= self.ccmin_mode && self.ccmin_mode <= 2)
+            && (0 <= self.phase_saving && self.phase_saving <= 2) && 1 <= self.restart_first
+            && (1.0 < self.restart_inc && self.restart_inc < f64::INFINITY)
+            && (0.0 < self.garbage_frac && self.garbage_frac < f64::INFINITY)
+            && 0 <= self.min_learnts_lim
     }
 }
 
