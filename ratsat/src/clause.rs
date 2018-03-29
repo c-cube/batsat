@@ -72,9 +72,6 @@ impl Lit {
     pub(crate) fn new(var: Var, sign: bool) -> Self {
         Lit(var.0 * 2 + sign as u32)
     }
-    pub(crate) fn new_positive(var: Var) -> Self {
-        Self::new(var, false)
-    }
     pub(crate) fn from_idx(idx: u32) -> Self {
         Lit(idx)
     }

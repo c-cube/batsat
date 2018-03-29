@@ -639,8 +639,8 @@ impl Solver {
                         self.new_decision_level();
                     } else if self.v.value_lit(p) == lbool::FALSE {
                         unimplemented!();
-                        // analyzeFinal(~p, conflict);
-                        return lbool::FALSE;
+                    // analyzeFinal(~p, conflict);
+                    // return lbool::FALSE;
                     } else {
                         next = p;
                         break;
