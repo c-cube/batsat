@@ -2,6 +2,13 @@
 name = "ratsat-bin"
 version = "0.0.1"
 authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
+description = "MiniSat reimplemented in Rust"
+homepage = "https://github.com/qnighy/ratsat"
+repository = "https://github.com/qnighy/ratsat"
+readme = "README.md"
+keywords = ["sat", "dimacs"]
+categories = ["algorithms", "command-line-utilities"]
+license = "MIT"
 
 [dependencies]
 clap = "2.31.2"

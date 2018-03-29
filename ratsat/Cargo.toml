@@ -1,6 +1,13 @@
 [package]
 name = "ratsat"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
+description = "MiniSat reimplemented in Rust"
+homepage = "https://github.com/qnighy/ratsat"
+repository = "https://github.com/qnighy/ratsat"
+readme = "README.md"
+keywords = ["sat"]
+categories = ["algorithms"]
+license = "MIT"
 
 [dependencies]
