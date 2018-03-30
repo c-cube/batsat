@@ -171,7 +171,7 @@ fn main2() -> io::Result<i32> {
     }
     let is_strict = matches.value_of("is-strict").is_some();
 
-    let mut solver = Solver::new(solver_opts);
+    let mut solver = Solver::new(&solver_opts);
     solver.set_verbosity(verbosity);
 
     let initial_time = Instant::now();

@@ -175,12 +175,12 @@ struct SolverV {
 
 impl Default for Solver {
     fn default() -> Self {
-        Self::new(SolverOpts::default())
+        Self::new(&SolverOpts::default())
     }
 }
 
 impl Solver {
-    pub fn new(opts: SolverOpts) -> Self {
+    pub fn new(opts: &SolverOpts) -> Self {
         assert!(opts.check());
         Self {
             // Parameters (user settable):
@@ -1581,6 +1581,7 @@ impl Seen {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SolverOpts {
     pub var_decay: f64,
     pub clause_decay: f64,
