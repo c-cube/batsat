@@ -16,3 +16,7 @@ flate2 = "1.0"
 ratsat = { version = "=0.0.2", path = "ratsat" }
 
 [workspace]
+
+[[bin]]
+name = "ratsat"
+path = "src/main.rs"
