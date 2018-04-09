@@ -19,6 +19,7 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
+#[macro_use]
 extern crate clap;
 extern crate flate2;
 extern crate ratsat;
@@ -107,48 +108,18 @@ fn main2() -> io::Result<i32> {
         .get_matches();
 
     let mut solver_opts = SolverOpts::default();
-    solver_opts.var_decay = matches
-        .value_of("var-decay")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.var_decay);
-    solver_opts.clause_decay = matches
-        .value_of("clause-decay")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.clause_decay);
-    solver_opts.random_var_freq = matches
-        .value_of("random-var-freq")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.random_var_freq);
-    solver_opts.random_seed = matches
-        .value_of("random-seed")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.random_seed);
-    solver_opts.ccmin_mode = matches
-        .value_of("ccmin-mode")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.ccmin_mode);
-    solver_opts.phase_saving = matches
-        .value_of("phase-saving")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.phase_saving);
+    solver_opts.var_decay = value_t_or_exit!(matches, "var-decay", f64);
+    solver_opts.clause_decay = value_t_or_exit!(matches, "clause-decay", f64);
+    solver_opts.random_var_freq = value_t_or_exit!(matches, "random-var-freq", f64);
+    solver_opts.random_seed = value_t_or_exit!(matches, "random-seed", f64);
+    solver_opts.ccmin_mode = value_t_or_exit!(matches, "ccmin-mode", i32);
+    solver_opts.phase_saving = value_t_or_exit!(matches, "phase-saving", i32);
     solver_opts.rnd_init_act = matches.is_present("rnd-init-act");
     solver_opts.luby_restart = !matches.is_present("no-luby-restart");
-    solver_opts.restart_first = matches
-        .value_of("restart-first")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.restart_first);
-    solver_opts.restart_inc = matches
-        .value_of("restart-inc")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.restart_inc);
-    solver_opts.garbage_frac = matches
-        .value_of("garbage-frac")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.garbage_frac);
-    solver_opts.min_learnts_lim = matches
-        .value_of("min-learnts-lim")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(solver_opts.min_learnts_lim);
+    solver_opts.restart_first = value_t_or_exit!(matches, "restart-first", i32);
+    solver_opts.restart_inc = value_t_or_exit!(matches, "restart-inc", f64);
+    solver_opts.garbage_frac = value_t_or_exit!(matches, "garbage-frac", f64);
+    solver_opts.min_learnts_lim = value_t_or_exit!(matches, "min-learnts-lim", i32);
 
     if !solver_opts.check() {
         eprintln!("Invalid option value");
