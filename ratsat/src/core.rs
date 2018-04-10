@@ -1595,6 +1595,14 @@ pub struct SolverOpts {
     pub restart_inc: f64,
     pub garbage_frac: f64,
     pub min_learnts_lim: i32,
+
+    pub use_asymm: bool,
+    pub use_rcheck: bool,
+    pub use_elim: bool,
+    pub grow: i32,
+    pub clause_lim: i32,
+    pub subsumption_lim: i32,
+    pub simp_garbage_frac: f64,
 }
 
 impl Default for SolverOpts {
@@ -1612,6 +1620,14 @@ impl Default for SolverOpts {
             restart_inc: 2.0,
             garbage_frac: 0.20,
             min_learnts_lim: 0,
+
+            use_asymm: false,
+            use_rcheck: false,
+            use_elim: true,
+            grow: 0,
+            clause_lim: 20,
+            subsumption_lim: 1000,
+            simp_garbage_frac: 0.5,
         }
     }
 }
@@ -1626,7 +1642,8 @@ impl SolverOpts {
             && (0 <= self.phase_saving && self.phase_saving <= 2) && 1 <= self.restart_first
             && (1.0 < self.restart_inc && self.restart_inc < f64::INFINITY)
             && (0.0 < self.garbage_frac && self.garbage_frac < f64::INFINITY)
-            && 0 <= self.min_learnts_lim
+            && 0 <= self.min_learnts_lim && -1 <= self.clause_lim
+            && -1 <= self.subsumption_lim && 0.0 < self.simp_garbage_frac
     }
 }
 

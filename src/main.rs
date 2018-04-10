@@ -105,6 +105,37 @@ fn main2() -> io::Result<i32> {
              .help("Minimum learnt clause limit")
              .default_value("0")
              .takes_value(true))
+        .arg(Arg::with_name("use-asymm").long("asymm")
+             .conflicts_with("no-use-asymm")
+             .help("Shrink clauses by asymmetric branching."))
+        .arg(Arg::with_name("no-use-asymm").long("no-asymm")
+             .help("Do not shrink clauses by asymmetric branching. [default]"))
+        .arg(Arg::with_name("use-rcheck").long("rcheck")
+             .conflicts_with("no-use-rcheck")
+             .help("Check if a clause is already implied. (costly)"))
+        .arg(Arg::with_name("no-use-rcheck").long("no-rcheck")
+             .help("Do not check if a clause is already implied. [default]"))
+        .arg(Arg::with_name("use-elim").long("elim")
+             .conflicts_with("no-use-elim")
+             .help("Perform variable elimination. [default]"))
+        .arg(Arg::with_name("no-use-elim").long("no-elim")
+             .help("Do not perform variable elimination."))
+        .arg(Arg::with_name("grow").long("grow")
+             .help("Allow a variable elimination step to grow by a number of clauses.")
+             .default_value("0")
+             .takes_value(true))
+        .arg(Arg::with_name("clause-lim").long("cl-lim")
+             .help("Variables are not eliminated if it produces a resolvent with a length above this limit. -1 means no limit")
+             .default_value("20")
+             .takes_value(true))
+        .arg(Arg::with_name("subsumption-lim").long("sub-lim")
+             .help("Do not check if subsumption against a clause larger than this. -1 means no limit.")
+             .default_value("1000")
+             .takes_value(true))
+        .arg(Arg::with_name("simp-garbage-frac").long("simp-gc-frac")
+             .help("The fraction of wasted memory allowed before a garbage collection is triggered during simplification.")
+             .default_value("0.5")
+             .takes_value(true))
         .get_matches();
 
     let mut solver_opts = SolverOpts::default();
@@ -120,6 +151,14 @@ fn main2() -> io::Result<i32> {
     solver_opts.restart_inc = value_t_or_exit!(matches, "restart-inc", f64);
     solver_opts.garbage_frac = value_t_or_exit!(matches, "garbage-frac", f64);
     solver_opts.min_learnts_lim = value_t_or_exit!(matches, "min-learnts-lim", i32);
+
+    solver_opts.use_asymm = matches.is_present("use-asymm");
+    solver_opts.use_rcheck = matches.is_present("use-rcheck");
+    solver_opts.use_elim = !matches.is_present("no-use-elim");
+    solver_opts.grow = value_t_or_exit!(matches, "grow", i32);
+    solver_opts.clause_lim = value_t_or_exit!(matches, "clause-lim", i32);
+    solver_opts.subsumption_lim = value_t_or_exit!(matches, "subsumption-lim", i32);
+    solver_opts.simp_garbage_frac = value_t_or_exit!(matches, "simp-garbage-frac", f64);
 
     if !solver_opts.check() {
         eprintln!("Invalid option value");
