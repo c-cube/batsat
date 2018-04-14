@@ -45,7 +45,7 @@ pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) ->
             skip_line(input)?;
         } else if let Some(_) = ch {
             read_clause(input, solver, &mut lits)?;
-            solver.add_clause_reuse(&mut lits);
+            solver.core_add_clause_reuse(&mut lits);
             num_read_clauses += 1;
         } else {
             break;
@@ -72,7 +72,7 @@ fn read_clause<R: BufRead>(
         }
         let var = (parsed_lit.abs() - 1) as u32;
         while var >= solver.num_vars() {
-            solver.new_var_default();
+            solver.core_new_var_default();
         }
         lits.push(Lit::new(Var::from_idx(var), parsed_lit < 0));
     }

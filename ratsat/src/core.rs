@@ -417,7 +417,7 @@ impl Solver {
 
     /// Creates a new SAT variable in the solver. If 'decision' is cleared, variable will not be
     /// used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
-    pub fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
+    pub fn core_new_var(&mut self, upol: lbool, dvar: bool) -> Var {
         let v = self.free_vars.pop().unwrap_or_else(|| {
             let v = self.next_var;
             self.next_var = Var::from_idx(self.next_var.idx() + 1);
@@ -446,11 +446,10 @@ impl Solver {
         v
     }
 
-    pub fn new_var_default(&mut self) -> Var {
-        self.new_var(lbool::UNDEF, true)
+    pub fn core_new_var_default(&mut self) -> Var {
+        self.core_new_var(lbool::UNDEF, true)
     }
-    pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
-        // eprintln!("add_clause({:?})", clause);
+    pub fn core_add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         debug_assert_eq!(self.v.decision_level(), 0);
         if !self.ok {
             return false;
@@ -540,10 +539,10 @@ impl Solver {
     }
 
     /// Search for a model that respects a given set of assumptions (With resource constraints).
-    pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
+    pub fn core_solve_limited(&mut self, assumps: &[Lit]) -> lbool {
         self.assumptions.clear();
         self.assumptions.extend_from_slice(assumps);
-        self.solve_internal()
+        self.core_solve_internal()
     }
 
     /// Search for a model the specified number of conflicts.
@@ -670,7 +669,7 @@ impl Solver {
 
     // NOTE: assumptions passed in member-variable 'assumptions'.
     /// Main solve method (assumptions given in 'assumptions').
-    fn solve_internal(&mut self) -> lbool {
+    fn core_solve_internal(&mut self) -> lbool {
         self.model.clear();
         self.conflict.clear();
         if !self.ok {
@@ -769,7 +768,7 @@ impl Solver {
             };
             if cond {
                 self.v
-                    .remove_clause(&mut self.ca, &mut self.watches_data, cr);
+                    .core_remove_clause(&mut self.ca, &mut self.watches_data, cr);
             } else {
                 self.learnts[j] = cr;
                 j += 1;
@@ -794,7 +793,7 @@ impl Solver {
         cs.retain(|&cr| {
             let satisfied = self_v.satisfied(ca.get_ref(cr));
             if satisfied {
-                self_v.remove_clause(ca, watches_data, cr)
+                self_v.core_remove_clause(ca, watches_data, cr)
             } else {
                 let amount = {
                     let mut c = ca.get_mut(cr);
@@ -1217,7 +1216,7 @@ impl Solver {
         // is not precise but should avoid some unnecessary reallocations for the new region:
         let mut to = ClauseAllocator::with_start_cap(self.ca.len() - self.ca.wasted());
 
-        self.reloc_all(&mut to);
+        self.core_reloc_all(&mut to);
         if self.verbosity >= 2 {
             println!(
                 "|  Garbage collection:   {:12} bytes => {:12} bytes             |",
@@ -1254,7 +1253,7 @@ impl Solver {
             && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
     }
-    fn reloc_all(&mut self, to: &mut ClauseAllocator) {
+    fn core_reloc_all(&mut self, to: &mut ClauseAllocator) {
         macro_rules! is_removed {
             ($ca:expr, $cr:expr) => {
                 $ca.get_ref($cr).mark() == 1
@@ -1435,7 +1434,7 @@ impl SolverV {
         self.detach_clause_strict(ca, watches_data, cr, false)
     }
     /// Detach and free a clause.
-    fn remove_clause(
+    fn core_remove_clause(
         &mut self,
         ca: &mut ClauseAllocator,
         watches_data: &mut OccListsData<Lit, Watcher>,
