@@ -22,10 +22,12 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 use std::cmp;
 use std::f64;
 use std::mem;
+use std::collections::VecDeque;
 use system::{cpu_time, mem_used_peak};
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
-use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
+use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LMap, LSet, OccLists, OccListsData,
+             VMap};
 
 #[derive(Debug)]
 pub struct Solver {
@@ -150,8 +152,54 @@ pub struct Solver {
     propagation_budget: i64,
     asynch_interrupt: bool,
 
+    // Mode of operation:
+    /// Allow a variable elimination step to grow by a number of clauses (default to zero).
+    grow: i32,
+    /// Variables are not eliminated if it produces a resolvent with a length above this limit.
+    /// -1 means no limit.
+    clause_lim: i32,
+    /// Do not check if subsumption against a clause larger than this. -1 means no limit.
+    subsumption_lim: i32,
+    /// A different limit for when to issue a GC during simplification (Also see 'garbage_frac').
+    simp_garbage_frac: f64,
+
+    /// Shrink clauses by asymmetric branching.
+    use_asymm: bool,
+    /// Check if a clause is already implied. Prett costly, and subsumes subsumptions :)
+    use_rcheck: bool,
+    /// Perform variable elimination.
+    use_elim: bool,
+    /// Flag to indicate whether the user needs to look at the full model.
+    extend_model: bool,
+
+    // Statistics:
+    merges: i32,
+    asymm_lits: i32,
+    eliminated_vars: i32,
+
+    // Solver state:
+    elimorder: i32,
+    use_simplification: bool,
+    /// Max variable at the point simplification was turned off.
+    max_simp_var: Var,
+    elimclauses: Vec<u32>,
+    touched: VMap<bool>,
+    occurs_data: OccListsData<Var, CRef>,
+    n_occ: LMap<i32>,
+    elim_heap_data: HeapData<Var>,
+    subsumption_queue: VecDeque<CRef>,
+    frozen: VMap<bool>,
+    frozen_vars: Vec<Var>,
+    eliminated: VMap<bool>,
+    bwdsub_assigns: i32,
+    n_touched: i32,
+
+    // Temporaries:
+    bwdsub_tmpunit: CRef,
+
     v: SolverV,
 }
+
 #[derive(Debug)]
 struct SolverV {
     /// A heuristic measurement of the activity of a variable.
@@ -182,6 +230,9 @@ impl Default for Solver {
 impl Solver {
     pub fn new(opts: &SolverOpts) -> Self {
         assert!(opts.check());
+        let mut ca = ClauseAllocator::new();
+        ca.extra_clause_field = true; // simp
+        let bwdsub_tmpunit = ca.alloc(&[Lit::UNDEF]);
         Self {
             // Parameters (user settable):
             model: vec![],
@@ -244,10 +295,10 @@ impl Solver {
             simp_db_assigns: -1,
             simp_db_props: 0,
             progress_estimate: 0.0,
-            remove_satisfied: true,
+            remove_satisfied: false, // simp
             next_var: Var::from_idx(0),
 
-            ca: ClauseAllocator::new(),
+            ca: ca,
             released_vars: vec![],
             free_vars: vec![],
             seen: VMap::new(),
@@ -262,6 +313,41 @@ impl Solver {
             conflict_budget: -1,
             propagation_budget: -1,
             asynch_interrupt: false,
+
+            // Mode of operation:
+            grow: opts.grow,
+            clause_lim: opts.clause_lim,
+            subsumption_lim: opts.subsumption_lim,
+            simp_garbage_frac: opts.simp_garbage_frac,
+
+            use_asymm: opts.use_asymm,
+            use_rcheck: opts.use_rcheck,
+            use_elim: opts.use_elim,
+            extend_model: true,
+
+            // Statistics:
+            merges: 0,
+            asymm_lits: 0,
+            eliminated_vars: 0,
+
+            // Solver state:
+            elimorder: 0,
+            use_simplification: true,
+            max_simp_var: Var::from_idx(0),
+            elimclauses: Vec::new(),
+            touched: VMap::new(),
+            occurs_data: OccListsData::new(),
+            n_occ: LMap::new(),
+            elim_heap_data: HeapData::new(),
+            subsumption_queue: VecDeque::new(),
+            frozen: VMap::new(),
+            frozen_vars: Vec::new(),
+            eliminated: VMap::new(),
+            bwdsub_assigns: 0,
+            n_touched: 0,
+
+            // Temporaries:
+            bwdsub_tmpunit: bwdsub_tmpunit,
 
             v: SolverV {
                 activity: VMap::new(),
@@ -1374,6 +1460,15 @@ impl Solver {
     fn watches(&mut self) -> OccLists<Lit, Watcher, WatcherDeleted> {
         self.watches_data.promote(WatcherDeleted { ca: &self.ca })
     }
+
+    fn occurs(&mut self) -> OccLists<Var, CRef, ClauseDeleted> {
+        self.occurs_data.promote(ClauseDeleted { ca: &self.ca })
+    }
+
+    fn elim_heap(&mut self) -> Heap<Var, ElimOrder> {
+        self.elim_heap_data
+            .promote(ElimOrder { n_occ: &self.n_occ })
+    }
 }
 
 impl SolverV {
@@ -1582,6 +1677,37 @@ struct WatcherDeleted<'a> {
 impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
     fn deleted(&self, w: &Watcher) -> bool {
         self.ca.get_ref(w.cref).mark() == 1
+    }
+}
+
+struct ClauseDeleted<'a> {
+    ca: &'a ClauseAllocator,
+}
+
+impl<'a> DeletePred<CRef> for ClauseDeleted<'a> {
+    fn deleted(&self, cr: &CRef) -> bool {
+        self.ca.get_ref(*cr).mark() == 1
+    }
+}
+
+struct ElimOrder<'a> {
+    n_occ: &'a LMap<i32>,
+}
+
+impl<'a> ElimOrder<'a> {
+    fn cost(&self, x: Var) -> u64 {
+        self.n_occ[Lit::new(x, false)] as u64 * self.n_occ[Lit::new(x, true)] as u64
+    }
+}
+
+impl<'a> PartialComparator<Var> for ElimOrder<'a> {
+    fn partial_cmp(&self, lhs: &Var, rhs: &Var) -> Option<cmp::Ordering> {
+        Some(self.cmp(lhs, rhs))
+    }
+}
+impl<'a> Comparator<Var> for ElimOrder<'a> {
+    fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
+        Ord::cmp(&self.cost(*lhs), &self.cost(*rhs))
     }
 }
 

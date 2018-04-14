@@ -418,7 +418,7 @@ impl<'a> DoubleEndedIterator for ClauseIterMut<'a> {
 #[derive(Debug)]
 pub struct ClauseAllocator {
     ra: RegionAllocator<ClauseData>,
-    extra_clause_field: bool,
+    pub extra_clause_field: bool,
 }
 #[derive(Clone, Copy)]
 pub union ClauseData {
