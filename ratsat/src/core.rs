@@ -415,6 +415,14 @@ impl Solver {
         println!("CPU time              : {} s", cpu_time);
     }
 
+    pub fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
+        unimplemented!();
+    }
+
+    pub fn new_var_default(&mut self) -> Var {
+        self.new_var(lbool::UNDEF, true)
+    }
+
     /// Creates a new SAT variable in the solver. If 'decision' is cleared, variable will not be
     /// used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
     pub fn core_new_var(&mut self, upol: lbool, dvar: bool) -> Var {
@@ -449,6 +457,11 @@ impl Solver {
     pub fn core_new_var_default(&mut self) -> Var {
         self.core_new_var(lbool::UNDEF, true)
     }
+
+    pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
+        unimplemented!();
+    }
+
     pub fn core_add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         debug_assert_eq!(self.v.decision_level(), 0);
         if !self.ok {
@@ -536,6 +549,10 @@ impl Solver {
         self.simp_db_props = (self.v.clauses_literals + self.v.learnts_literals) as i64;
 
         true
+    }
+
+    pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
+        unimplemented!();
     }
 
     /// Search for a model that respects a given set of assumptions (With resource constraints).
@@ -665,6 +682,10 @@ impl Solver {
                 self.v.unchecked_enqueue(next, CRef::UNDEF);
             }
         }
+    }
+
+    fn solve_internal(&mut self) -> lbool {
+        unimplemented!();
     }
 
     // NOTE: assumptions passed in member-variable 'assumptions'.
@@ -1253,6 +1274,11 @@ impl Solver {
             && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
     }
+
+    fn reloc_all(&mut self, to: &mut ClauseAllocator) {
+        unimplemented!();
+    }
+
     fn core_reloc_all(&mut self, to: &mut ClauseAllocator) {
         macro_rules! is_removed {
             ($ca:expr, $cr:expr) => {
@@ -1433,6 +1459,17 @@ impl SolverV {
     ) {
         self.detach_clause_strict(ca, watches_data, cr, false)
     }
+
+    /// Detach and free a clause.
+    fn remove_clause(
+        &mut self,
+        ca: &mut ClauseAllocator,
+        watches_data: &mut OccListsData<Lit, Watcher>,
+        cr: CRef,
+    ) {
+        unimplemented!();
+    }
+
     /// Detach and free a clause.
     fn core_remove_clause(
         &mut self,

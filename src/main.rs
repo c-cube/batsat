@@ -241,7 +241,7 @@ fn main2() -> io::Result<i32> {
         exit(20);
     }
 
-    let ret = solver.core_solve_limited(&[]);
+    let ret = solver.solve_limited(&[]);
     if solver.verbosity() > 0 {
         solver.print_stats();
         println!("");
