@@ -556,8 +556,48 @@ impl Solver {
         self.core_new_var(lbool::UNDEF, true)
     }
 
-    pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
-        unimplemented!();
+    pub fn add_clause_reuse(&mut self, ps: &mut Vec<Lit>) -> bool {
+        if cfg!(debug_assert) {
+            for &p in ps.iter() {
+                assert!(!self.is_eliminated(p.var()));
+            }
+        }
+
+        let nclauses = self.clauses.len();
+
+        if self.use_rcheck && self.implied(ps) {
+            return true;
+        }
+
+        if self.core_add_clause_reuse(ps) {
+            return false;
+        }
+
+        if self.use_simplification && self.clauses.len() == nclauses + 1 {
+            let cr = *self.clauses.last().unwrap();
+            let c = self.ca.get_ref(cr);
+
+            // NOTE: the clause is added to the queue immediately and then
+            // again during 'gatherTouchedClauses()'. If nothing happens
+            // in between, it will only be checked once. Otherwise, it may
+            // be checked twice unnecessarily. This is an unfortunate
+            // consequence of how backward subsumption is used to mimic
+            // forward subsumption.
+            self.subsumption_queue.push_back(cr);
+            for &p in c.iter() {
+                self.occurs_data[p.var()].push(cr);
+                self.n_occ[p] += 1;
+                self.touched[p.var()] = true;
+                self.n_touched += 1;
+                let mut elim_heap = self.elim_heap_data
+                    .promote(ElimOrder { n_occ: &self.n_occ });
+                if elim_heap.in_heap(p.var()) {
+                    elim_heap.increase(p.var());
+                }
+            }
+        }
+
+        return true;
     }
 
     pub fn core_add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
@@ -1462,6 +1502,29 @@ impl Solver {
             }
             self.clauses.resize(j, CRef::UNDEF);
         }
+    }
+
+    pub fn is_eliminated(&self, v: Var) -> bool {
+        self.eliminated[v]
+    }
+
+    fn implied(&mut self, c: &[Lit]) -> bool {
+        debug_assert_eq!(self.v.decision_level(), 0);
+
+        self.v.trail_lim.push(self.v.trail.len() as i32);
+        for &p in c {
+            if self.v.value_lit(p) == lbool::TRUE {
+                self.cancel_until(0);
+                return true;
+            } else if self.v.value_lit(p) != lbool::FALSE {
+                debug_assert_eq!(self.v.value_lit(p), lbool::UNDEF);
+                self.v.unchecked_enqueue(!p, CRef::UNDEF);
+            }
+        }
+
+        let result = self.propagate() != CRef::UNDEF;
+        self.cancel_until(0);
+        return result;
     }
 
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {
