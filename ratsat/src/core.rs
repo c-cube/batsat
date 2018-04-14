@@ -502,7 +502,19 @@ impl Solver {
     }
 
     pub fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
-        unimplemented!();
+        let v = self.core_new_var(upol, dvar);
+
+        self.frozen.insert_default(v, false);
+        self.eliminated.insert_default(v, false);
+
+        if self.use_simplification {
+            self.n_occ.insert_default(Lit::new(v, false), 0);
+            self.n_occ.insert_default(Lit::new(v, true), 0);
+            self.occurs_data.init(v);
+            self.touched.insert_default(v, false);
+            self.elim_heap().insert(v);
+        }
+        return v;
     }
 
     pub fn new_var_default(&mut self) -> Var {
