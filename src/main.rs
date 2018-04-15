@@ -54,6 +54,18 @@ fn main2() -> io::Result<i32> {
                 .default_value("1")
                 .takes_value(true),
         )
+        .arg(Arg::with_name("pre").long("pre")
+             .conflicts_with("no-pre")
+             .help("Completely turn on any preprocessing. [default]"))
+        .arg(Arg::with_name("no-pre").long("no-pre")
+             .help("Completely turn off any preprocessing."))
+        .arg(Arg::with_name("solve").long("solve")
+             .conflicts_with("no-solve")
+             .help("Completely turn on solving after preprocessing. [default]"))
+        .arg(Arg::with_name("no-solve").long("no-solve")
+             .help("Completely turn off solving after preprocessing."))
+        .arg(Arg::with_name("dimacs").long("dimacs")
+             .help("If given, stop after preprocessing and write the result to this file."))
         .arg(Arg::with_name("is-strict").long("strict"))
         .arg(Arg::with_name("var-decay").long("var-decay")
              .help("The variable activity decay factor")
@@ -167,11 +179,7 @@ fn main2() -> io::Result<i32> {
 
     let input_file = matches.value_of("input-file");
     let result_output_file = matches.value_of("result-output-file");
-    let verbosity = matches
-        .value_of("verbosity")
-        .unwrap()
-        .parse::<i32>()
-        .unwrap_or(0);
+    let verbosity = value_t_or_exit!(matches, "verbosity", i32);
     if verbosity < 0 || verbosity > 2 {
         eprintln!(
             "ERROR! value <{}> is too small for option \"verb\".",
@@ -179,12 +187,18 @@ fn main2() -> io::Result<i32> {
         );
         exit(1);
     }
-    let is_strict = matches.value_of("is-strict").is_some();
+    let pre = !matches.is_present("no-pre");
+    let solve = !matches.is_present("no-solve");
+    let is_strict = matches.is_present("is-strict");
 
     let mut solver = Solver::new(&solver_opts);
     solver.set_verbosity(verbosity);
 
     let initial_time = Instant::now();
+
+    if !pre {
+        solver.eliminate_with(true);
+    }
 
     if let Some(input_file) = input_file {
         let file = BufReader::new(File::open(input_file)?);
@@ -220,10 +234,21 @@ fn main2() -> io::Result<i32> {
             duration.as_secs(),
             duration.subsec_nanos() / 10_000_000
         );
+    }
+
+    solver.eliminate_with(true);
+    let simplified_time = Instant::now();
+    if solver.verbosity() > 0 {
+        let duration = simplified_time - parsed_time;
+        println!(
+            "|  Simplification time:  {:9}.{:02} s                                       |",
+            duration.as_secs(),
+            duration.subsec_nanos() / 10_000_000
+        );
         println!("|                                                                             |");
     }
 
-    if !solver.simplify() {
+    if !solver.ok() {
         if let Some(resfile) = resfile.as_mut() {
             writeln!(resfile, "UNSAT")?;
             resfile.flush()?;
@@ -233,7 +258,7 @@ fn main2() -> io::Result<i32> {
             println!(
                 "==============================================================================="
             );
-            println!("Solved by unit propagation");
+            println!("Solved by simplification");
             solver.print_stats();
             println!("");
         }
@@ -241,7 +266,17 @@ fn main2() -> io::Result<i32> {
         exit(20);
     }
 
-    let ret = solver.solve_limited(&[]);
+    let ret = if solve {
+        solver.solve_limited(&[])
+    } else {
+        println!("===============================================================================");
+        lbool::UNDEF
+    };
+
+    // if dimacs && ret == lbool::UNDEF {
+    //     solver.to_dimacs((const char*)dimacs);
+    // }
+
     if solver.verbosity() > 0 {
         solver.print_stats();
         println!("");

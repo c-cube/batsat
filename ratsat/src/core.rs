@@ -689,6 +689,10 @@ impl Solver {
         true
     }
 
+    pub fn ok(&self) -> bool {
+        self.ok
+    }
+
     pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
         self.solve_limited_with(assumps, true, false)
     }
