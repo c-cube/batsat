@@ -690,7 +690,18 @@ impl Solver {
     }
 
     pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
-        unimplemented!();
+        self.solve_limited_with(assumps, true, false)
+    }
+
+    pub fn solve_limited_with(
+        &mut self,
+        assumps: &[Lit],
+        do_simp: bool,
+        turn_off_simp: bool,
+    ) -> lbool {
+        self.assumptions.clear();
+        self.assumptions.extend_from_slice(assumps);
+        self.solve_internal(do_simp, turn_off_simp)
     }
 
     /// Search for a model that respects a given set of assumptions (With resource constraints).
@@ -822,8 +833,60 @@ impl Solver {
         }
     }
 
-    fn solve_internal(&mut self) -> lbool {
+    pub fn eliminate(&mut self) -> bool {
+        self.eliminate_with(false)
+    }
+
+    pub fn eliminate_with(&mut self, turn_off_elim: bool) -> bool {
         unimplemented!();
+    }
+
+    fn solve_internal(&mut self, do_simp: bool, turn_off_simp: bool) -> lbool {
+        let mut extra_frozen = vec![];
+        let mut result = lbool::TRUE;
+
+        let do_simp = do_simp && self.use_simplification;
+
+        if do_simp {
+            // Assumptions must be temporarily frozen to run variable elimination:
+            for &p in &self.assumptions {
+                let v = p.var();
+
+                // If an assumption has been eliminated, remember it.
+                debug_assert!(!self.is_eliminated(v));
+
+                if !self.frozen[v] {
+                    // Freeze and store.
+                    unimplemented!();
+                    // self.set_frozen(v, true);
+                    // extra_frozen.push(v);
+                }
+            }
+
+            result = lbool::new(self.eliminate_with(turn_off_simp));
+        }
+
+        if result == lbool::TRUE {
+            result = self.core_solve_internal();
+        } else if self.verbosity >= 1 {
+            println!(
+                "==============================================================================="
+            );
+        }
+
+        if result == lbool::TRUE && self.extend_model {
+            unimplemented!();
+            // self.extend_model();
+        }
+
+        if do_simp {
+            // Unfreeze the assumptions that were frozen:
+            for &v in &extra_frozen {
+                self.set_frozen(v, false);
+            }
+        }
+
+        return result;
     }
 
     // NOTE: assumptions passed in member-variable 'assumptions'.
@@ -1504,6 +1567,13 @@ impl Solver {
         }
     }
 
+    fn set_frozen(&mut self, v: Var, b: bool) {
+        self.frozen[v] = b;
+        if self.use_simplification && !b {
+            unimplemented!();
+            // self.update_elim_heap(v);
+        }
+    }
     pub fn is_eliminated(&self, v: Var) -> bool {
         self.eliminated[v]
     }
