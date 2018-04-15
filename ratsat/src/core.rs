@@ -1008,7 +1008,40 @@ impl Solver {
     }
 
     fn gather_touched_clauses(&mut self) {
-        unimplemented!();
+        if self.n_touched == 0 {
+            return;
+        }
+
+        for &cr in &self.subsumption_queue {
+            let mut c = self.ca.get_mut(cr);
+            if c.mark() == 0 {
+                c.set_mark(2);
+            }
+        }
+
+        for i in (0..self.num_vars()).map(Var::from_idx) {
+            if self.touched[i] {
+                let cs = self.occurs_data
+                    .lookup_mut_pred(i, &ClauseDeleted { ca: &self.ca });
+                for &cr in cs.iter() {
+                    let mut c = self.ca.get_mut(cr);
+                    if c.mark() == 0 {
+                        self.subsumption_queue.push_back(cr);
+                        c.set_mark(2);
+                    }
+                }
+                self.touched[i] = false;
+            }
+        }
+
+        for &cr in &self.subsumption_queue {
+            let mut c = self.ca.get_mut(cr);
+            if c.mark() == 2 {
+                c.set_mark(0);
+            }
+        }
+
+        self.n_touched = 0;
     }
 
     fn backward_subsumption_check(&mut self) -> bool {
