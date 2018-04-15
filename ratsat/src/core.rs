@@ -837,12 +837,118 @@ impl Solver {
         }
     }
 
+    /// Perform variable elimination based simplification.
     pub fn eliminate(&mut self) -> bool {
         self.eliminate_with(false)
     }
 
+    /// Perform variable elimination based simplification.
     pub fn eliminate_with(&mut self, turn_off_elim: bool) -> bool {
-        unimplemented!();
+        if !self.simplify() {
+            return false;
+        } else if !self.use_simplification {
+            return true;
+        }
+
+        // Main simplification loop:
+        'main_loop: while self.n_touched > 0 || self.bwdsub_assigns < self.v.trail.len() as i32
+            || self.elim_heap_data.len() > 0
+        {
+            self.gather_touched_clauses();
+            if (self.subsumption_queue.len() > 0 || self.bwdsub_assigns < self.v.trail.len() as i32)
+                && !self.backward_subsumption_check_with(true)
+            {
+                self.ok = false;
+                break 'main_loop;
+            }
+
+            // Empty elim_heap and return immediately on user-interrupt:
+            if self.asynch_interrupt {
+                debug_assert_eq!(self.bwdsub_assigns, self.v.trail.len() as i32);
+                debug_assert_eq!(self.subsumption_queue.len(), 0);
+                debug_assert_eq!(self.n_touched, 0);
+                self.elim_heap().clear();
+                break 'main_loop;
+            }
+
+            // printf("  ## (time = %6.2f s) ELIM: vars = %d\n", cpuTime(), elim_heap.size());
+            let mut cnt: i32 = 0;
+            while !self.elim_heap_data.is_empty() {
+                let elim = self.elim_heap().remove_min();
+
+                if self.asynch_interrupt {
+                    break;
+                }
+
+                if self.is_eliminated(elim) || self.v.value(elim) != lbool::UNDEF {
+                    cnt += 1;
+                    continue;
+                }
+
+                if self.verbosity >= 2 && cnt % 100 == 0 {
+                    print!("elimination left: {:10}\r", self.elim_heap_data.len());
+                }
+
+                if self.use_asymm {
+                    // Temporarily freeze variable. Otherwise, it would immediately end up on the queue again:
+                    let was_frozen = self.frozen[elim];
+                    self.frozen[elim] = true;
+                    if !self.asymm_var(elim) {
+                        self.ok = false;
+                        break 'main_loop;
+                    }
+                    self.frozen[elim] = was_frozen;
+                }
+
+                // At this point, the variable may have been set by assymetric branching, so check it
+                // again. Also, don't eliminate frozen variables:
+                if self.use_elim && self.v.value(elim) == lbool::UNDEF && !self.frozen[elim]
+                    && !self.eliminate_var(elim)
+                {
+                    self.ok = false;
+                    break 'main_loop;
+                }
+
+                let frac = self.simp_garbage_frac;
+                self.check_garbage_with(frac);
+
+                cnt += 1;
+            }
+
+            debug_assert_eq!(self.subsumption_queue.len(), 0);
+        }
+
+        // If no more simplification is needed, free all simplification-related data structures:
+        if turn_off_elim {
+            self.touched.free();
+            self.occurs_data.free();
+            self.n_occ.free();
+            self.elim_heap().clear_dispose(true);
+            self.subsumption_queue.clear();
+            self.subsumption_queue.shrink_to_fit();
+
+            self.use_simplification = false;
+            self.remove_satisfied = true;
+            self.ca.extra_clause_field = false;
+            self.max_simp_var = Var::from_idx(self.num_vars());
+
+            // Force full cleanup (this is safe and desirable since it only happens once):
+            self.rebuild_order_heap();
+            self.garbage_collect();
+        } else {
+            // Cheaper cleanup:
+            self.check_garbage();
+        }
+
+        if self.verbosity >= 1 && self.elimclauses.len() > 0 {
+            println!(
+                "|  Eliminated clauses:     {:10.2} Mb                                      |",
+                (self.elimclauses.len() * ClauseAllocator::UNIT_SIZE as usize) as f64
+                    / (1024 * 1024) as f64
+            );
+        }
+
+        return self.ok;
     }
 
     fn solve_internal(&mut self, do_simp: bool, turn_off_simp: bool) -> lbool {
@@ -891,6 +997,30 @@ impl Solver {
         }
 
         return result;
+    }
+
+    fn asymm_var(&mut self, v: Var) -> bool {
+        unimplemented!();
+    }
+
+    fn update_elim_heap(&mut self, v: Var) {
+        unimplemented!();
+    }
+
+    fn gather_touched_clauses(&mut self) {
+        unimplemented!();
+    }
+
+    fn backward_subsumption_check(&mut self) -> bool {
+        self.backward_subsumption_check_with(false)
+    }
+
+    fn backward_subsumption_check_with(&mut self, verbose: bool) -> bool {
+        unimplemented!();
+    }
+
+    fn eliminate_var(&mut self, v: Var) -> bool {
+        unimplemented!();
     }
 
     // NOTE: assumptions passed in member-variable 'assumptions'.
@@ -1432,7 +1562,12 @@ impl Solver {
     }
 
     fn check_garbage(&mut self) {
-        if self.ca.wasted() as f64 > self.ca.len() as f64 * self.garbage_frac {
+        let frac = self.garbage_frac;
+        self.check_garbage_with(frac)
+    }
+
+    fn check_garbage_with(&mut self, frac: f64) {
+        if self.ca.wasted() as f64 > self.ca.len() as f64 * frac {
             self.garbage_collect();
         }
     }
