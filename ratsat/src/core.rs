@@ -1007,6 +1007,69 @@ impl Solver {
         unimplemented!();
     }
 
+    /// Returns FALSE if clause is always satisfied.
+    fn merge(&mut self, ps: CRef, qs: CRef, v: Var, out_clause: &mut Vec<Lit>) -> bool {
+        self.merges += 1;
+        out_clause.clear();
+
+        let ps = self.ca.get_ref(ps);
+        let qs = self.ca.get_ref(qs);
+        let ps_smallest = ps.size() < qs.size();
+        let (ps, qs) = if ps_smallest { (qs, ps) } else { (ps, qs) };
+
+        'outer_loop: for &q in qs.iter() {
+            if q.var() != v {
+                for &p in ps.iter() {
+                    if p.var() == q.var() {
+                        if p == !q {
+                            return false;
+                        } else {
+                            continue 'outer_loop;
+                        }
+                    }
+                }
+                out_clause.push(q);
+            }
+        }
+
+        for &p in ps.iter() {
+            if p.var() != v {
+                out_clause.push(p);
+            }
+        }
+
+        return true;
+    }
+
+    /// Returns FALSE if clause is always satisfied.
+    fn merge_count(&mut self, ps: CRef, qs: CRef, v: Var, size: &mut i32) -> bool {
+        self.merges += 1;
+
+        let ps = self.ca.get_ref(ps);
+        let qs = self.ca.get_ref(qs);
+        let ps_smallest = ps.size() < qs.size();
+        let (ps, qs) = if ps_smallest { (qs, ps) } else { (ps, qs) };
+
+        *size = (ps.size() - 1) as i32;
+
+        'outer_loop: for &q in qs.iter() {
+            if q.var() != v {
+                for &p in ps.iter() {
+                    if p.var() == q.var() {
+                        if p == !q {
+                            return false;
+                        } else {
+                            continue 'outer_loop;
+                        }
+                    }
+                }
+                *size += 1;
+            }
+        }
+
+        return true;
+    }
+
     fn gather_touched_clauses(&mut self) {
         if self.n_touched == 0 {
             return;
@@ -1053,7 +1116,121 @@ impl Solver {
     }
 
     fn eliminate_var(&mut self, v: Var) -> bool {
-        unimplemented!();
+        debug_assert!(!self.frozen[v]);
+        debug_assert!(!self.is_eliminated(v));
+        debug_assert_eq!(self.v.value(v), lbool::UNDEF);
+
+        // Split the occurrences into positive and negative:
+        let mut pos = vec![];
+        let mut neg = vec![];
+        {
+            let mut cls = self.occurs_data
+                .lookup_mut_pred(v, &ClauseDeleted { ca: &self.ca });
+            for &cr in cls.iter() {
+                if self.ca.get_ref(cr).iter().any(|&p| p == Lit::new(v, false)) {
+                    pos.push(cr);
+                } else {
+                    neg.push(cr);
+                }
+            }
+        }
+
+        // Check wether the increase in number of clauses stays within the allowed ('grow'). Moreover, no
+        // clause must exceed the limit on the maximal clause size (if it is set):
+        let mut cnt = 0;
+        let mut clause_size = 0;
+
+        for &pos_cr in &pos {
+            for &neg_cr in &neg {
+                if self.merge_count(pos_cr, neg_cr, v, &mut clause_size) {
+                    cnt += 1;
+                    if cnt > self.occurs_data[v].len() as i32 + self.grow
+                        || (self.clause_lim != -1 && clause_size > self.clause_lim)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Delete and store old clauses:
+        self.eliminated[v] = true;
+        self.set_decision_var(v, false);
+        self.eliminated_vars += 1;
+
+        fn mk_elim_clause_from_lit(elimclauses: &mut Vec<u32>, x: Lit) {
+            elimclauses.push(x.idx());
+            elimclauses.push(1);
+        }
+
+        fn mk_elim_clause(elimclauses: &mut Vec<u32>, v: Var, c: ClauseRef) {
+            let c: ClauseRef = c;
+            let first = elimclauses.len() as i32;
+            let mut v_pos: i32 = -1;
+
+            // Copy clause to elimclauses-vector. Remember position where the
+            // variable 'v' occurs:
+            for (i, &p) in c.iter().enumerate() {
+                elimclauses.push(p.idx());
+                if p.var() == v {
+                    v_pos = i as i32 + first;
+                }
+            }
+            debug_assert_ne!(v_pos, -1);
+
+            // Swap the first literal with the 'v' literal, so that the literal
+            // containing 'v' will occur first in the clause:
+            elimclauses.swap(v_pos as usize, first as usize);
+
+            // Store the length of the clause last:
+            elimclauses.push(c.size() as u32);
+        }
+
+        if pos.len() > neg.len() {
+            for &neg_cr in &neg {
+                mk_elim_clause(&mut self.elimclauses, v, self.ca.get_ref(neg_cr));
+            }
+            mk_elim_clause_from_lit(&mut self.elimclauses, Lit::new(v, false));
+        } else {
+            for &pos_cr in &pos {
+                mk_elim_clause(&mut self.elimclauses, v, self.ca.get_ref(pos_cr));
+            }
+            mk_elim_clause_from_lit(&mut self.elimclauses, Lit::new(v, true));
+        }
+
+        for &cr in self.occurs_data[v].iter() {
+            self.v
+                .remove_clause(&mut self.ca, &mut self.watches_data, cr);
+        }
+
+        // Produce clauses in cross product:
+        let mut resolvent = mem::replace(&mut self.add_tmp, Vec::new());
+        for &pos_cr in &pos {
+            for &neg_cr in &neg {
+                if self.merge(pos_cr, neg_cr, v, &mut resolvent)
+                    && !self.add_clause_reuse(&mut resolvent)
+                {
+                    return false;
+                }
+            }
+        }
+        self.add_tmp = resolvent;
+
+        // Free occurs list for this variable:
+        self.occurs_data[v].clear();
+        self.occurs_data[v].shrink_to_fit();
+
+        // Free watchers lists for this variable, if possible:
+        if self.watches_data[Lit::new(v, false)].len() == 0 {
+            self.watches_data[Lit::new(v, false)].clear();
+            self.watches_data[Lit::new(v, false)].shrink_to_fit();
+        }
+        if self.watches_data[Lit::new(v, true)].len() == 0 {
+            self.watches_data[Lit::new(v, true)].clear();
+            self.watches_data[Lit::new(v, true)].shrink_to_fit();
+        }
+
+        return self.backward_subsumption_check();
     }
 
     // NOTE: assumptions passed in member-variable 'assumptions'.
