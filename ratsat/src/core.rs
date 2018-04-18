@@ -1786,7 +1786,10 @@ impl Solver {
         // Initialize the next region to a size corresponding to the estimated utilization degree. This
         // is not precise but should avoid some unnecessary reallocations for the new region:
         let mut to = ClauseAllocator::with_start_cap(self.ca.len() - self.ca.wasted());
+        // NOTE: this is important to keep (or lose) the extra fields.
+        to.extra_clause_field = true; // simp
 
+        self.reloc_all(&mut to);
         self.core_reloc_all(&mut to);
         if self.verbosity >= 2 {
             println!(
