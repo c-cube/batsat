@@ -1,0 +1,11 @@
+[package]
+name = "ratsat-ipasir"
+version = "0.1.0"
+authors = ["Simon Cruanes <simon.cruanes.2007@m4x.org>"]
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+
+ratsat = { path = "../ratsat/" }
