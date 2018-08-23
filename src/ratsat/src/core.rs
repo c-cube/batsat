@@ -22,6 +22,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 use std::cmp;
 use std::f64;
 use std::mem;
+use std::sync::atomic::{Ordering,AtomicBool};
 use system::{cpu_time, mem_used_peak};
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
@@ -148,7 +149,7 @@ pub struct Solver {
     // Resource contraints:
     conflict_budget: i64,
     propagation_budget: i64,
-    asynch_interrupt: bool,
+    asynch_interrupt: AtomicBool,
 
     v: SolverV,
 }
@@ -180,6 +181,7 @@ impl Default for Solver {
 }
 
 impl Solver {
+    /// Create a new solver with the given options
     pub fn new(opts: SolverOpts) -> Self {
         assert!(opts.check());
         Self {
@@ -261,7 +263,7 @@ impl Solver {
             // Resource constraints:
             conflict_budget: -1,
             propagation_budget: -1,
-            asynch_interrupt: false,
+            asynch_interrupt: AtomicBool::new(false),
 
             v: SolverV {
                 activity: VMap::new(),
@@ -446,9 +448,13 @@ impl Solver {
         v
     }
 
+    /// Create a new variable with the default polarity
     pub fn new_var_default(&mut self) -> Var {
         self.new_var(lbool::UNDEF, true)
     }
+
+    /// Add a clause to the solver. Returns `false` if the solver is in
+    /// an `UNSAT` state.
     pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         // eprintln!("add_clause({:?})", clause);
         debug_assert_eq!(self.v.decision_level(), 0);
@@ -542,6 +548,7 @@ impl Solver {
     /// Search for a model that respects a given set of assumptions (With resource constraints).
     pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
         self.assumptions.clear();
+        self.asynch_interrupt.store(false, Ordering::SeqCst);
         self.assumptions.extend_from_slice(assumps);
         self.solve_internal()
     }
@@ -1249,8 +1256,13 @@ impl Solver {
         progress / self.num_vars() as f64
     }
 
+    /// Interrupt search asynchronously
+    pub fn interrupt_async(&self) {
+        self.asynch_interrupt.store(true, Ordering::Relaxed);
+    }
+
     fn within_budget(&self) -> bool {
-        !self.asynch_interrupt
+        ! self.asynch_interrupt.load(Ordering::Relaxed)
             && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
     }
