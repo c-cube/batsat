@@ -69,7 +69,7 @@ pub struct Lit(u32);
 impl Lit {
     pub const UNDEF: Lit = Lit(!1);
     pub const ERROR: Lit = Lit(!0);
-    pub(crate) fn new(var: Var, sign: bool) -> Self {
+    pub fn new(var: Var, sign: bool) -> Self {
         Lit(var.0 * 2 + sign as u32)
     }
     pub(crate) fn from_idx(idx: u32) -> Self {
