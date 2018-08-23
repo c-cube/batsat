@@ -176,6 +176,15 @@ impl PartialEq for lbool {
 
 impl Eq for lbool {}
 
+impl ops::Neg for lbool {
+    type Output = lbool;
+    fn neg(self) -> Self {
+        if self.0 == 0 { lbool::FALSE }
+        else if self.0 == 1 { lbool::TRUE }
+        else { lbool::UNDEF }
+    }
+}
+
 impl ops::BitXor<bool> for lbool {
     type Output = lbool;
     fn bitxor(self, rhs: bool) -> Self {
