@@ -1561,6 +1561,7 @@ impl<'a> Comparator<Var> for VarOrder<'a> {
     }
 }
 
+/// Predicate to test whether a clause has been removed from some lit's watchlist
 struct WatcherDeleted<'a> {
     ca: &'a ClauseAllocator,
 }

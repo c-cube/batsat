@@ -129,6 +129,7 @@ pub type LSet = IntSet<Lit>;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy)]
+/// A ternary boolean (true, false, undefined) used for partial assignments.
 pub struct lbool(u8);
 
 impl fmt::Debug for lbool {
@@ -239,12 +240,14 @@ impl ops::BitOrAssign for lbool {
 }
 
 #[derive(Debug, Clone, Copy)]
+/// A reference to some clause
 pub struct ClauseRef<'a> {
     header: ClauseHeader,
     data: &'a [ClauseData],
     extra: Option<ClauseData>,
 }
 #[derive(Debug)]
+/// A mutable reference to some clause, with a temporary lifetime
 pub struct ClauseMut<'a> {
     header: &'a mut ClauseHeader,
     data: &'a mut [ClauseData],
@@ -259,78 +262,100 @@ impl<'a, 'b> PartialEq<ClauseRef<'b>> for ClauseRef<'a> {
 impl<'a> Eq for ClauseRef<'a> {}
 
 impl<'a> ClauseRef<'a> {
+    #[inline(always)]
     pub fn mark(&self) -> u32 {
         self.header.mark()
     }
+    #[inline(always)]
     pub fn learnt(&self) -> bool {
         self.header.learnt()
     }
+    #[inline(always)]
     pub fn has_extra(&self) -> bool {
         self.header.has_extra()
     }
+    #[inline(always)]
     pub fn reloced(&self) -> bool {
         self.header.reloced()
     }
+    #[inline(always)]
     pub fn size(&self) -> u32 {
         self.data.len() as u32
     }
+    #[inline(always)]
     pub fn activity(&self) -> f32 {
         debug_assert!(self.has_extra());
         unsafe { self.extra.expect("no extra field").f32 }
     }
+    #[inline(always)]
     pub fn abstraction(&self) -> u32 {
         debug_assert!(self.has_extra());
         unsafe { self.extra.expect("no extra field").u32 }
     }
+    #[inline(always)]
     pub fn relocation(&self) -> CRef {
         debug_assert!(self.reloced());
         unsafe { self.data[0].cref }
     }
+    #[inline(always)]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
         self.data.iter().map(|lit| unsafe { &lit.lit })
     }
 }
 impl<'a> ClauseMut<'a> {
+    #[inline(always)]
     pub fn mark(&self) -> u32 {
         self.header.mark()
     }
+    #[inline(always)]
     pub fn learnt(&self) -> bool {
         self.header.learnt()
     }
+    #[inline(always)]
     pub fn has_extra(&self) -> bool {
         self.header.has_extra()
     }
+    #[inline(always)]
     pub fn reloced(&self) -> bool {
         self.header.reloced()
     }
+    #[inline(always)]
     pub fn size(&self) -> u32 {
         self.data.len() as u32
     }
+    #[inline(always)]
     pub fn set_mark(&mut self, mark: u32) {
         debug_assert!(mark < 4);
         self.header.set_mark(mark);
     }
+    #[inline(always)]
     pub fn set_learnt(&mut self, learnt: bool) {
         self.header.set_learnt(learnt);
     }
+    #[inline(always)]
     pub fn set_has_extra(&mut self, has_extra: bool) {
         self.header.set_has_extra(has_extra);
     }
+    #[inline(always)]
     pub fn set_reloced(&mut self, reloced: bool) {
         self.header.set_reloced(reloced);
     }
+    #[inline(always)]
     pub fn activity(&self) -> f32 {
         debug_assert!(self.has_extra());
         unsafe { self.extra.as_ref().expect("no extra field").f32 }
     }
+    #[inline(always)]
     pub fn set_activity(&mut self, activity: f32) {
         debug_assert!(self.has_extra());
         self.extra.as_mut().expect("no extra field").f32 = activity;
     }
+    #[inline(always)]
     pub fn abstraction(&self) -> u32 {
         debug_assert!(self.has_extra());
         unsafe { self.extra.as_ref().expect("no extra field").u32 }
     }
+    #[inline(always)]
     pub fn set_abstraction(&mut self, abstraction: u32) {
         debug_assert!(self.has_extra());
         self.extra.as_mut().expect("no extra field").u32 = abstraction;
@@ -382,6 +407,7 @@ impl<'a> ops::Index<u32> for ClauseMut<'a> {
     }
 }
 impl<'a> ops::IndexMut<u32> for ClauseMut<'a> {
+    #[inline(always)]
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
         unsafe { &mut self.data[index as usize].lit }
     }
@@ -416,11 +442,14 @@ impl fmt::Debug for ClauseData {
     }
 }
 
-// unsigned mark      : 2;
-// unsigned learnt    : 1;
-// unsigned has_extra : 1;
-// unsigned reloced   : 1;
-// unsigned size      : 27;
+/// Metadata of a clause
+///
+/// Layout:
+/// unsigned mark      : 2;
+/// unsigned learnt    : 1;
+/// unsigned has_extra : 1;
+/// unsigned reloced   : 1;
+/// unsigned size      : 27;
 #[derive(Clone, Copy)]
 pub struct ClauseHeader(u32);
 
@@ -495,6 +524,7 @@ impl ClauseAllocator {
     pub fn new() -> Self {
         Self::with_start_cap(1024 * 1024)
     }
+    #[inline(always)]
     pub fn len(&self) -> u32 {
         self.ra.len()
     }
@@ -601,11 +631,14 @@ impl ClauseAllocator {
 
 pub type CRef = alloc::Ref<ClauseData>;
 
+/// Predicate that decides whether a value `V` is deleted or not
 pub trait DeletePred<V> {
     fn deleted(&self, &V) -> bool;
 }
 
 #[derive(Debug, Clone)]
+/// List of occurrences of objects of type `K` (e.g. literals) in values
+/// of type `V` (e.g. clauses)
 pub struct OccListsData<K: AsIndex, V> {
     occs: IntMap<K, Vec<V>>,
     dirty: IntMap<K, bool>,
@@ -640,6 +673,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         &mut self.occs[idx]
     }
 
+    /// Remove entries marked as `dirty` (clauses whose watchers have changed)
     pub fn clean_all_pred<P: DeletePred<V>>(&mut self, pred: &P) {
         for &x in &self.dirties {
             // Dirties may contain duplicates so check here if a variable is already cleaned:
@@ -657,6 +691,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         self.dirty[idx] = false;
     }
 
+    /// Mark index `K` as dirty, so it can be cleaned up later
     pub fn smudge(&mut self, idx: K) {
         if !self.dirty[idx] {
             self.dirty[idx] = true;
@@ -664,12 +699,14 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         }
     }
 
+    /// Reset internal data
     pub fn clear(&mut self) {
         self.occs.clear();
         self.dirty.clear();
         self.dirties.clear();
     }
 
+    /// Reset internal data and free memory
     pub fn free(&mut self) {
         self.occs.free();
         self.dirty.free();
