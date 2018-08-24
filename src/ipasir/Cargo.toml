@@ -8,4 +8,4 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 
-ratsat = { path = "../ratsat/" }
+ratsat = { path = "../lib/" }

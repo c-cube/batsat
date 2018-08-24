@@ -86,7 +86,6 @@ dependencies = [
  "clap 2.31.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "flate2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ratsat 0.0.2",
- "ratsat-ipasir 0.1.0",
 ]
 
 [[package]]

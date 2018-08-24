@@ -1,14 +1,17 @@
 [package]
-name = "ratsat"
+name = "ratsat-bin"
 version = "0.0.2"
 authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
 description = "MiniSat reimplemented in Rust"
 homepage = "https://github.com/qnighy/ratsat"
 repository = "https://github.com/qnighy/ratsat"
 readme = "README.md"
-keywords = ["sat"]
-categories = ["algorithms"]
+keywords = ["sat", "dimacs"]
+categories = ["algorithms", "command-line-utilities"]
 license = "MIT"
 
 [dependencies]
-cpu-time = "0.1"
+clap = "2.31.2"
+flate2 = "1.0"
+ratsat = { version = "=0.0.2", path = "../lib/" }
+
