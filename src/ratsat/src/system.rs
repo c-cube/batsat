@@ -17,12 +17,26 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-pub fn cpu_time() -> f64 {
-    // TODO
-    0.0
+use cpu_time::ProcessTime;
+
+#[derive(Debug)]
+pub(crate) struct ResourceMeasure {
+    start: ProcessTime,
 }
 
-pub fn mem_used_peak() -> f64 {
-    // TODO
-    0.0
+impl ResourceMeasure {
+    pub(crate) fn new() -> ResourceMeasure {
+        ResourceMeasure { start: ProcessTime::now() }
+    }
+
+    pub fn cpu_time(&self) -> f64 {
+        let dur = ProcessTime::now().duration_since(self.start);
+        dur.as_secs() as f64 + (dur.subsec_millis() as f64 / 1000.)
+    }
+
+    pub fn mem_used_peak(&self) -> f64 {
+        // TODO
+        0.0
+    }
 }
+

@@ -23,7 +23,7 @@ use std::cmp;
 use std::f64;
 use std::mem;
 use std::sync::atomic::{Ordering,AtomicBool};
-use system::{cpu_time, mem_used_peak};
+use system::ResourceMeasure;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
@@ -150,6 +150,7 @@ pub struct Solver {
     conflict_budget: i64,
     propagation_budget: i64,
     asynch_interrupt: AtomicBool,
+    resource_measure: ResourceMeasure,
 
     v: SolverV,
 }
@@ -264,6 +265,7 @@ impl Solver {
             conflict_budget: -1,
             propagation_budget: -1,
             asynch_interrupt: AtomicBool::new(false),
+            resource_measure: ResourceMeasure::new(),
 
             v: SolverV {
                 activity: VMap::new(),
@@ -387,8 +389,8 @@ impl Solver {
 
     /// Print some current statistics to standard output.
     pub fn print_stats(&self) {
-        let cpu_time = cpu_time();
-        let mem_used = mem_used_peak();
+        let cpu_time = self.resource_measure.cpu_time();
+        let mem_used = self.resource_measure.mem_used_peak();
         println!("restarts              : {}", self.starts);
         println!(
             "conflicts             : {:<12}   ({:.0} /sec)",

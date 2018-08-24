@@ -11,3 +11,4 @@ categories = ["algorithms"]
 license = "MIT"
 
 [dependencies]
+cpu-time = "0.1"
