@@ -388,13 +388,15 @@ impl<'a> ops::IndexMut<u32> for ClauseMut<'a> {
 }
 
 #[derive(Debug)]
+/// Main clause allocator. It stores a set of clauses efficiently.
 pub struct ClauseAllocator {
     ra: RegionAllocator<ClauseData>,
     extra_clause_field: bool,
 }
 
 #[derive(Clone, Copy)]
-/// Content of a clause
+/// Items used in the clause allocator. It should be compact enough that
+/// we do no waste space.
 pub union ClauseData {
     u32: u32,
     f32: f32,
@@ -719,3 +721,15 @@ impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> ops::DerefMut for OccLists<'a
         &mut self.data
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    /// test that ClauseData doesn't waste space
+    #[test]
+    fn test_size_clause_data() {
+        use std::mem;
+        assert_eq!(mem::size_of::<super::ClauseData>(), 4);
+    }
+}
+

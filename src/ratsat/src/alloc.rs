@@ -72,6 +72,9 @@ impl<T: Copy> ops::IndexMut<Ref<T>> for RegionAllocator<T> {
 }
 
 #[derive(Clone, Copy)]
+/// A reference to a `T` value living in the allocator.
+///
+/// The reference is invariant in `T`.
 pub struct Ref<T: Copy>(u32, PhantomData<fn(T) -> T>);
 
 impl<T: Copy> fmt::Debug for Ref<T> {

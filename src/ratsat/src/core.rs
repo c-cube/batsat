@@ -1653,13 +1653,11 @@ impl SolverOpts {
 
 /// Finite subsequences of the Luby-sequence:
 ///
-/// ```
-/// 0: 1
-/// 1: 1 1 2
-/// 2: 1 1 2 1 1 2 4
-/// 3: 1 1 2 1 1 2 4 1 1 2 1 1 2 4 8
+/// > 0: 1
+/// > 1: 1 1 2
+/// > 2: 1 1 2 1 1 2 4
+/// > 3: 1 1 2 1 1 2 4 1 1 2 1 1 2 4 8
 /// ...
-/// ```
 fn luby(y: f64, mut x: i32) -> f64 {
     // Find the finite subsequence that contains index 'x', and the
     // size of that subsequence:
