@@ -10,9 +10,15 @@ keywords = ["sat", "dimacs"]
 categories = ["algorithms", "command-line-utilities"]
 license = "MIT"
 
+[features]
+default = []
+ipasir = ["ratsat-ipasir"]
+
+
 [dependencies]
 clap = "2.31.2"
 flate2 = "1.0"
-ratsat = { version = "=0.0.2", path = "ratsat" }
+ratsat = { version = "=0.0.2", path = "src/ratsat" }
+ratsat-ipasir = { optional=true, path = "src/ipasir/" }
 
 [workspace]
