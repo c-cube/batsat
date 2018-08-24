@@ -83,6 +83,7 @@ impl<T: Copy> fmt::Debug for Ref<T> {
     }
 }
 impl<T: Copy> PartialEq for Ref<T> {
+    #[inline(always)]
     fn eq(&self, rhs: &Self) -> bool {
         self.0 == rhs.0
     }
@@ -94,6 +95,7 @@ impl<T: Copy> PartialOrd for Ref<T> {
     }
 }
 impl<T: Copy> Ord for Ref<T> {
+    #[inline(always)]
     fn cmp(&self, rhs: &Self) -> cmp::Ordering {
         Ord::cmp(&self.0, &rhs.0)
     }
