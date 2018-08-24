@@ -29,6 +29,10 @@ impl ResourceMeasure {
         ResourceMeasure { start: ProcessTime::now() }
     }
 
+    pub fn reset(&mut self) {
+        self.start = ProcessTime::now()
+    }
+
     pub fn cpu_time(&self) -> f64 {
         let dur = ProcessTime::now().duration_since(self.start);
         dur.as_secs() as f64 + (dur.subsec_millis() as f64 / 1000.)

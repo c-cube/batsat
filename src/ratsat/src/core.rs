@@ -149,6 +149,7 @@ pub struct Solver {
     // Resource contraints:
     conflict_budget: i64,
     propagation_budget: i64,
+    max_cpu_lim: f64,
     asynch_interrupt: AtomicBool,
     resource_measure: ResourceMeasure,
 
@@ -265,6 +266,7 @@ impl Solver {
             conflict_budget: -1,
             propagation_budget: -1,
             asynch_interrupt: AtomicBool::new(false),
+            max_cpu_lim: -1.,
             resource_measure: ResourceMeasure::new(),
 
             v: SolverV {
@@ -1258,6 +1260,11 @@ impl Solver {
         progress / self.num_vars() as f64
     }
 
+    /// Set maximum CPU limit, in seconds
+    pub fn set_cpu_lim(&mut self, lim: f64) {
+        self.max_cpu_lim = lim;
+    }
+
     /// Interrupt search asynchronously
     pub fn interrupt_async(&self) {
         self.asynch_interrupt.store(true, Ordering::Relaxed);
@@ -1267,6 +1274,7 @@ impl Solver {
         ! self.asynch_interrupt.load(Ordering::Relaxed)
             && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
+            && (self.max_cpu_lim < 0. || self.resource_measure.cpu_time() < self.max_cpu_lim)
     }
     fn reloc_all(&mut self, to: &mut ClauseAllocator) {
         macro_rules! is_removed {

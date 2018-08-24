@@ -53,6 +53,12 @@ fn main2() -> io::Result<i32> {
                 .default_value("1")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("cpu-lim")
+                .long("cpu-lim")
+                .default_value("-1.0")
+                .takes_value(true),
+        )
         .arg(Arg::with_name("is-strict").long("strict"))
         .arg(Arg::with_name("var-decay").long("var-decay")
              .help("The variable activity decay factor")
@@ -170,9 +176,14 @@ fn main2() -> io::Result<i32> {
         exit(1);
     }
     let is_strict = matches.value_of("is-strict").is_some();
+    let cpu_lim = matches
+        .value_of("cpu-lim")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(-1.0);
 
     let mut solver = Solver::new(solver_opts);
     solver.set_verbosity(verbosity);
+    solver.set_cpu_lim(cpu_lim);
 
     let initial_time = Instant::now();
 
