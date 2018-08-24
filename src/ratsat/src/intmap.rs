@@ -22,7 +22,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 use std::cmp;
 use std::iter;
 use std::ops;
-use std::slice;
 use std::marker::PhantomData;
 
 pub trait AsIndex: Copy {
@@ -33,7 +32,7 @@ pub trait AsIndex: Copy {
 #[derive(Debug)]
 pub struct IntMap<K: AsIndex, V> {
     map: Vec<V>,
-    _marker: PhantomData<fn(K)>,
+    _marker: PhantomData<fn(K)>, // contravariance
 }
 
 impl<K: AsIndex, V> Default for IntMap<K, V> {
@@ -97,66 +96,40 @@ impl<K: AsIndex, V> IntMap<K, V> {
         self.reserve_default(key);
         self[key] = val;
     }
+
+    /// Clear content, keep internal buffers. Does not allocate.
     pub fn clear(&mut self) {
         self.map.clear();
     }
+
+    /// Clear content, free memory
     pub fn free(&mut self) {
         self.map.clear();
         self.map.shrink_to_fit();
     }
-    pub fn iter(&self) -> IntMapIter<K, V> {
-        IntMapIter(self.map.iter().enumerate(), PhantomData)
+    pub fn iter(& self) -> impl iter::Iterator<Item=(K,&V)> {
+        self.map.iter().enumerate().map(|(k, v)| (K::from_index(k), v))
     }
-    pub fn iter_mut(&mut self) -> IntMapIterMut<K, V> {
-        IntMapIterMut(self.map.iter_mut().enumerate(), PhantomData)
+    pub fn iter_mut(&mut self) -> impl iter::Iterator<Item=(K,&mut V)> {
+        self.map.iter_mut().enumerate().map(|(k, v)| (K::from_index(k), v))
     }
 }
 
 impl<K: AsIndex, V> ops::Index<K> for IntMap<K, V> {
     type Output = V;
+    #[inline]
     fn index(&self, index: K) -> &Self::Output {
         &self.map[index.as_index()]
     }
 }
 impl<K: AsIndex, V> ops::IndexMut<K> for IntMap<K, V> {
+    #[inline]
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         &mut self.map[index.as_index()]
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct IntMapIter<'a, K: AsIndex, V: 'a>(
-    iter::Enumerate<slice::Iter<'a, V>>,
-    PhantomData<fn(K)>,
-);
-
-impl<'a, K: AsIndex, V: 'a> Iterator for IntMapIter<'a, K, V> {
-    type Item = (K, &'a V);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(k, v)| (K::from_index(k), v))
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-#[derive(Debug)]
-pub struct IntMapIterMut<'a, K: AsIndex, V: 'a>(
-    iter::Enumerate<slice::IterMut<'a, V>>,
-    PhantomData<fn(K)>,
-);
-
-impl<'a, K: AsIndex, V: 'a> Iterator for IntMapIterMut<'a, K, V> {
-    type Item = (K, &'a mut V);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(k, v)| (K::from_index(k), v))
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct IntSet<K: AsIndex> {
     in_set: IntMap<K, bool>,
     xs: Vec<K>,
@@ -166,14 +139,6 @@ impl<K: AsIndex> Default for IntSet<K> {
         Self {
             in_set: IntMap::default(),
             xs: vec![],
-        }
-    }
-}
-impl<K: AsIndex> Clone for IntSet<K> {
-    fn clone(&self) -> Self {
-        Self {
-            in_set: self.in_set.clone(),
-            xs: self.xs.clone(),
         }
     }
 }
@@ -468,12 +433,15 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
     }
 }
 
+#[inline(always)]
 fn left_index(i: u32) -> u32 {
     i * 2 + 1
 }
+#[inline(always)]
 fn right_index(i: u32) -> u32 {
     (i + 1) * 2
 }
+#[inline(always)]
 fn parent_index(i: u32) -> u32 {
     (i.wrapping_sub(1)) >> 1
 }

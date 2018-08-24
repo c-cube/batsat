@@ -22,7 +22,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 use std::fmt;
 use std::iter::DoubleEndedIterator;
 use std::ops;
-use std::slice;
 use std::u32;
 
 use intmap::{AsIndex, IntMap, IntSet};
@@ -287,8 +286,8 @@ impl<'a> ClauseRef<'a> {
         debug_assert!(self.reloced());
         unsafe { self.data[0].cref }
     }
-    pub fn iter(&self) -> ClauseIter {
-        ClauseIter(self.data.iter())
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
+        self.data.iter().map(|lit| unsafe { &lit.lit })
     }
 }
 impl<'a> ClauseMut<'a> {
@@ -345,11 +344,11 @@ impl<'a> ClauseMut<'a> {
         self.set_reloced(true);
         self.data[0].cref = c;
     }
-    pub fn iter(&self) -> ClauseIter {
-        ClauseIter(self.data.iter())
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
+        self.data.iter().map(|lit| unsafe { &lit.lit })
     }
-    pub fn iter_mut(&mut self) -> ClauseIterMut {
-        ClauseIterMut(self.data.iter_mut())
+    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item=&mut Lit> {
+        self.data.iter_mut().map(|lit| unsafe { &mut lit.lit })
     }
     pub fn shrink(self, new_size: u32) {
         debug_assert!(2 <= new_size);
@@ -388,48 +387,14 @@ impl<'a> ops::IndexMut<u32> for ClauseMut<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ClauseIter<'a>(slice::Iter<'a, ClauseData>);
-
-impl<'a> Iterator for ClauseIter<'a> {
-    type Item = &'a Lit;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|lit| unsafe { &lit.lit })
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-impl<'a> DoubleEndedIterator for ClauseIter<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|lit| unsafe { &lit.lit })
-    }
-}
-
-#[derive(Debug)]
-pub struct ClauseIterMut<'a>(slice::IterMut<'a, ClauseData>);
-
-impl<'a> Iterator for ClauseIterMut<'a> {
-    type Item = &'a mut Lit;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|lit| unsafe { &mut lit.lit })
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-impl<'a> DoubleEndedIterator for ClauseIterMut<'a> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|lit| unsafe { &mut lit.lit })
-    }
-}
-
 #[derive(Debug)]
 pub struct ClauseAllocator {
     ra: RegionAllocator<ClauseData>,
     extra_clause_field: bool,
 }
+
 #[derive(Clone, Copy)]
+/// Content of a clause
 pub union ClauseData {
     u32: u32,
     f32: f32,
@@ -478,18 +443,23 @@ impl ClauseHeader {
                 | ((reloced as u32) << 27) | size,
         )
     }
+    #[inline(always)]
     pub fn mark(&self) -> u32 {
         self.0 >> 30
     }
+    #[inline(always)]
     pub fn learnt(&self) -> bool {
         (self.0 & (1 << 29)) != 0
     }
+    #[inline(always)]
     pub fn has_extra(&self) -> bool {
         (self.0 & (1 << 28)) != 0
     }
+    #[inline(always)]
     pub fn reloced(&self) -> bool {
         (self.0 & (1 << 27)) != 0
     }
+    #[inline(always)]
     pub fn size(&self) -> u32 {
         self.0 & ((1 << 27) - 1)
     }
