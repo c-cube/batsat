@@ -10,6 +10,9 @@ check: prebuild
 clean:
 	@cargo clean
 
+test: build
+	./benchs/test.py
+
 prebuild:
 
 .PHONY: prebuild check release clean
