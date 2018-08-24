@@ -18,7 +18,6 @@ struct IpasirSolver {
     solver: Solver,
     vars: Vec<Var>, // int->var
     cur: Vec<Lit>, // current clause
-    clauses: Vec<Vec<Lit>>,
     assumptions: Vec<Lit>,
 }
 
@@ -28,7 +27,11 @@ impl IpasirSolver {
             vars: Vec::new(),
             solver: Solver::default(),
             cur: Vec::new(),
-            clauses: Vec::new(), assumptions: Vec::new() }
+            assumptions: Vec::new() }
+    }
+
+    fn decompose(&mut self) -> (&mut Solver, &mut Vec<Lit>, &mut Vec<Lit>) {
+        (&mut self.solver, &mut self.cur, &mut self.assumptions)
     }
 
     /// Allocate variables until we get the one corresponding to `x`
@@ -76,10 +79,10 @@ pub extern "C" fn ipasir_release(ptr: *mut c_void) {
 pub extern "C" fn ipasir_add(ptr: *mut c_void, lit: c_int) {
     let mut s = get_solver(ptr);
     if lit == 0 {
-        // push current clause into vector `clauses`, make another one
-        let mut cur = Vec::new();
-        mem::swap(&mut cur, &mut s.cur);
-        s.clauses.push(cur)
+        // push current clause into vector `clauses`, reset it
+        let (solver, cur, _) = s.decompose();
+        solver.add_clause_reuse(cur);
+        cur.clear();
     } else {
         // push literal into clause
         let lit = s.get_lit(lit);
@@ -112,18 +115,16 @@ fn lbool_to_int(x: lbool) -> c_int {
 pub extern "C" fn ipasir_solve(ptr: *mut c_void) -> c_int {
     let mut s = get_solver(ptr);
 
-    // get assumptions in a local var, reset the ones in `s`
-    let mut assumptions = Vec::new();
-    mem::swap(&mut s.assumptions, &mut assumptions);
+    let res = {
+        let (solver, _, assumptions) = s.decompose();
 
-    // add clauses
-    while let Some(mut c) = s.clauses.pop() {
-        s.solver.add_clause_reuse(&mut c);
-    }
-    s.clauses.clear();
+        // solve under assumptions
+        let res = solver.solve_limited(&assumptions);
 
-    // solve under assumptions
-    let res = s.solver.solve_limited(&assumptions);
+        // reset assumptions
+        assumptions.clear();
+        res
+    };
 
     mem::forget(s);
     lbool_to_int(res)
