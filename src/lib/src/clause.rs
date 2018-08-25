@@ -417,7 +417,7 @@ impl<'a> ops::IndexMut<u32> for ClauseMut<'a> {
 /// Main clause allocator. It stores a set of clauses efficiently.
 pub struct ClauseAllocator {
     ra: RegionAllocator<ClauseData>,
-    extra_clause_field: bool,
+    pub(crate) extra_clause_field: bool,
 }
 
 #[derive(Clone, Copy)]

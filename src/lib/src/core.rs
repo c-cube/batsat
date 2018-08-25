@@ -22,13 +22,15 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 use std::cmp;
 use std::f64;
 use std::mem;
+use std::collections::VecDeque;
 use std::sync::atomic::{Ordering,AtomicBool};
 use std::fmt;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
-use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
+use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap, LMap};
 
 #[derive(Debug)]
+/// Main solver state
 pub struct Solver {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
@@ -152,9 +154,60 @@ pub struct Solver {
     asynch_interrupt: AtomicBool,
     stop_pred: StopPredicate,
 
+    simp: SimpState,
+
     v: SolverV,
 }
+
 #[derive(Debug)]
+struct SimpState {
+    /// Allow a variable elimination step to grow by a number of clauses (default to zero).
+    grow: i32,
+    /// Variables are not eliminated if it produces a resolvent with a length above this limit.
+    /// -1 means no limit.
+    clause_lim: i32,
+    /// Do not check if subsumption against a clause larger than this. -1 means no limit.
+    subsumption_lim: i32,
+    /// A different limit for when to issue a GC during simplification (Also see 'garbage_frac').
+    simp_garbage_frac: f64,
+
+    /// Shrink clauses by asymmetric branching.
+    use_asymm: bool,
+    /// Check if a clause is already implied. Prett costly, and subsumes subsumptions :)
+    use_rcheck: bool,
+    /// Perform variable elimination.
+    use_elim: bool,
+    /// Flag to indicate whether the user needs to look at the full model.
+    extend_model: bool,
+
+    // Statistics:
+    merges: i32,
+    asymm_lits: i32,
+    eliminated_vars: i32,
+
+    // Solver state:
+    elimorder: i32,
+    use_simplification: bool,
+    /// Max variable at the point simplification was turned off.
+    max_simp_var: Var,
+    elimclauses: Vec<u32>,
+    touched: VMap<bool>,
+    occurs_data: OccListsData<Var, CRef>,
+    n_occ: LMap<i32>,
+    elim_heap_data: HeapData<Var>,
+    subsumption_queue: VecDeque<CRef>,
+    frozen: VMap<bool>,
+    frozen_vars: Vec<Var>,
+    eliminated: VMap<bool>,
+    bwdsub_assigns: i32,
+    n_touched: i32,
+
+    // Temporaries:
+    bwdsub_tmpunit: CRef,
+}
+
+#[derive(Debug)]
+/// Auxiliary structure that can be borrowed without borrowing the whole solver
 struct SolverV {
     /// A heuristic measurement of the activity of a variable.
     activity: VMap<f64>,
@@ -210,6 +263,9 @@ impl Solver {
     /// Create a new solver with the given options
     pub fn new(opts: SolverOpts) -> Self {
         assert!(opts.check());
+        let mut ca = ClauseAllocator::new();
+        ca.extra_clause_field = opts.use_elim; // true if we use subsumption
+        let bwdsub_tmpunit = ca.alloc(&[Lit::UNDEF]);
         Self {
             // Parameters (user settable):
             model: vec![],
@@ -272,10 +328,10 @@ impl Solver {
             simp_db_assigns: -1,
             simp_db_props: 0,
             progress_estimate: 0.0,
-            remove_satisfied: true,
+            remove_satisfied: false, // simp
             next_var: Var::from_idx(0),
 
-            ca: ClauseAllocator::new(),
+            ca: ca,
             released_vars: vec![],
             free_vars: vec![],
             seen: VMap::new(),
@@ -291,6 +347,42 @@ impl Solver {
             propagation_budget: -1,
             asynch_interrupt: AtomicBool::new(false),
             stop_pred: StopPredicate::none(),
+
+            simp: SimpState {
+                grow: opts.grow,
+                clause_lim: opts.clause_lim,
+                subsumption_lim: opts.subsumption_lim,
+                simp_garbage_frac: opts.simp_garbage_frac,
+
+                use_asymm: opts.use_asymm,
+                use_rcheck: opts.use_rcheck,
+                use_elim: opts.use_elim,
+                extend_model: true,
+
+                // Statistics:
+                merges: 0,
+                asymm_lits: 0,
+                eliminated_vars: 0,
+
+                // Solver state:
+                elimorder: 0,
+                use_simplification: true,
+                max_simp_var: Var::from_idx(0),
+                elimclauses: Vec::new(),
+                touched: VMap::new(),
+                occurs_data: OccListsData::new(),
+                n_occ: LMap::new(),
+                elim_heap_data: HeapData::new(),
+                subsumption_queue: VecDeque::new(),
+                frozen: VMap::new(),
+                frozen_vars: Vec::new(),
+                eliminated: VMap::new(),
+                bwdsub_assigns: 0,
+                n_touched: 0,
+
+            // Temporaries:
+            bwdsub_tmpunit: bwdsub_tmpunit,
+            },
 
             v: SolverV {
                 activity: VMap::new(),
@@ -472,7 +564,52 @@ impl Solver {
 
     /// Add a clause to the solver. Returns `false` if the solver is in
     /// an `UNSAT` state.
-    pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
+    pub fn add_clause_reuse(&mut self, ps: &mut Vec<Lit>) -> bool {
+        if cfg!(debug_assert) {
+            for &p in ps.iter() {
+                assert!(!self.is_eliminated(p.var()));
+            }
+        }
+
+        let nclauses = self.clauses.len();
+
+        if self.simp.use_rcheck && self.implied(ps) {
+            return true;
+        }
+
+        if self.core_add_clause_reuse(ps) {
+            return false;
+        }
+
+        if self.simp.use_simplification && self.clauses.len() == nclauses + 1 {
+            let cr = *self.clauses.last().unwrap();
+            let c = self.ca.get_ref(cr);
+
+            // NOTE: the clause is added to the queue immediately and then
+            // again during 'gatherTouchedClauses()'. If nothing happens
+            // in between, it will only be checked once. Otherwise, it may
+            // be checked twice unnecessarily. This is an unfortunate
+            // consequence of how backward subsumption is used to mimic
+            // forward subsumption.
+            self.simp.subsumption_queue.push_back(cr);
+            for &p in c.iter() {
+                self.simp.occurs_data[p.var()].push(cr);
+                self.simp.n_occ[p] += 1;
+                self.simp.touched[p.var()] = true;
+                self.simp.n_touched += 1;
+                let mut elim_heap = self.simp.elim_heap_data
+                    .promote(ElimOrder { n_occ: &self.simp.n_occ });
+                if elim_heap.in_heap(p.var()) {
+                    elim_heap.increase(p.var());
+                }
+            }
+        }
+
+        return true;
+    }
+
+
+    fn core_add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         // eprintln!("add_clause({:?})", clause);
         debug_assert_eq!(self.v.decision_level(), 0);
         if !self.ok {
@@ -562,12 +699,31 @@ impl Solver {
         true
     }
 
-    /// Search for a model that respects a given set of assumptions (With resource constraints).
+    pub fn ok(&self) -> bool {
+        self.ok
+    }
+
     pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
+        self.solve_limited_with(assumps, true, false)
+    }
+
+    pub fn solve_limited_with(
+        &mut self,
+        assumps: &[Lit],
+        do_simp: bool,
+        turn_off_simp: bool,
+    ) -> lbool {
+        self.assumptions.clear();
+        self.assumptions.extend_from_slice(assumps);
+        self.solve_internal(do_simp, turn_off_simp)
+    }
+
+    /// Search for a model that respects a given set of assumptions (With resource constraints).
+    pub fn core_solve_limited(&mut self, assumps: &[Lit]) -> lbool {
         self.assumptions.clear();
         self.asynch_interrupt.store(false, Ordering::SeqCst);
         self.assumptions.extend_from_slice(assumps);
-        self.solve_internal()
+        self.core_solve_internal()
     }
 
     /// Search for a model the specified number of conflicts.
@@ -692,9 +848,416 @@ impl Solver {
         }
     }
 
+    /// Perform variable elimination based simplification.
+    pub fn eliminate(&mut self) -> bool {
+        self.eliminate_with(false)
+    }
+
+    /// Perform variable elimination based simplification.
+    pub fn eliminate_with(&mut self, turn_off_elim: bool) -> bool {
+        if !self.simplify() {
+            return false;
+        } else if !self.simp.use_simplification {
+            return true;
+        }
+
+        // Main simplification loop:
+        'main_loop: while self.simp.n_touched > 0 || self.simp.bwdsub_assigns < self.v.trail.len() as i32
+            || self.simp.elim_heap_data.len() > 0
+        {
+            self.gather_touched_clauses();
+            if (self.simp.subsumption_queue.len() > 0 || self.simp.bwdsub_assigns < self.v.trail.len() as i32)
+                && !self.backward_subsumption_check_with(true)
+            {
+                self.ok = false;
+                break 'main_loop;
+            }
+
+            // Empty elim_heap and return immediately on user-interrupt:
+            if self.asynch_interrupt.load(Ordering::Relaxed) {
+                debug_assert_eq!(self.simp.bwdsub_assigns, self.v.trail.len() as i32);
+                debug_assert_eq!(self.simp.subsumption_queue.len(), 0);
+                debug_assert_eq!(self.simp.n_touched, 0);
+                self.elim_heap().clear();
+                break 'main_loop;
+            }
+
+            // printf("  ## (time = %6.2f s) ELIM: vars = %d\n", cpuTime(), elim_heap.size());
+            let mut cnt: i32 = 0;
+            while !self.simp.elim_heap_data.is_empty() {
+                let elim = self.elim_heap().remove_min();
+
+                if self.asynch_interrupt.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                if self.is_eliminated(elim) || self.v.value(elim) != lbool::UNDEF {
+                    cnt += 1;
+                    continue;
+                }
+
+                if self.verbosity >= 2 && cnt % 100 == 0 {
+                    print!("elimination left: {:10}\r", self.simp.elim_heap_data.len());
+                }
+
+                if self.simp.use_asymm {
+                    // Temporarily freeze variable. Otherwise, it would immediately end up on the queue again:
+                    let was_frozen = self.simp.frozen[elim];
+                    self.simp.frozen[elim] = true;
+                    if !self.asymm_var(elim) {
+                        self.ok = false;
+                        break 'main_loop;
+                    }
+                    self.simp.frozen[elim] = was_frozen;
+                }
+
+                // At this point, the variable may have been set by assymetric branching, so check it
+                // again. Also, don't eliminate frozen variables:
+                if self.simp.use_elim && self.v.value(elim) == lbool::UNDEF && !self.simp.frozen[elim]
+                    && !self.eliminate_var(elim)
+                {
+                    self.ok = false;
+                    break 'main_loop;
+                }
+
+                let frac = self.simp.simp_garbage_frac;
+                self.check_garbage_with(frac);
+
+                cnt += 1;
+            }
+
+            debug_assert_eq!(self.simp.subsumption_queue.len(), 0);
+        }
+
+        // If no more simplification is needed, free all simplification-related data structures:
+        if turn_off_elim {
+            self.simp.touched.free();
+            self.simp.occurs_data.free();
+            self.simp.n_occ.free();
+            self.elim_heap().clear_dispose(true);
+            self.simp.subsumption_queue.clear();
+            self.simp.subsumption_queue.shrink_to_fit();
+
+            self.simp.use_simplification = false;
+            self.remove_satisfied = true;
+            self.ca.extra_clause_field = false;
+            self.simp.max_simp_var = Var::from_idx(self.num_vars());
+
+            // Force full cleanup (this is safe and desirable since it only happens once):
+            self.rebuild_order_heap();
+            self.garbage_collect();
+        } else {
+            // Cheaper cleanup:
+            self.check_garbage();
+        }
+
+        if self.verbosity >= 1 && self.simp.elimclauses.len() > 0 {
+            println!(
+                "|  Eliminated clauses:     {:10.2} Mb                                      |",
+                (self.simp.elimclauses.len() * ClauseAllocator::UNIT_SIZE as usize) as f64
+                    / (1024 * 1024) as f64
+            );
+        }
+
+        return self.ok;
+    }
+
+    fn solve_internal(&mut self, do_simp: bool, turn_off_simp: bool) -> lbool {
+        let mut extra_frozen = vec![];
+        let mut result = lbool::TRUE;
+
+        let do_simp = do_simp && self.simp.use_simplification;
+
+        if do_simp {
+            // Assumptions must be temporarily frozen to run variable elimination:
+            for &p in &self.assumptions {
+                let v = p.var();
+
+                // If an assumption has been eliminated, remember it.
+                debug_assert!(!self.is_eliminated(v));
+
+                if !self.simp.frozen[v] {
+                    // need to freeze it once we do not borrow `self` anymore
+                    extra_frozen.push(v);
+                }
+            }
+
+            result = lbool::new(self.eliminate_with(turn_off_simp));
+        }
+        // now we can freeze these assumptions
+        for &v in &extra_frozen {
+            self.set_frozen(v, true);
+        }
+
+        if result == lbool::TRUE {
+            result = self.core_solve_internal();
+        } else if self.verbosity >= 1 {
+            println!(
+                "==============================================================================="
+            );
+        }
+
+        if result == lbool::TRUE && self.simp.extend_model {
+            // self.extend_model();
+            // FIXME
+        }
+
+        if do_simp {
+            // Unfreeze the assumptions that were frozen:
+            for &v in &extra_frozen {
+                self.set_frozen(v, false);
+            }
+        }
+
+        return result;
+    }
+
+    fn asymm_var(&mut self, _v: Var) -> bool {
+        unimplemented!(); // TODO
+    }
+
+    fn update_elim_heap(&mut self, _v: Var) {
+        unimplemented!(); // TODO
+    }
+
+    /// Merge `ps` and `qs` by resolution on `v`.
+    ///
+    /// Result is stored in `out_clause`.
+    /// Returns `false` if the result is a tautology
+    fn merge_by_resolution(&mut self, ps: CRef, qs: CRef, v: Var, out_clause: &mut Vec<Lit>) -> bool {
+        self.simp.merges += 1;
+        out_clause.clear(); // store result
+
+        let ps = self.ca.get_ref(ps);
+        let qs = self.ca.get_ref(qs);
+        let ps_smallest = ps.size() < qs.size();
+        let (ps, qs) = if ps_smallest { (qs, ps) } else { (ps, qs) };
+
+        'outer_loop: for &q in qs.iter() {
+            // examine each literal not anotated with `v`
+            if q.var() != v {
+                for &p in ps.iter() {
+                    if p.var() == q.var() {
+                        if p == !q {
+                            return false;  // result would contain `p or ¬p`
+                        } else {
+                            continue 'outer_loop;
+                        }
+                    }
+                }
+                out_clause.push(q);
+            }
+        }
+
+        for &p in ps.iter() {
+            if p.var() != v {
+                out_clause.push(p);
+            }
+        }
+
+        return true;
+    }
+
+    /// Returns FALSE if clause is always satisfied.
+    fn merge_count(&mut self, ps: &CRef, qs: &CRef, v: Var, size: &mut i32) -> bool {
+        self.simp.merges += 1;
+
+        let ps = self.ca.get_ref(*ps);
+        let qs = self.ca.get_ref(*qs);
+        let ps_smallest = ps.size() < qs.size();
+        let (ps, qs) = if ps_smallest { (qs, ps) } else { (ps, qs) };
+
+        *size = (ps.size() - 1) as i32;
+
+        'outer_loop: for &q in qs.iter() {
+            if q.var() != v {
+                for &p in ps.iter() {
+                    if p.var() == q.var() {
+                        if p == !q {
+                            return false;
+                        } else {
+                            continue 'outer_loop;
+                        }
+                    }
+                }
+                *size += 1;
+            }
+        }
+
+        return true;
+    }
+
+    fn gather_touched_clauses(&mut self) {
+        if self.simp.n_touched == 0 {
+            return;
+        }
+
+        for &cr in &self.simp.subsumption_queue {
+            let mut c = self.ca.get_mut(cr);
+            if c.mark() == 0 {
+                c.set_mark(2);
+            }
+        }
+
+        for i in (0..self.num_vars()).map(Var::from_idx) {
+            if self.simp.touched[i] {
+                let cs = self.simp.occurs_data
+                    .lookup_mut_pred(i, &ClauseDeleted { ca: &self.ca });
+                for &cr in cs.iter() {
+                    let mut c = self.ca.get_mut(cr);
+                    if c.mark() == 0 {
+                        self.simp.subsumption_queue.push_back(cr);
+                        c.set_mark(2);
+                    }
+                }
+                self.simp.touched[i] = false;
+            }
+        }
+
+        for &cr in &self.simp.subsumption_queue {
+            let mut c = self.ca.get_mut(cr);
+            if c.mark() == 2 {
+                c.set_mark(0);
+            }
+        }
+
+        self.simp.n_touched = 0;
+    }
+
+    fn backward_subsumption_check(&mut self) -> bool {
+        self.backward_subsumption_check_with(false)
+    }
+
+    fn backward_subsumption_check_with(&mut self, _verbose: bool) -> bool {
+        unimplemented!(); // TODO
+    }
+
+    /// Eliminate the given variable by performing resolution on all the clauses
+    /// it appears in.
+    fn eliminate_var(&mut self, v: Var) -> bool {
+        debug_assert!(!self.simp.frozen[v]);
+        debug_assert!(!self.is_eliminated(v));
+        debug_assert_eq!(self.v.value(v), lbool::UNDEF);
+
+        // Split the occurrences into positive and negative:
+        let mut pos: Vec<CRef> = vec![];
+        let mut neg: Vec<CRef> = vec![];
+        {
+            let not_v = Lit::new(v, false);
+            let simp = &mut self.simp;
+            let ca = &self.ca;
+            let cls = simp.occurs_data
+                .lookup_mut_pred(v, &ClauseDeleted { ca });
+            for &cr in cls.iter() {
+                if ca.get_ref(cr).iter().any(|&p| p == not_v) {
+                    pos.push(cr);
+                } else {
+                    neg.push(cr);
+                }
+            }
+        }
+
+        // Check wether the increase in number of clauses stays within the allowed ('grow'). Moreover, no
+        // clause must exceed the limit on the maximal clause size (if it is set):
+        let mut cnt = 0;
+        let mut clause_size = 0;
+
+        for pos_cr in pos.iter() {
+            for neg_cr in neg.iter() {
+                if self.merge_count(pos_cr, neg_cr, v, &mut clause_size) {
+                    cnt += 1;
+                    if cnt > self.simp.occurs_data[v].len() as i32 + self.simp.grow
+                        || (self.simp.clause_lim != -1 && clause_size > self.simp.clause_lim)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Delete and store old clauses:
+        self.simp.eliminated[v] = true;
+        self.set_decision_var(v, false);
+        self.simp.eliminated_vars += 1;
+
+        fn mk_elim_clause_from_lit(elimclauses: &mut Vec<u32>, x: Lit) {
+            elimclauses.push(x.idx());
+            elimclauses.push(1);
+        }
+
+        fn mk_elim_clause(elimclauses: &mut Vec<u32>, v: Var, c: ClauseRef) {
+            let c: ClauseRef = c;
+            let first = elimclauses.len() as i32;
+            let mut v_pos: i32 = -1;
+
+            // Copy clause to elimclauses-vector. Remember position where the
+            // variable 'v' occurs:
+            for (i, &p) in c.iter().enumerate() {
+                elimclauses.push(p.idx());
+                if p.var() == v {
+                    v_pos = i as i32 + first;
+                }
+            }
+            debug_assert_ne!(v_pos, -1);
+
+            // Swap the first literal with the 'v' literal, so that the literal
+            // containing 'v' will occur first in the clause:
+            elimclauses.swap(v_pos as usize, first as usize);
+
+            // Store the length of the clause last:
+            elimclauses.push(c.size() as u32);
+        }
+
+        if pos.len() > neg.len() {
+            for &neg_cr in neg.iter() {
+                mk_elim_clause(&mut self.simp.elimclauses, v, self.ca.get_ref(neg_cr));
+            }
+            mk_elim_clause_from_lit(&mut self.simp.elimclauses, Lit::new(v, false));
+        } else {
+            for &pos_cr in pos.iter() {
+                mk_elim_clause(&mut self.simp.elimclauses, v, self.ca.get_ref(pos_cr));
+            }
+            mk_elim_clause_from_lit(&mut self.simp.elimclauses, Lit::new(v, true));
+        }
+
+        for &cr in self.simp.occurs_data[v].iter() {
+            self.v
+                .remove_clause(&mut self.ca, &mut self.watches_data, cr);
+        }
+
+        // Produce clauses in cross product:
+        let mut resolvent = mem::replace(&mut self.add_tmp, Vec::new());
+        for &pos_cr in &pos {
+            for &neg_cr in &neg {
+                if self.merge_by_resolution(pos_cr, neg_cr, v, &mut resolvent)
+                    && !self.add_clause_reuse(&mut resolvent)
+                {
+                    return false;
+                }
+            }
+        }
+        self.add_tmp = resolvent;
+
+        // Free occurs list for this variable:
+        self.simp.occurs_data[v].clear();
+        self.simp.occurs_data[v].shrink_to_fit();
+
+        // Free watchers lists for this variable, if possible:
+        if self.watches_data[Lit::new(v, false)].len() == 0 {
+            self.watches_data[Lit::new(v, false)].clear();
+            self.watches_data[Lit::new(v, false)].shrink_to_fit();
+        }
+        if self.watches_data[Lit::new(v, true)].len() == 0 {
+            self.watches_data[Lit::new(v, true)].clear();
+            self.watches_data[Lit::new(v, true)].shrink_to_fit();
+        }
+
+        return self.backward_subsumption_check();
+    }
+
     // NOTE: assumptions passed in member-variable 'assumptions'.
     /// Main solve method (assumptions given in 'assumptions').
-    fn solve_internal(&mut self) -> lbool {
+    fn core_solve_internal(&mut self) -> lbool {
         self.model.clear();
         self.conflict.clear();
         if !self.ok {
@@ -1234,7 +1797,12 @@ impl Solver {
     }
 
     fn check_garbage(&mut self) {
-        if self.ca.wasted() as f64 > self.ca.len() as f64 * self.garbage_frac {
+        let frac = self.garbage_frac;
+        self.check_garbage_with(frac)
+    }
+
+    fn check_garbage_with(&mut self, frac: f64) {
+        if self.ca.wasted() as f64 > self.ca.len() as f64 * frac {
             self.garbage_collect();
         }
     }
@@ -1243,6 +1811,8 @@ impl Solver {
         // Initialize the next region to a size corresponding to the estimated utilization degree. This
         // is not precise but should avoid some unnecessary reallocations for the new region:
         let mut to = ClauseAllocator::with_start_cap(self.ca.len() - self.ca.wasted());
+        // NOTE: this is important to keep (or lose) the extra fields.
+        to.extra_clause_field = true; // simp
 
         self.reloc_all(&mut to);
         if self.verbosity >= 2 {
@@ -1400,6 +1970,36 @@ impl Solver {
         }
     }
 
+    fn set_frozen(&mut self, v: Var, b: bool) {
+        self.simp.frozen[v] = b;
+        if self.simp.use_simplification && !b {
+            unimplemented!();
+            // self.update_elim_heap(v);
+        }
+    }
+    pub fn is_eliminated(&self, v: Var) -> bool {
+        self.simp.eliminated[v]
+    }
+
+    fn implied(&mut self, c: &[Lit]) -> bool {
+        debug_assert_eq!(self.v.decision_level(), 0);
+
+        self.v.trail_lim.push(self.v.trail.len() as i32);
+        for &p in c {
+            if self.v.value_lit(p) == lbool::TRUE {
+                self.cancel_until(0);
+                return true;
+            } else if self.v.value_lit(p) != lbool::FALSE {
+                debug_assert_eq!(self.v.value_lit(p), lbool::UNDEF);
+                self.v.unchecked_enqueue(!p, CRef::UNDEF);
+            }
+        }
+
+        let result = self.propagate() != CRef::UNDEF;
+        self.cancel_until(0);
+        return result;
+    }
+
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {
         self.order_heap_data.promote(VarOrder {
             activity: &self.v.activity,
@@ -1407,6 +2007,15 @@ impl Solver {
     }
     fn watches(&mut self) -> OccLists<Lit, Watcher, WatcherDeleted> {
         self.watches_data.promote(WatcherDeleted { ca: &self.ca })
+    }
+
+    fn occurs(&mut self) -> OccLists<Var, CRef, ClauseDeleted> {
+        self.simp.occurs_data.promote(ClauseDeleted { ca: &self.ca })
+    }
+
+    fn elim_heap(&mut self) -> Heap<Var, ElimOrder> {
+        self.simp.elim_heap_data
+            .promote(ElimOrder { n_occ: &self.simp.n_occ })
     }
 }
 
@@ -1609,6 +2218,36 @@ impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
     }
 }
 
+struct ClauseDeleted<'a> {
+    ca: &'a ClauseAllocator,
+}
+
+impl<'a> DeletePred<CRef> for ClauseDeleted<'a> {
+    fn deleted(&self, cr: &CRef) -> bool {
+        self.ca.get_ref(*cr).mark() == 1
+    }
+}
+
+struct ElimOrder<'a> {
+    n_occ: &'a LMap<i32>,
+}
+
+impl<'a> ElimOrder<'a> {
+    fn cost(&self, x: Var) -> u64 {
+        self.n_occ[Lit::new(x, false)] as u64 * self.n_occ[Lit::new(x, true)] as u64
+    }
+}
+
+impl<'a> PartialComparator<Var> for ElimOrder<'a> {
+    fn partial_cmp(&self, lhs: &Var, rhs: &Var) -> Option<cmp::Ordering> {
+        Some(self.cmp(lhs, rhs))
+    }
+}
+impl<'a> Comparator<Var> for ElimOrder<'a> {
+    fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
+        Ord::cmp(&self.cost(*lhs), &self.cost(*rhs))
+    }
+}
 #[derive(Debug, Clone, Copy)]
 struct ShrinkStackElem {
     i: u32,
@@ -1654,6 +2293,15 @@ pub struct SolverOpts {
     pub restart_inc: f64,
     pub garbage_frac: f64,
     pub min_learnts_lim: i32,
+
+    // simplifier fields
+    pub use_asymm: bool,
+    pub use_rcheck: bool,
+    pub use_elim: bool,
+    pub grow: i32,
+    pub clause_lim: i32,
+    pub subsumption_lim: i32,
+    pub simp_garbage_frac: f64,
 }
 
 impl Default for SolverOpts {
@@ -1671,6 +2319,14 @@ impl Default for SolverOpts {
             restart_inc: 2.0,
             garbage_frac: 0.20,
             min_learnts_lim: 0,
+
+            use_asymm: false,
+            use_rcheck: false,
+            use_elim: true,
+            grow: 0,
+            clause_lim: 20,
+            subsumption_lim: 1000,
+            simp_garbage_frac: 0.5,
         }
     }
 }
@@ -1685,7 +2341,8 @@ impl SolverOpts {
             && (0 <= self.phase_saving && self.phase_saving <= 2) && 1 <= self.restart_first
             && (1.0 < self.restart_inc && self.restart_inc < f64::INFINITY)
             && (0.0 < self.garbage_frac && self.garbage_frac < f64::INFINITY)
-            && 0 <= self.min_learnts_lim
+            && 0 <= self.min_learnts_lim && -1 <= self.clause_lim
+            && -1 <= self.subsumption_lim && 0.0 < self.simp_garbage_frac
     }
 }
 
