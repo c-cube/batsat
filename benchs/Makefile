@@ -3,7 +3,9 @@ TEST_TOOL=./test_tool.exe
 TIMEOUT ?= 10
 J ?= 3
 
-all: build
+all: run_tests
+
+run_tests: build
 	TIMEOUT=$(TIMEOUT) JOBS=$(J) $(TEST_TOOL)
 
 build:
