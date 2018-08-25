@@ -75,15 +75,13 @@ dependencies = [
 [[package]]
 name = "ratsat"
 version = "0.0.2"
-dependencies = [
- "cpu-time 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "ratsat-bin"
 version = "0.0.2"
 dependencies = [
  "clap 2.31.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cpu-time 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "flate2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ratsat 0.0.2",
 ]

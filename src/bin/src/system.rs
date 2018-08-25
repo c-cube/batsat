@@ -34,9 +34,10 @@ impl ResourceMeasure {
         dur.as_secs() as f64 + (dur.subsec_millis() as f64 / 1000.)
     }
 
+    /* TODO
     pub fn mem_used_peak(&self) -> f64 {
-        // TODO
         0.0
     }
+    */
 }
 

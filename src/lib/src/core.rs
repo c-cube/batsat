@@ -23,7 +23,7 @@ use std::cmp;
 use std::f64;
 use std::mem;
 use std::sync::atomic::{Ordering,AtomicBool};
-use system::ResourceMeasure;
+use std::fmt;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
@@ -149,9 +149,8 @@ pub struct Solver {
     // Resource contraints:
     conflict_budget: i64,
     propagation_budget: i64,
-    max_cpu_lim: f64,
     asynch_interrupt: AtomicBool,
-    resource_measure: ResourceMeasure,
+    stop_pred: StopPredicate,
 
     v: SolverV,
 }
@@ -179,6 +178,34 @@ struct SolverV {
 impl Default for Solver {
     fn default() -> Self {
         Self::new(SolverOpts::default())
+    }
+}
+
+/// Predicate to know whether to interrupt the search
+enum StopPredicate {
+    None,
+    Some(Box<dyn Fn() -> bool>)
+}
+
+impl StopPredicate {
+    pub fn new<F:Fn()->bool + 'static>(f: F) -> StopPredicate {
+        StopPredicate::Some(Box::new(f))
+    }
+    pub fn none() -> StopPredicate { StopPredicate::None }
+    pub fn stop(&self) -> bool {
+        match self {
+            StopPredicate::None => false,
+            StopPredicate::Some(f) => f()
+        }
+    }
+}
+
+impl fmt::Debug for StopPredicate {
+    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StopPredicate::None => Ok(()),
+            StopPredicate::Some(_) => out.write_str("<stop-predicate>")
+        }
     }
 }
 
@@ -266,8 +293,7 @@ impl Solver {
             conflict_budget: -1,
             propagation_budget: -1,
             asynch_interrupt: AtomicBool::new(false),
-            max_cpu_lim: -1.,
-            resource_measure: ResourceMeasure::new(),
+            stop_pred: StopPredicate::none(),
 
             v: SolverV {
                 activity: VMap::new(),
@@ -391,36 +417,26 @@ impl Solver {
 
     /// Print some current statistics to standard output.
     pub fn print_stats(&self) {
-        let cpu_time = self.resource_measure.cpu_time();
-        let mem_used = self.resource_measure.mem_used_peak();
         println!("restarts              : {}", self.starts);
         println!(
-            "conflicts             : {:<12}   ({:.0} /sec)",
-            self.conflicts,
-            self.conflicts as f64 / cpu_time
+            "conflicts             : {:<12}",
+            self.conflicts
         );
         println!(
-            "decisions             : {:<12}   ({:4.2} % random) ({:.0} /sec)",
+            "decisions             : {:<12}   ({:4.2} % random)",
             self.decisions,
-            self.rnd_decisions as f32 * 100.0 / self.decisions as f32,
-            self.decisions as f64 / cpu_time as f64
+            self.rnd_decisions as f32 * 100.0 / self.decisions as f32
         );
         println!(
-            "propagations          : {:<12}   ({:.0} /sec)",
-            self.propagations,
-            self.propagations as f64 / cpu_time
+            "propagations          : {:<12}",
+            self.propagations
         );
         println!(
             "conflict literals     : {:<12}   ({:4.2} % deleted)",
             self.tot_literals,
             (self.max_literals - self.tot_literals) as f64 * 100.0 / self.max_literals as f64
         );
-        if mem_used != 0.0 {
-            println!("Memory used           : {:.2} MB", mem_used);
-        }
-        println!("CPU time              : {} s", cpu_time);
     }
-
     /// Creates a new SAT variable in the solver. If 'decision' is cleared, variable will not be
     /// used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
     pub fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
@@ -1260,9 +1276,10 @@ impl Solver {
         progress / self.num_vars() as f64
     }
 
-    /// Set maximum CPU limit, in seconds
-    pub fn set_cpu_lim(&mut self, lim: f64) {
-        self.max_cpu_lim = lim;
+    /// Set a predicate that will be called regularly to check whether
+    /// to interrupt search
+    pub fn set_stop_pred<F: Fn() -> bool + 'static>(&mut self, f: F) {
+        self.stop_pred = StopPredicate::new(f)
     }
 
     /// Interrupt search asynchronously
@@ -1274,7 +1291,7 @@ impl Solver {
         ! self.asynch_interrupt.load(Ordering::Relaxed)
             && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
-            && (self.max_cpu_lim < 0. || self.resource_measure.cpu_time() < self.max_cpu_lim)
+            && (! self.stop_pred.stop())
     }
     fn reloc_all(&mut self, to: &mut ClauseAllocator) {
         macro_rules! is_removed {

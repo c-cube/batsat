@@ -4,6 +4,9 @@ FLAGS ?=
 build: prebuild
 	@cargo build --release ${FLAGS}
 
+build-ipasir:
+	@cargo build --release -p ratsat-ipasir
+
 check: prebuild
 	@cargo check ${FLAGS}
 

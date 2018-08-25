@@ -13,5 +13,6 @@ license = "MIT"
 [dependencies]
 clap = "2.31.2"
 flate2 = "1.0"
+cpu-time = "0.1"
 ratsat = { version = "=0.0.2", path = "../lib/" }
 

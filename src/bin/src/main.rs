@@ -21,6 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 extern crate clap;
 extern crate flate2;
+extern crate cpu_time;
 extern crate ratsat;
 
 use std::fs::File;
@@ -32,6 +33,8 @@ use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
 use ratsat::{lbool, Solver, SolverOpts};
 
+mod system;
+
 fn main() {
     let exitcode = main2().unwrap_or_else(|err| {
         eprintln!("{}", err);
@@ -41,6 +44,8 @@ fn main() {
 }
 
 fn main2() -> io::Result<i32> {
+    let resource = system::ResourceMeasure::new();
+
     let matches = App::new("RatSat")
         .version("0.0.2")
         .author("Masaki Hara <ackie.h.gmai@gmail.com>")
@@ -179,11 +184,20 @@ fn main2() -> io::Result<i32> {
     let cpu_lim = matches
         .value_of("cpu-lim")
         .and_then(|s| s.parse().ok())
-        .unwrap_or(-1.0);
+        .filter(|x| *x>0.);
 
     let mut solver = Solver::new(solver_opts);
     solver.set_verbosity(verbosity);
-    solver.set_cpu_lim(cpu_lim);
+
+    // setup timeout handler, if any
+    if let Some(max_cpu) = cpu_lim {
+        assert!(max_cpu > 0.);
+        let r = system::ResourceMeasure::new();
+        let f = move || {
+            r.cpu_time() > max_cpu
+        };
+        solver.set_stop_pred(f);
+    }
 
     let initial_time = Instant::now();
 
@@ -245,6 +259,7 @@ fn main2() -> io::Result<i32> {
     let ret = solver.solve_limited(&[]);
     if solver.verbosity() > 0 {
         solver.print_stats();
+        println!("CPU time              : {:.3}s", resource.cpu_time());
         println!("");
     }
     if ret == lbool::TRUE {
