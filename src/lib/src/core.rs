@@ -182,29 +182,26 @@ impl Default for Solver {
 }
 
 /// Predicate to know whether to interrupt the search
-enum StopPredicate {
-    None,
-    Some(Box<dyn Fn() -> bool>)
-}
+struct StopPredicate(Option<Box<dyn Fn() -> bool>>);
 
 impl StopPredicate {
     pub fn new<F:Fn()->bool + 'static>(f: F) -> StopPredicate {
-        StopPredicate::Some(Box::new(f))
+        StopPredicate(Some(Box::new(f)))
     }
-    pub fn none() -> StopPredicate { StopPredicate::None }
+    pub fn none() -> StopPredicate { StopPredicate(None) }
     pub fn stop(&self) -> bool {
-        match self {
-            StopPredicate::None => false,
-            StopPredicate::Some(f) => f()
+        match self.0 {
+            None => false,
+            Some(ref f) => f()
         }
     }
 }
 
 impl fmt::Debug for StopPredicate {
     fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            StopPredicate::None => Ok(()),
-            StopPredicate::Some(_) => out.write_str("<stop-predicate>")
+        match self.0 {
+            None => Ok(()),
+            Some(_) => out.write_str("<stop-predicate>")
         }
     }
 }
