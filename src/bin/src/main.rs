@@ -31,14 +31,14 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use ratsat::{lbool, Solver, SolverOpts};
+use ratsat::{lbool, Solver, SolverOpts, SolverInterface, HasStats};
 
 mod system;
 
 fn main() {
     let exitcode = main2().unwrap_or_else(|err| {
         eprintln!("{}", err);
-        exit(1);
+        1
     });
     exit(exitcode);
 }

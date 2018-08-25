@@ -20,9 +20,14 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 
 use std::io::{self, BufRead};
-use {Lit, Solver, Var};
+use interface::SolverInterface;
+use {Lit, Var};
 
-pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) -> io::Result<()> {
+pub fn parse<S: SolverInterface, R: BufRead>(
+    input: &mut R,
+    solver: &mut S,
+    is_strict: bool
+) -> io::Result<()> {
     let mut lits = vec![];
     // let mut num_vars = 0;
     let mut num_clauses = 0;
@@ -59,9 +64,9 @@ pub fn parse<R: BufRead>(input: &mut R, solver: &mut Solver, is_strict: bool) ->
     Ok(())
 }
 
-fn read_clause<R: BufRead>(
+fn read_clause<S: SolverInterface, R: BufRead>(
     input: &mut R,
-    solver: &mut Solver,
+    solver: &mut S,
     lits: &mut Vec<Lit>,
 ) -> io::Result<()> {
     lits.clear();

@@ -27,6 +27,7 @@ use std::fmt;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
+use interface::*;
 
 #[derive(Debug)]
 pub struct Solver {
@@ -206,6 +207,139 @@ impl fmt::Debug for StopPredicate {
     }
 }
 
+impl SolverInterface for Solver {
+    fn set_verbosity(&mut self, verbosity: i32) {
+        debug_assert!(0 <= verbosity && verbosity <= 2);
+        self.verbosity = verbosity;
+    }
+    fn verbosity(&self) -> i32 { self.verbosity }
+
+    fn num_vars(&self) -> u32 {
+        self.next_var.idx()
+    }
+
+    fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
+        let v = self.free_vars.pop().unwrap_or_else(|| {
+            let v = self.next_var;
+            self.next_var = Var::from_idx(self.next_var.idx() + 1);
+            v
+        });
+        self.watches().init(Lit::new(v, false));
+        self.watches().init(Lit::new(v, true));
+        self.v.assigns.insert_default(v, lbool::UNDEF);
+        self.v
+            .vardata
+            .insert_default(v, VarData::new(CRef::UNDEF, 0));
+        if self.rnd_init_act {
+            self.v
+                .activity
+                .insert_default(v, drand(&mut self.random_seed) * 0.00001);
+        } else {
+            self.v.activity.insert_default(v, 0.0);
+        }
+        self.seen.insert_default(v, Seen::UNDEF);
+        self.polarity.insert_default(v, true);
+        self.user_pol.insert_default(v, upol);
+        self.decision.reserve_default(v);
+        let len = self.v.trail.len();
+        self.v.trail.reserve(v.idx() as usize + 1 - len);
+        self.set_decision_var(v, dvar);
+        v
+    }
+
+    fn new_var_default(&mut self) -> Var {
+        self.new_var(lbool::UNDEF, true)
+    }
+
+    fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
+        // eprintln!("add_clause({:?})", clause);
+        debug_assert_eq!(self.v.decision_level(), 0);
+        if !self.ok {
+            return false;
+        }
+        clause.sort();
+        let mut last_lit = Lit::UNDEF;
+        let mut j = 0;
+        for i in 0..clause.len() {
+            let value = self.v.value_lit(clause[i]);
+            if value == lbool::TRUE || clause[i] == !last_lit {
+                return true;
+            } else if value != lbool::FALSE && clause[i] != last_lit {
+                last_lit = clause[i];
+                clause[j] = clause[i];
+                j += 1;
+            }
+        }
+        clause.resize(j, Lit::UNDEF);
+        if clause.len() == 0 {
+            self.ok = false;
+            return false;
+        } else if clause.len() == 1 {
+            self.v.unchecked_enqueue(clause[0], CRef::UNDEF);
+        } else {
+            let cr = self.ca.alloc_with_learnt(&clause, false);
+            self.clauses.push(cr);
+            self.attach_clause(cr);
+        }
+
+        true
+    }
+
+    fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
+        self.assumptions.clear();
+        self.asynch_interrupt.store(false, Ordering::SeqCst);
+        self.assumptions.extend_from_slice(assumps);
+        self.solve_internal()
+    }
+}
+
+impl HasStats for Solver {
+    fn num_clauses(&self) -> u32 {
+        self.v.num_clauses as u32
+    }
+
+    fn print_stats(&self) {
+        println!("restarts              : {}", self.starts);
+        println!(
+            "conflicts             : {:<12}",
+            self.conflicts
+        );
+        println!(
+            "decisions             : {:<12}   ({:4.2} % random)",
+            self.decisions,
+            self.rnd_decisions as f32 * 100.0 / self.decisions as f32
+        );
+        println!(
+            "propagations          : {:<12}",
+            self.propagations
+        );
+        println!(
+            "conflict literals     : {:<12}   ({:4.2} % deleted)",
+            self.tot_literals,
+            (self.max_literals - self.tot_literals) as f64 * 100.0 / self.max_literals as f64
+        );
+    }
+}
+
+impl HasUnsatCore for Solver {
+    fn unsat_core(&self) -> Vec<Lit> {
+        let c = self.conflict.as_slice();
+        let mut res = Vec::with_capacity(c.len());
+        res.extend_from_slice(c);
+        res
+    }
+
+    fn unsat_core_contains_lit(&self, lit: Lit) -> bool {
+        self.conflict.has(lit)
+    }
+
+    fn unsat_core_contains_var(&self, v: Var) -> bool {
+        let lit = Lit::new(v, true);
+        self.unsat_core_contains_lit(lit)
+            || self.unsat_core_contains_lit(!lit)
+    }
+}
+
 impl Solver {
     /// Create a new solver with the given options
     pub fn new(opts: SolverOpts) -> Self {
@@ -307,18 +441,8 @@ impl Solver {
         }
     }
 
-    pub fn set_verbosity(&mut self, verbosity: i32) {
-        debug_assert!(0 <= verbosity && verbosity <= 2);
-        self.verbosity = verbosity;
-    }
-    pub fn num_clauses(&self) -> u32 {
-        self.v.num_clauses as u32
-    }
     pub fn num_learnts(&self) -> u32 {
         self.v.num_learnts as u32
-    }
-    pub fn verbosity(&self) -> i32 {
-        self.verbosity
     }
 
     fn var_decay_activity(&mut self) {
@@ -347,7 +471,7 @@ impl Solver {
         }
     }
 
-    pub fn set_decision_var(&mut self, v: Var, b: bool) {
+    fn set_decision_var(&mut self, v: Var, b: bool) {
         if b && !self.decision[v] {
             self.dec_vars += 1;
         } else if !b && self.decision[v] {
@@ -408,104 +532,6 @@ impl Solver {
         self.v.trail_lim.push(self.v.trail.len() as i32);
     }
 
-    pub fn num_vars(&self) -> u32 {
-        self.next_var.idx()
-    }
-
-    /// Print some current statistics to standard output.
-    pub fn print_stats(&self) {
-        println!("restarts              : {}", self.starts);
-        println!(
-            "conflicts             : {:<12}",
-            self.conflicts
-        );
-        println!(
-            "decisions             : {:<12}   ({:4.2} % random)",
-            self.decisions,
-            self.rnd_decisions as f32 * 100.0 / self.decisions as f32
-        );
-        println!(
-            "propagations          : {:<12}",
-            self.propagations
-        );
-        println!(
-            "conflict literals     : {:<12}   ({:4.2} % deleted)",
-            self.tot_literals,
-            (self.max_literals - self.tot_literals) as f64 * 100.0 / self.max_literals as f64
-        );
-    }
-    /// Creates a new SAT variable in the solver. If 'decision' is cleared, variable will not be
-    /// used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
-    pub fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
-        let v = self.free_vars.pop().unwrap_or_else(|| {
-            let v = self.next_var;
-            self.next_var = Var::from_idx(self.next_var.idx() + 1);
-            v
-        });
-        self.watches().init(Lit::new(v, false));
-        self.watches().init(Lit::new(v, true));
-        self.v.assigns.insert_default(v, lbool::UNDEF);
-        self.v
-            .vardata
-            .insert_default(v, VarData::new(CRef::UNDEF, 0));
-        if self.rnd_init_act {
-            self.v
-                .activity
-                .insert_default(v, drand(&mut self.random_seed) * 0.00001);
-        } else {
-            self.v.activity.insert_default(v, 0.0);
-        }
-        self.seen.insert_default(v, Seen::UNDEF);
-        self.polarity.insert_default(v, true);
-        self.user_pol.insert_default(v, upol);
-        self.decision.reserve_default(v);
-        let len = self.v.trail.len();
-        self.v.trail.reserve(v.idx() as usize + 1 - len);
-        self.set_decision_var(v, dvar);
-        v
-    }
-
-    /// Create a new variable with the default polarity
-    pub fn new_var_default(&mut self) -> Var {
-        self.new_var(lbool::UNDEF, true)
-    }
-
-    /// Add a clause to the solver. Returns `false` if the solver is in
-    /// an `UNSAT` state.
-    pub fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
-        // eprintln!("add_clause({:?})", clause);
-        debug_assert_eq!(self.v.decision_level(), 0);
-        if !self.ok {
-            return false;
-        }
-        clause.sort();
-        let mut last_lit = Lit::UNDEF;
-        let mut j = 0;
-        for i in 0..clause.len() {
-            let value = self.v.value_lit(clause[i]);
-            if value == lbool::TRUE || clause[i] == !last_lit {
-                return true;
-            } else if value != lbool::FALSE && clause[i] != last_lit {
-                last_lit = clause[i];
-                clause[j] = clause[i];
-                j += 1;
-            }
-        }
-        clause.resize(j, Lit::UNDEF);
-        if clause.len() == 0 {
-            self.ok = false;
-            return false;
-        } else if clause.len() == 1 {
-            self.v.unchecked_enqueue(clause[0], CRef::UNDEF);
-        } else {
-            let cr = self.ca.alloc_with_learnt(&clause, false);
-            self.clauses.push(cr);
-            self.attach_clause(cr);
-        }
-
-        true
-    }
-
     /// Simplify the clause database according to the current top-level assigment. Currently, the only
     /// thing done here is the removal of satisfied clauses, but more things can be put here.
     pub fn simplify(&mut self) -> bool {
@@ -560,14 +586,6 @@ impl Solver {
         self.simp_db_props = (self.v.clauses_literals + self.v.learnts_literals) as i64;
 
         true
-    }
-
-    /// Search for a model that respects a given set of assumptions (With resource constraints).
-    pub fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
-        self.assumptions.clear();
-        self.asynch_interrupt.store(false, Ordering::SeqCst);
-        self.assumptions.extend_from_slice(assumps);
-        self.solve_internal()
     }
 
     /// Search for a model the specified number of conflicts.
@@ -1287,28 +1305,12 @@ impl Solver {
         self.asynch_interrupt.store(true, Ordering::Relaxed);
     }
 
-    /// Return unsat core
-    pub fn unsat_core(&self) -> Vec<Lit> {
-        let c = self.conflict.as_slice();
-        let mut res = Vec::with_capacity(c.len());
-        res.extend_from_slice(c);
-        res
-    }
-
-    /// Does this literal occur in the unsat-core?
-    pub fn unsat_core_contains_lit(&self, lit: Lit) -> bool {
-        self.conflict.has(lit)
-    }
-
-    /// Does this variable occur in the unsat-core?
-    pub fn unsat_core_contains_var(&self, v: Var) -> bool {
-        let lit = Lit::new(v, true);
-        self.unsat_core_contains_lit(lit)
-            || self.unsat_core_contains_lit(!lit)
+    fn has_been_interrupted(&self) -> bool {
+        self.asynch_interrupt.load(Ordering::Relaxed)
     }
 
     fn within_budget(&self) -> bool {
-        ! self.asynch_interrupt.load(Ordering::Relaxed)
+        ! self.has_been_interrupted()
             && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
             && (! self.stop_pred.stop())
