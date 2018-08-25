@@ -14,7 +14,7 @@ class Stats(object):
     unknown: int = 0
     sat: int = 0
     unsat: int = 0
-    time: float = 0.
+    ctime: float = 0.
 
 def test_dir(d):
     print(f"test {d}")
@@ -29,10 +29,10 @@ def test_dir(d):
             for s, args in solvers.items():
                 start = time.time()
                 code = subprocess.call([s] + args + [file], stdout=subprocess.DEVNULL)
-                time = time.time() - start
+                ctime = time.time() - start
                 if code == 0: res = 'UNKNOWN'; stats[s].unknown += 1
-                if code == 10: res = 'SAT'; stats[s].sat += 1; stats[s].time += time
-                if code == 20: res = 'UNSAT'; stats[s].unsat += 1; stats[s].time += time
+                if code == 10: res = 'SAT'; stats[s].sat += 1; stats[s].ctime += ctime
+                if code == 20: res = 'UNSAT'; stats[s].unsat += 1; stats[s].ctime += ctime
                 if expect is not None:
                     if expect != res and res != 'UNKNOWN':
                         print(f"failure on {file}: {per_solver}")
