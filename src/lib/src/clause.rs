@@ -298,7 +298,7 @@ impl<'a> ClauseRef<'a> {
         unsafe { self.data[0].cref }
     }
     #[inline(always)]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
+    pub fn iter(& self) -> impl DoubleEndedIterator<Item=&'a Lit> {
         self.data.iter().map(|lit| unsafe { &lit.lit })
     }
 }
@@ -595,7 +595,7 @@ impl ClauseAllocator {
         c.relocate(*cr);
     }
 
-    pub fn get_ref(&self, cr: CRef) -> ClauseRef {
+    pub fn get_ref<'a>(&'a self, cr: CRef) -> ClauseRef<'a> {
         let header = unsafe { self.ra[cr].header };
         let has_extra = header.has_extra();
         let size = header.size();
@@ -673,12 +673,12 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         &mut self.occs[idx]
     }
 
-    /// Remove entries marked as `dirty` (clauses whose watchers have changed)
+    /// Cleanup entries marked as `dirty` (remove elements for which the predicate
+    /// specifies they're deleted)
     pub fn clean_all_pred<P: DeletePred<V>>(&mut self, pred: &P) {
         for &x in &self.dirties {
             // Dirties may contain duplicates so check here if a variable is already cleaned:
             if self.dirty[x] {
-                // self.clean(x, pred)
                 self.occs[x].retain(|x| !pred.deleted(x));
                 self.dirty[x] = false;
             }
@@ -686,6 +686,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         self.dirties.clear();
     }
 
+    /// Cleanup entry at `idx`
     pub fn clean_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) {
         self.occs[idx].retain(|x| !pred.deleted(x));
         self.dirty[idx] = false;
