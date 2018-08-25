@@ -3,6 +3,9 @@ FLAGS ?=
 
 build: prebuild
 	@cargo build --release ${FLAGS}
+	@ln -sf target/release/ratsat-bin
+
+all: build test
 
 build-ipasir:
 	@cargo build --release -p ratsat-ipasir
