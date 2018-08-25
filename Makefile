@@ -14,7 +14,7 @@ clean:
 	@cargo clean
 
 test-benchs: build
-	./benchs/test.py
+	@make -C benchs
 
 test-rust: prebuild
 	@cargo test
