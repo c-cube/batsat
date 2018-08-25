@@ -760,6 +760,9 @@ impl Solver {
                 self.model[i as usize] = self.v.value(Var::from_idx(i));
             }
         } else if status == lbool::FALSE && self.conflict.len() == 0 {
+            // NOTE: we may return `false` without an empty conflict in case we had assumptions. In
+            // this case `self.conflict` contains the unsat-core but adding new clauses might
+            // succeed in the absence of these assumptions.
             self.ok = false;
         }
 
@@ -1285,6 +1288,26 @@ impl Solver {
     /// Interrupt search asynchronously
     pub fn interrupt_async(&self) {
         self.asynch_interrupt.store(true, Ordering::Relaxed);
+    }
+
+    /// Return unsat core
+    pub fn unsat_core(&self) -> Vec<Lit> {
+        let c = self.conflict.as_slice();
+        let mut res = Vec::with_capacity(c.len());
+        res.extend_from_slice(c);
+        res
+    }
+
+    /// Does this literal occur in the unsat-core?
+    pub fn unsat_core_contains_lit(&self, lit: Lit) -> bool {
+        self.conflict.has(lit)
+    }
+
+    /// Does this variable occur in the unsat-core?
+    pub fn unsat_core_contains_var(&self, v: Var) -> bool {
+        let lit = Lit::new(v, true);
+        self.unsat_core_contains_lit(lit)
+            || self.unsat_core_contains_lit(!lit)
     }
 
     fn within_budget(&self) -> bool {
