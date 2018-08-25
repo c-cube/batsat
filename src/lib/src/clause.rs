@@ -26,6 +26,7 @@ use std::u32;
 
 use intmap::{AsIndex, IntMap, IntSet};
 use alloc::{self, RegionAllocator};
+use dimacs;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Var(u32);
@@ -302,6 +303,39 @@ impl<'a> ClauseRef<'a> {
         self.data.iter().map(|lit| unsafe { &lit.lit })
     }
 }
+
+/// Anything that can be considered as a list of literals.
+///
+/// We use `Into` to have more flexibility for `ClauseRef`, which contains
+/// a slice of a `union` type rather than pure literals
+pub trait ClauseIterable {
+    type Item : Copy + Into<Lit>;
+    fn items(& self) -> &[Self::Item];
+}
+
+/// Any iterable clause can be printed in DIMACS
+impl<T: ClauseIterable> dimacs::display::Print for T {
+    // display as DIMACS
+    fn fmt_dimacs(&self, out: &mut fmt::Formatter) -> fmt::Result {
+        for &x in self.items().iter() {
+            let lit: Lit = x.into();
+            write!(out, "{}{} ", (if lit.sign() {""} else {"-"}), lit.var().idx()+1)?;
+        }
+        write!(out, "0")?;
+        Ok(())
+    }
+}
+
+impl<'a> ClauseIterable for ClauseRef<'a> {
+    type Item = ClauseData;
+    fn items(& self) -> &[Self::Item] { self.data }
+}
+
+impl ClauseIterable for Vec<Lit> {
+    type Item = Lit;
+    fn items(self: &Vec<Lit>) -> &[Self::Item] { &self }
+}
+
 impl<'a> ClauseMut<'a> {
     #[inline(always)]
     pub fn mark(&self) -> u32 {
@@ -429,6 +463,10 @@ pub union ClauseData {
     cref: CRef,
     header: ClauseHeader,
     lit: Lit,
+}
+
+impl Into<Lit> for ClauseData {
+    fn into(self: ClauseData) -> Lit { unsafe { self.lit } }
 }
 
 impl Default for ClauseData {

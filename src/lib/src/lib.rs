@@ -27,3 +27,4 @@ pub mod interface;
 pub use interface::{SolverInterface, HasStats, HasUnsatCore};
 pub use core::{Solver, SolverOpts};
 pub use clause::{lbool, Lit, Var};
+pub use dimacs::display::Print;

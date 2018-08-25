@@ -38,7 +38,7 @@ mod system;
 fn main() {
     let exitcode = main2().unwrap_or_else(|err| {
         eprintln!("{}", err);
-        1
+        exit(1)
     });
     exit(exitcode);
 }
@@ -52,6 +52,7 @@ fn main2() -> io::Result<i32> {
         .about("MiniSat reimplemented in Rust")
         .arg(Arg::with_name("input-file"))
         .arg(Arg::with_name("result-output-file"))
+        .arg(Arg::with_name("proof").long("proof").help("produce proof in (D)RAT on stdout"))
         .arg(
             Arg::with_name("verbosity")
                 .long("verb")
@@ -160,6 +161,8 @@ fn main2() -> io::Result<i32> {
         .value_of("min-learnts-lim")
         .and_then(|s| s.parse().ok())
         .unwrap_or(solver_opts.min_learnts_lim);
+    let produce_proof = matches.is_present("proof");
+    solver_opts.produce_proof = produce_proof;
 
     if !solver_opts.check() {
         eprintln!("Invalid option value");
@@ -205,7 +208,7 @@ fn main2() -> io::Result<i32> {
         let file = BufReader::new(File::open(input_file)?);
         read_input_autogz(file, &mut solver, is_strict)?;
     } else {
-        println!("Reading from standard input... Use '--help' for help.");
+        println!("c Reading from standard input... Use '--help' for help.");
         let stdin = io::stdin();
         read_input_autogz(stdin.lock(), &mut solver, is_strict)?;
     }
@@ -218,11 +221,11 @@ fn main2() -> io::Result<i32> {
 
     if solver.verbosity() > 0 {
         println!(
-            "|  Number of variables:  {:12}                                         |",
+            "c |  Number of variables:  {:12}                                         |",
             solver.num_vars()
         );
         println!(
-            "|  Number of clauses:    {:12}                                         |",
+            "c |  Number of clauses:    {:12}                                         |",
             solver.num_clauses()
         );
     }
@@ -231,63 +234,65 @@ fn main2() -> io::Result<i32> {
     if solver.verbosity() > 0 {
         let duration = parsed_time - initial_time;
         println!(
-            "|  Parse time:           {:9}.{:02} s                                       |",
+            "c |  Parse time:           {:9}.{:02} s                                       |",
             duration.as_secs(),
             duration.subsec_nanos() / 10_000_000
         );
-        println!("|                                                                             |");
+        println!("c |                                                                             |");
     }
 
     if !solver.simplify() {
         if let Some(resfile) = resfile.as_mut() {
-            writeln!(resfile, "UNSAT")?;
+            writeln!(resfile, "s UNSAT")?;
+            writeln!(resfile, "{}", solver.dimacs_proof())?;
             resfile.flush()?;
         }
         mem::drop(resfile);
         if solver.verbosity() > 0 {
             println!(
-                "==============================================================================="
+                "c ==============================================================================="
             );
-            println!("Solved by unit propagation");
+            println!("c Solved by unit propagation");
+            println!("{}", solver.dimacs_proof());
             solver.print_stats();
-            println!("");
         }
-        println!("UNSATISFIABLE");
+        println!("s UNSATISFIABLE");
         exit(20);
     }
 
     let ret = solver.solve_limited(&[]);
     if solver.verbosity() > 0 {
         solver.print_stats();
-        println!("CPU time              : {:.3}s", resource.cpu_time());
+        println!("c CPU time              : {:.3}s", resource.cpu_time());
         println!("");
     }
     if ret == lbool::TRUE {
-        println!("SATISFIABLE");
+        println!("s SATISFIABLE");
+
+        // print model
+        if produce_proof && resfile.is_none() {
+            println!("{}", solver.dimacs_model());
+        }
     } else if ret == lbool::FALSE {
-        println!("UNSATISFIABLE");
+        println!("s UNSATISFIABLE");
+
+        if produce_proof && resfile.is_none() {
+            println!("{}", solver.dimacs_proof());
+        }
     } else {
-        println!("INDETERMINATE");
+        println!("s INDETERMINATE");
     }
     if let Some(resfile) = resfile.as_mut() {
         if ret == lbool::TRUE {
-            writeln!(resfile, "SAT")?;
-            for i in 0..solver.num_vars() {
-                if solver.model[i as usize] != lbool::UNDEF {
-                    if i != 0 {
-                        write!(resfile, " ")?;
-                    }
-                    if solver.model[i as usize] == lbool::FALSE {
-                        write!(resfile, "-")?;
-                    }
-                    write!(resfile, "{}", i + 1)?;
-                }
-            }
-            writeln!(resfile, " 0")?;
+            writeln!(resfile, "s SAT")?;
+            writeln!(resfile, "{}", solver.dimacs_model())?;
         } else if ret == lbool::FALSE {
-            writeln!(resfile, "UNSAT")?;
+            writeln!(resfile, "s UNSAT")?;
+            if produce_proof {
+                writeln!(resfile, "{}", solver.dimacs_proof())?;
+            }
         } else {
-            writeln!(resfile, "INDET")?;
+            writeln!(resfile, "s INDET")?;
         }
         resfile.flush()?;
     }
@@ -324,8 +329,8 @@ fn read_input_autogz<R: BufRead>(
 
 fn read_input<R: BufRead>(mut input: R, solver: &mut Solver, is_strict: bool) -> io::Result<()> {
     if solver.verbosity() > 0 {
-        println!("============================[ Problem Statistics ]=============================");
-        println!("|                                                                             |");
+        println!("c ============================[ Problem Statistics ]=============================");
+        println!("c |                                                                             |");
     }
     ratsat::dimacs::parse(&mut input, solver, is_strict)?;
     Ok(())

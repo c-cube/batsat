@@ -23,10 +23,14 @@ use std::cmp;
 use std::f64;
 use std::mem;
 use std::sync::atomic::{Ordering,AtomicBool};
+use std::ops::{Deref,DerefMut};
 use std::fmt;
+use std::fmt::Write;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
-use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData, VMap};
+use dimacs::display::Print;
+use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
+    VMap, ClauseIterable};
 use interface::*;
 
 #[derive(Debug)]
@@ -66,6 +70,9 @@ pub struct Solver {
     learntsize_factor: f64,
     /// The limit for learnt clauses is multiplied with this factor each restart. (default 1.1)
     learntsize_inc: f64,
+
+    produce_proof: bool,
+    proof: Proof, // DRAT proof
 
     learntsize_adjust_start_confl: i32,
     learntsize_adjust_inc: f64,
@@ -179,6 +186,61 @@ struct SolverV {
 impl Default for Solver {
     fn default() -> Self {
         Self::new(SolverOpts::default())
+    }
+}
+
+/// Print the model/proof as DIMACS
+pub struct SolverPrintDimacs<'a> {
+    s: &'a Solver,
+    model: bool, // model or proof
+}
+
+impl<'a> fmt::Display for SolverPrintDimacs<'a> {
+    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
+        if self.model {
+            write!(out, "v ")?;
+            for (i, &val) in self.s.model.iter().enumerate() {
+                if val == lbool::TRUE && i>0 { write!(out, "{} ", i+1)? }
+                else if val == lbool::FALSE && i>0 { write!(out, "-{} ", i+1)? }
+            }
+            writeln!(out, "0")
+        } else {
+            write!(out, "{}", self.s.proof)?;
+            writeln!(out, "0")
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Proof(String);
+
+impl Deref for Proof {
+    type Target=String;
+    fn deref(&self) -> &String { & self.0 }
+}
+
+impl DerefMut for Proof {
+    fn deref_mut(&mut self) -> &mut String { &mut self.0 }
+}
+
+impl fmt::Display for Proof {
+    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
+        write!(out, "{}", self.0)
+    }
+}
+
+impl Proof {
+    fn new() -> Self { Proof(String::new()) }
+
+    /// register clause creation
+    fn create_clause<C>(& mut self, c: & C) where C : ClauseIterable {
+        writeln!(self, "{}", c.pp_dimacs()).unwrap();
+    }
+
+    /// register clause deletion
+    fn delete_clause<C>(&mut self, c: &C) where C : ClauseIterable {
+        // display deletion of clause if proof production is enabled
+        writeln!(self, "d {}", c.pp_dimacs()).unwrap();
     }
 }
 
@@ -299,22 +361,22 @@ impl HasStats for Solver {
     }
 
     fn print_stats(&self) {
-        println!("restarts              : {}", self.starts);
+        println!("c restarts              : {}", self.starts);
         println!(
-            "conflicts             : {:<12}",
+            "c conflicts             : {:<12}",
             self.conflicts
         );
         println!(
-            "decisions             : {:<12}   ({:4.2} % random)",
+            "c decisions             : {:<12}   ({:4.2} % random)",
             self.decisions,
             self.rnd_decisions as f32 * 100.0 / self.decisions as f32
         );
         println!(
-            "propagations          : {:<12}",
+            "c propagations          : {:<12}",
             self.propagations
         );
         println!(
-            "conflict literals     : {:<12}   ({:4.2} % deleted)",
+            "c conflict literals     : {:<12}   ({:4.2} % deleted)",
             self.tot_literals,
             (self.max_literals - self.tot_literals) as f64 * 100.0 / self.max_literals as f64
         );
@@ -366,6 +428,9 @@ impl Solver {
             // Parameters (the rest):
             learntsize_factor: 1.0 / 3.0,
             learntsize_inc: 1.1,
+
+            produce_proof: opts.produce_proof,
+            proof: Proof::new(), // DRAT proof
 
             // Parameters (experimental):
             learntsize_adjust_start_confl: 100,
@@ -609,12 +674,14 @@ impl Solver {
                 self.conflicts += 1;
                 conflict_c += 1;
                 if self.v.decision_level() == 0 {
+                    if self.produce_proof { self.proof.create_clause(&self.ca.get_ref(confl)); }
                     return lbool::FALSE;
                 }
 
                 learnt_clause.clear();
                 let backtrack_level = self.analyze(confl, &mut learnt_clause);
                 self.cancel_until(backtrack_level as u32);
+                if self.produce_proof { self.proof.create_clause(&learnt_clause); }
 
                 if learnt_clause.len() == 1 {
                     self.v.unchecked_enqueue(learnt_clause[0], CRef::UNDEF);
@@ -642,7 +709,7 @@ impl Solver {
                             .cloned()
                             .unwrap_or(self.v.trail.len() as i32);
                         println!(
-                            "| {:9} | {:7} {:8} {:8} | {:8} {:8} {:6.0} | {:6.3} % |",
+                            "c | {:9} | {:7} {:8} {:8} | {:8} {:8} {:6.0} | {:6.3} % |",
                             self.conflicts as i32,
                             self.dec_vars as i32 - trail_lim_head,
                             self.num_clauses(),
@@ -732,16 +799,16 @@ impl Solver {
 
         if self.verbosity >= 1 {
             println!(
-                "============================[ Search Statistics ]=============================="
+                "c ============================[ Search Statistics ]=============================="
             );
             println!(
-                "| Conflicts |          ORIGINAL         |          LEARNT          | Progress |"
+                "c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |"
             );
             println!(
-                "|           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |"
+                "c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |"
             );
             println!(
-                "==============================================================================="
+                "c ==============================================================================="
             );
         }
 
@@ -763,7 +830,7 @@ impl Solver {
 
         if self.verbosity >= 1 {
             println!(
-                "==============================================================================="
+                "c ==============================================================================="
             );
         }
 
@@ -815,6 +882,7 @@ impl Solver {
             if cond {
                 self.v
                     .remove_clause(&mut self.ca, &mut self.watches_data, cr);
+                if self.produce_proof { self.proof.delete_clause(&self.ca.get_ref(cr)); }
             } else {
                 self.learnts[j] = cr;
                 j += 1;
@@ -839,7 +907,8 @@ impl Solver {
         cs.retain(|&cr| {
             let satisfied = self_v.satisfied(ca.get_ref(cr));
             if satisfied {
-                self_v.remove_clause(ca, watches_data, cr)
+                self_v.remove_clause(ca, watches_data, cr);
+                // TODO: print deletion of clause here
             } else {
                 let amount = {
                     let mut c = ca.get_mut(cr);
@@ -888,6 +957,9 @@ impl Solver {
         if learnt {
             self.v.num_learnts += 1;
             self.v.learnts_literals += size as u64;
+
+            // display new clause if proof production is enabled
+            if self.produce_proof { self.proof.create_clause(&self.ca.get_ref(cr)); }
         } else {
             self.v.num_clauses += 1;
             self.v.clauses_literals += size as u64;
@@ -912,6 +984,14 @@ impl Solver {
             // eprintln!("decision_level {} -> {}", self.v.trail_lim.len(), level);
             self.v.trail_lim.resize(level as usize, 0);
         }
+    }
+
+    pub fn dimacs_model(& self) -> SolverPrintDimacs {
+        SolverPrintDimacs {s: self, model: true}
+    }
+
+    pub fn dimacs_proof(& self) -> SolverPrintDimacs {
+        SolverPrintDimacs {s: self, model: false}
     }
 
     /// Analyze conflict and produce a reason clause.
@@ -1059,6 +1139,8 @@ impl Solver {
     fn analyze_final(&mut self, p: Lit, out_conflict: &mut LSet) {
         out_conflict.clear();
         out_conflict.insert(p);
+
+        // TODO: proof output
 
         if self.v.decision_level() == 0 {
             return;
@@ -1656,6 +1738,7 @@ pub struct SolverOpts {
     pub restart_inc: f64,
     pub garbage_frac: f64,
     pub min_learnts_lim: i32,
+    pub produce_proof: bool,
 }
 
 impl Default for SolverOpts {
@@ -1673,6 +1756,7 @@ impl Default for SolverOpts {
             restart_inc: 2.0,
             garbage_frac: 0.20,
             min_learnts_lim: 0,
+            produce_proof: false,
         }
     }
 }
