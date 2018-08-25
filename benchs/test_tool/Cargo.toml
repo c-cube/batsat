@@ -1,0 +1,12 @@
+[package]
+name = "test_tool"
+version = "0.1.0"
+authors = ["Simon Cruanes <simon.cruanes.2007@m4x.org>"]
+
+[dependencies]
+
+subprocess = "0.1.13"
+walkdir = "2"
+libc = "0.2"
+
+[workspace]
