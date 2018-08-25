@@ -6,20 +6,24 @@ extern crate subprocess;
 extern crate walkdir;
 extern crate threadpool;
 
-use std::env;
 use std::path::{PathBuf,Path};
 use std::collections::{HashMap,HashSet};
-use std::time::Instant;
+use std::time::{Instant,Duration};
 use std::thread;
 use std::sync::mpsc;
-use walkdir::WalkDir;
 use subprocess::{Exec,ExitStatus as ES};
 use threadpool::ThreadPool;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
+#[derive(Clone,PartialEq,Eq,Hash)]
 struct SolverName(String);
+
+impl std::fmt::Debug for SolverName {
+    fn fmt(&self, out: &mut std::fmt::Formatter) -> std::fmt::Result {
+        out.write_str(&self.0)
+    }
+}
 
 impl SolverName {
     fn new(s: &str) -> SolverName { SolverName(s.to_owned()) }
@@ -73,11 +77,11 @@ struct Stats {
     unknown: i32,
     sat: i32,
     unsat: i32,
-    ctime: f64,
+    total_time: f64,
 }
 
 impl Stats {
-    fn new() -> Stats {  Stats {unknown: 0, sat:0, unsat: 0, ctime: 0.} }
+    fn new() -> Stats { Stats {unknown: 0, sat:0, unsat: 0, total_time: 0.} }
 
     // update with the given results
     fn update(&mut self, r: SolverAnswer) {
@@ -122,7 +126,7 @@ impl DirResult {
         {
             let s = &mut self.stats.get_mut(& c.name).unwrap();
             s.update(c.res);
-            s.ctime += c.time;
+            s.total_time += c.time;
         }
 
         println!("  {:-15}: {:?}", c.name.0, c);
@@ -173,10 +177,14 @@ fn collect_thread(mut res: DirResult, rx: mpsc::Receiver<SyncMsg>) -> DirResult 
     let mut n_jobs = 0;
     // process messages
     loop {
-        match rx.recv().unwrap() {
-            StartedJob => n_jobs += 1,
-            SentAllJobs => sent_all_jobs = true,
-            JobResult(c) => {
+        match rx.recv_timeout(Duration::from_secs(3_600)) {
+            Err(_) => {
+                println!("collect thread: timeout");
+                std::process::exit(1) // fail
+            },
+            Ok(StartedJob) => n_jobs += 1,
+            Ok(SentAllJobs) => sent_all_jobs = true,
+            Ok(JobResult(c)) => {
                 res.update(c);
                 n_jobs -= 1;
                 if sent_all_jobs && n_jobs == 0 {
@@ -209,7 +217,7 @@ fn process_dir(f: &Path, timeout: i64, jobs: usize) -> Result<DirResult> {
     };
 
     // traverse dir, keep only files
-    let files = WalkDir::new(f)
+    let files = walkdir::WalkDir::new(f)
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -218,7 +226,7 @@ fn process_dir(f: &Path, timeout: i64, jobs: usize) -> Result<DirResult> {
         .filter(|p| p.extension().map(|e| e == "cnf").unwrap_or(false));
 
     for path in files {
-        println!("test on {}", path.display());
+        //println!("test on {}", path.display());
         for solver in solvers.iter() {
             // solve in a worker thread
             let tx = tx.clone();
@@ -241,9 +249,9 @@ fn process_dir(f: &Path, timeout: i64, jobs: usize) -> Result<DirResult> {
 }
 
 fn main() -> Result<()> {
-    let dir = env::var("DIR").ok().unwrap_or("msat".to_owned());
-    let timeout: i64 = env::var("TIMEOUT").ok().unwrap_or("10".to_owned()).parse()?;
-    let jobs: usize = env::var("JOBS").ok().unwrap_or("3".to_owned()).parse()?;
+    let dir = std::env::var("DIR").ok().unwrap_or("msat".to_owned());
+    let timeout: i64 = std::env::var("TIMEOUT").ok().unwrap_or("10".to_owned()).parse()?;
+    let jobs: usize = std::env::var("JOBS").ok().unwrap_or("3".to_owned()).parse()?;
 
     let dres = process_dir(Path::new(&dir), timeout, jobs)?;
 
