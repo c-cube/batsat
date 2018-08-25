@@ -151,7 +151,14 @@ pub extern "C" fn ipasir_val(ptr: *mut c_void, lit: c_int) -> c_int {
 
 #[no_mangle]
 pub extern "C" fn ipasir_failed(ptr: *mut c_void, lit: c_int) -> c_int {
-    return 0 // FIXME
+    let mut s = get_solver(ptr);
+
+    // check unsat-core
+    let lit = s.get_lit(lit);
+    let res = s.solver.unsat_core_contains_var(lit.var());
+
+    mem::forget(s);
+    res
 }
 
 #[no_mangle]
@@ -160,7 +167,16 @@ pub extern "C" fn ipasir_set_terminate(
     state: *mut c_void,
     terminate: extern "C" fn(*mut c_void) -> c_int
 ) {
-    // FIXME
+    let mut s = get_solver(ptr);
+
+    // set handler using the given handler
+    let f = move || {
+        let should_stop = terminate(state) != 0;
+        should_stop
+    };
+    s.solver.set_stop_pred(f);
+
+    mem::forget(s)
 }
 
 #[no_mangle]
