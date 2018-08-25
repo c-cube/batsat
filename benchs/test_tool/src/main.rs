@@ -4,19 +4,30 @@
 
 extern crate subprocess;
 extern crate walkdir;
+extern crate threadpool;
 
 use std::env;
-use std::path::Path;
-use std::collections::HashMap;
+use std::path::{PathBuf,Path};
+use std::collections::{HashMap,HashSet};
 use std::time::Instant;
+use std::thread;
+use std::sync::mpsc;
 use walkdir::WalkDir;
 use subprocess::{Exec,ExitStatus as ES};
+use threadpool::ThreadPool;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
-#[derive(Debug)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
+struct SolverName(String);
+
+impl SolverName {
+    fn new(s: &str) -> SolverName { SolverName(s.to_owned()) }
+}
+
+#[derive(Debug,Clone)]
 struct Solver {
-    name: String,
+    name: SolverName,
     cmd: String,
     args: Vec<String>,
 }
@@ -25,35 +36,39 @@ struct Solver {
 fn mk_solvers(timeout: i64) -> Vec<Solver> {
     vec![
         Solver {
-            name: "minisat".to_owned(),
+            name: SolverName::new("minisat"),
             cmd:"minisat".to_owned(),
             args: vec![format!("-cpu-lim={}", timeout)]
         },
         Solver {
-            name: "ratsat".to_owned(),
+            name: SolverName::new("ratsat"),
             cmd:"./../ratsat-bin".to_owned(),
             args: vec!["--cpu-lim".to_owned(), format!("{}", timeout)]
         },
     ]
 }
 
-#[derive(Debug,Copy,Clone)]
-struct Call {
+#[derive(Debug,Clone)]
+/// A call along with what solver and what file it was
+struct SolverResult {
+    name: SolverName,
+    path: PathBuf,
     time: f64,
-    res: CallResult,
+    res: SolverAnswer,
 }
 
 #[derive(Debug,Copy,Clone,PartialEq)]
-enum CallResult {
+enum SolverAnswer {
     Unknown,
     Sat,
     Unsat,
 }
 
-use CallResult::*;
+use SolverAnswer::*;
+
 
 #[derive(Debug,Copy,Clone)]
-// Statistics for one prover
+/// Statistics for one prover
 struct Stats {
     unknown: i32,
     sat: i32,
@@ -65,7 +80,7 @@ impl Stats {
     fn new() -> Stats {  Stats {unknown: 0, sat:0, unsat: 0, ctime: 0.} }
 
     // update with the given results
-    fn update(&mut self, r: &CallResult) {
+    fn update(&mut self, r: SolverAnswer) {
         match r {
             Unknown => self.unknown += 1,
             Sat => self.sat += 1,
@@ -76,27 +91,122 @@ impl Stats {
 
 #[derive(Debug,Clone)]
 /// Results of all solvers on a given file
-struct FileResult(HashMap<String, Call>);
+struct FileResult(HashMap<SolverName, SolverResult>);
 
-#[derive(Debug)]
 struct DirResult {
-    results: Vec<FileResult>,
-    stats: HashMap<String, Stats>,
-    failures: Vec<FileResult>,
+    results: HashMap<PathBuf,FileResult>,
+    stats: HashMap<SolverName, Stats>,
+    failures: HashSet<PathBuf>,
+    expected: HashMap<PathBuf, SolverAnswer>, // if a solver found a result
 }
 
-fn process_dir(f: &Path, timeout: i64) -> Result<DirResult> {
-    println!("process {}", f.display());
+impl DirResult {
+    fn update(&mut self, c: SolverResult) {
+        // look for mismatches
+        let mut is_present = false;
+        let is_fail =
+            if let Some(res_exp) = self.expected.get(&c.path) {
+                is_present = true;
+                c.res != Unknown && res_exp != &c.res
+            } else {
+                false
+            };
+
+        if is_fail {
+            self.failures.insert(c.path.clone());
+        } else if c.res != Unknown && !is_present {
+            self.expected.insert(c.path.clone(), c.res); // we know what to expect!
+        }
+
+        // update stats for this solver
+        {
+            let s = &mut self.stats.get_mut(& c.name).unwrap();
+            s.update(c.res);
+            s.ctime += c.time;
+        }
+
+        println!("  {:-15}: {:?}", c.name.0, c);
+        // update entry for this file
+        let tbl = self.results
+            .entry(c.path.to_owned())
+            .or_insert_with(|| FileResult(HashMap::new()));
+        tbl.0.insert(c.name.clone(), c);
+    }
+}
+
+/// Call a solver on a file
+fn solve_file(solver: Solver, path: &Path) -> Result<SolverResult> {
+    let start = Instant::now();
+
+    // run the solver on the file
+    let p = Exec::cmd(&solver.cmd)
+        .args(solver.args.as_slice())
+        .arg(path.as_os_str())
+        .stdout(subprocess::NullFile)
+        .stderr(subprocess::NullFile)
+        .join()?;
+    let time = (Instant::now() - start).as_secs() as f64;
+
+    // parse error code
+    let res = match p {
+        ES::Exited(0) => Unknown,
+        ES::Exited(10) => Sat,
+        ES::Exited(20) => Unsat,
+        x => panic!("unknown exit code for solver {:?}: {:?}", solver.cmd, x)
+    };
+
+    Ok(SolverResult {name: solver.name.clone(), path: path.to_owned(), time, res})
+}
+
+/// message sent on channels
+enum SyncMsg {
+    StartedJob,
+    SentAllJobs,
+    JobResult(SolverResult),
+}
+
+/// Main thread that collects results and aggregates them into `res`
+fn collect_thread(mut res: DirResult, rx: mpsc::Receiver<SyncMsg>) -> DirResult {
+    use SyncMsg::*;
+
+    let mut sent_all_jobs = false;
+    let mut n_jobs = 0;
+    // process messages
+    loop {
+        match rx.recv().unwrap() {
+            StartedJob => n_jobs += 1,
+            SentAllJobs => sent_all_jobs = true,
+            JobResult(c) => {
+                res.update(c);
+                n_jobs -= 1;
+                if sent_all_jobs && n_jobs == 0 {
+                    break; // done
+                }
+            }
+        }
+    }
+    res
+}
+
+fn process_dir(f: &Path, timeout: i64, jobs: usize) -> Result<DirResult> {
+    println!("process {} with {} jobs", f.display(), jobs);
 
     let solvers = mk_solvers(timeout);
+    let pool = ThreadPool::new(jobs);
+    let (tx, rx) = mpsc::channel();
 
-    // allocate stats for each solver
-    let mut stats: HashMap<String,Stats> =
-        solvers.iter()
+    // main thread
+    let main_thread = {
+        let mut stats: HashMap<SolverName,Stats> =
+            solvers.iter()
             .map(|s| (s.name.clone(), Stats::new()))
             .collect();
-    let mut results = vec![];
-    let mut failures = vec![];
+        let state = DirResult {
+            stats, results: HashMap::new(),
+            failures: HashSet::new(), expected: HashMap::new(),
+        };
+        thread::spawn(move || collect_thread(state, rx))
+    };
 
     // traverse dir, keep only files
     let files = WalkDir::new(f)
@@ -109,71 +219,33 @@ fn process_dir(f: &Path, timeout: i64) -> Result<DirResult> {
 
     for path in files {
         println!("test on {}", path.display());
-        let mut tbl: HashMap<String,_> = HashMap::new();
-        let mut expected = None;
-        let mut must_fail = false; // true if solvers mismatch
-
         for solver in solvers.iter() {
-            let start = Instant::now();
+            // solve in a worker thread
+            let tx = tx.clone();
+            let solver = solver.clone();
+            let path = path.to_owned();
+            tx.send(SyncMsg::StartedJob).unwrap(); // must wait for one more job
 
-            // run the solver on the file
-            let p = Exec::cmd(&solver.cmd)
-                .args(solver.args.as_slice())
-                .arg(path.as_os_str())
-                .stdout(subprocess::NullFile)
-                .stderr(subprocess::NullFile)
-                .join()?;
-            let time = (Instant::now() - start).as_secs() as f64;
-
-            // parse error code
-            let res = match p {
-                ES::Exited(0) => Unknown,
-                ES::Exited(10) => Sat,
-                ES::Exited(20) => Unsat,
-                x => panic!("unknown exit code for solver {:?}: {:?}", solver.cmd, x)
-            };
-            // look for mismatches
-            if let Some(res_exp) = expected {
-                if res != Unknown && res_exp != res {
-                    must_fail = true;
-                }
-
-            } else if res != Unknown {
-                expected = Some(res);
-            };
-
-
-            // update stats for this solver
-            {
-                let s = &mut stats.get_mut(& solver.name).unwrap();
-                s.update(&res);
-                s.ctime += time;
-            }
-
-            let c = Call {time, res};
-
-            tbl.insert(solver.name.clone(), c);
-            println!("  {:-15}: {:?}", solver.name, c);
+            pool.execute(move || {
+                let c = solve_file(solver, &path).unwrap();
+                tx.send(SyncMsg::JobResult(c)).unwrap() // result of the job
+            });
         }
-
-        let res = FileResult(tbl);
-        if must_fail {
-            failures.push(res.clone());
-        }
-
-        results.push(res);
     };
+    tx.send(SyncMsg::SentAllJobs).unwrap(); // only now can the main thread consider stopping
 
-    Ok(DirResult {stats, results, failures})
+    // wait for the main thread to be done
+    let state = main_thread.join().unwrap();
+
+    Ok(state)
 }
-
-
 
 fn main() -> Result<()> {
     let dir = env::var("DIR").ok().unwrap_or("msat".to_owned());
     let timeout: i64 = env::var("TIMEOUT").ok().unwrap_or("10".to_owned()).parse()?;
+    let jobs: usize = env::var("JOBS").ok().unwrap_or("3".to_owned()).parse()?;
 
-    let dres = process_dir(Path::new(&dir), timeout)?;
+    let dres = process_dir(Path::new(&dir), timeout, jobs)?;
 
     println!("{:?}", dres.stats);
     if dres.failures.len() == 0 {
