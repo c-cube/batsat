@@ -2,7 +2,6 @@
 /// Script to run tests by comparing *Minisat* and *Ratsat* on
 /// a bunch of files.
 
-extern crate subprocess;
 extern crate walkdir;
 extern crate threadpool;
 
@@ -11,8 +10,9 @@ use std::collections::{HashMap,HashSet};
 use std::time::{Instant,Duration};
 use std::thread;
 use std::sync::mpsc;
-use subprocess::{Exec,ExitStatus as ES};
 use threadpool::ThreadPool;
+use std::process::{Command,Stdio};
+use std::io::Write;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
@@ -32,22 +32,32 @@ impl SolverName {
 #[derive(Debug,Clone)]
 struct Solver {
     name: SolverName,
+    mk_proof: bool, // produces proofs?
     cmd: String,
     args: Vec<String>,
 }
 
 // build set of solvers
-fn mk_solvers(timeout: i64) -> Vec<Solver> {
+fn mk_solvers(task: &DirTask) -> Vec<Solver> {
     vec![
         Solver {
             name: SolverName::new("minisat"),
+            mk_proof: false,
             cmd:"minisat".to_owned(),
-            args: vec![format!("-cpu-lim={}", timeout)]
+            args: vec![format!("-cpu-lim={}", task.timeout)]
         },
-        Solver {
-            name: SolverName::new("ratsat"),
-            cmd:"./../ratsat-bin".to_owned(),
-            args: vec!["--cpu-lim".to_owned(), format!("{}", timeout)]
+        {
+            let mut args = vec!["--cpu-lim".to_owned(), format!("{}", task.timeout)];
+            let mk_proof = task.checker.is_some();
+            if mk_proof {
+                args.push("--proof".to_owned()); // output DRAT!
+            };
+            Solver {
+                name: SolverName::new("ratsat"),
+                mk_proof,
+                cmd:"./../ratsat-bin".to_owned(),
+                args,
+            }
         },
     ]
 }
@@ -61,8 +71,10 @@ struct SolverResult {
     res: SolverAnswer,
 }
 
-#[derive(Debug,Copy,Clone,PartialEq)]
+#[derive(Debug,Clone,PartialEq)]
 enum SolverAnswer {
+    CheckFailed,
+    SolverFailed(String),
     Unknown,
     Sat,
     Unsat,
@@ -70,6 +82,11 @@ enum SolverAnswer {
 
 use SolverAnswer::*;
 
+impl SolverAnswer {
+    fn is_definite(&self) -> bool {
+        *self == Sat || *self == Unsat
+    }
+}
 
 #[derive(Debug,Copy,Clone)]
 /// Statistics for one prover
@@ -77,18 +94,26 @@ struct Stats {
     unknown: i32,
     sat: i32,
     unsat: i32,
+    check_failed: i32,
+    solver_fail: i32,
     total_time: f64,
 }
 
 impl Stats {
-    fn new() -> Stats { Stats {unknown: 0, sat:0, unsat: 0, total_time: 0.} }
+    fn new() -> Stats {
+        Stats {
+            unknown: 0, sat: 0, unsat: 0, check_failed: 0,
+            solver_fail: 0, total_time: 0.}
+    }
 
     // update with the given results
-    fn update(&mut self, r: SolverAnswer) {
+    fn update(&mut self, r: &SolverAnswer) {
         match r {
             Unknown => self.unknown += 1,
             Sat => self.sat += 1,
-            Unsat => self.unsat += 1
+            Unsat => self.unsat += 1,
+            CheckFailed => self.check_failed += 1,
+            SolverFailed(_) => self.solver_fail += 1,
         }
     }
 }
@@ -96,6 +121,15 @@ impl Stats {
 #[derive(Debug,Clone)]
 /// Results of all solvers on a given file
 struct FileResult(HashMap<SolverName, SolverResult>);
+
+#[derive(Debug)]
+/// A test task
+struct DirTask {
+    path: PathBuf,
+    timeout: i64,
+    jobs: usize,
+    checker: Option<String>,
+}
 
 struct DirResult {
     results: HashMap<PathBuf,FileResult>,
@@ -111,21 +145,21 @@ impl DirResult {
         let is_fail =
             if let Some(res_exp) = self.expected.get(&c.path) {
                 is_present = true;
-                c.res != Unknown && res_exp != &c.res
+                c.res.is_definite() && res_exp != &c.res
             } else {
                 false
             };
 
         if is_fail {
             self.failures.insert(c.path.clone());
-        } else if c.res != Unknown && !is_present {
-            self.expected.insert(c.path.clone(), c.res); // we know what to expect!
+        } else if c.res.is_definite() && !is_present {
+            self.expected.insert(c.path.clone(), c.res.clone()); // we know what to expect!
         }
 
         // update stats for this solver
         {
             let s = &mut self.stats.get_mut(& c.name).unwrap();
-            s.update(c.res);
+            s.update(&c.res);
             s.total_time += c.time;
         }
 
@@ -139,24 +173,50 @@ impl DirResult {
 }
 
 /// Call a solver on a file
-fn solve_file(solver: Solver, path: &Path) -> Result<SolverResult> {
+fn solve_file(solver: Solver, path: &Path, checker: &Option<String>) -> Result<SolverResult> {
     let start = Instant::now();
 
     // run the solver on the file
-    let p = Exec::cmd(&solver.cmd)
+    let out = Command::new(&solver.cmd)
         .args(solver.args.as_slice())
         .arg(path.as_os_str())
-        .stdout(subprocess::NullFile)
-        .stderr(subprocess::NullFile)
-        .join()?;
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?
+        .wait_with_output()?;
     let time = (Instant::now() - start).as_secs() as f64;
 
     // parse error code
-    let res = match p {
-        ES::Exited(0) => Unknown,
-        ES::Exited(10) => Sat,
-        ES::Exited(20) => Unsat,
-        x => panic!("unknown exit code for solver {:?}: {:?}", solver.cmd, x)
+    let mut res = match out.status.code() {
+        Some(0) => Unknown,
+        Some(10) => Sat,
+        Some(20) => Unsat,
+        x => {
+            let s = String::from_utf8(out.stdout.clone())?;
+            println!("unknown exit code for solver {:?}: {:?}\nstdout: {:?}", solver.cmd, x, s);
+            SolverFailed(s)
+        },
+    };
+
+    if let Some(check_cmd) = checker {
+        if res == Unsat && solver.mk_proof {
+            // run checker now!
+            let mut checker_p = Command::new(&check_cmd)
+                .arg(path.as_os_str()) // give problem as argument
+                .stdin(Stdio::piped()) // give proof on stdin
+                .spawn()?;
+            {
+                // write proof into its output
+                let stdin = checker_p.stdin.as_mut().expect("cannot get stdin of checker");
+                stdin.write_all(out.stdout.as_slice())?;
+            }
+            let checker_out = checker_p.wait()?;
+
+            if ! checker_out.success() {
+                println!("checking failed for {:?} on {}", solver.name, path.display());
+                res = CheckFailed
+            }
+        }
     };
 
     Ok(SolverResult {name: solver.name.clone(), path: path.to_owned(), time, res})
@@ -196,11 +256,12 @@ fn collect_thread(mut res: DirResult, rx: mpsc::Receiver<SyncMsg>) -> DirResult 
     res
 }
 
-fn process_dir(f: &Path, timeout: i64, jobs: usize) -> Result<DirResult> {
-    println!("process {} with {} jobs", f.display(), jobs);
+fn process_task(task: DirTask) -> Result<DirResult> {
+    println!("process {} with {} jobs (proof: {})",
+        task.path.display(), task.jobs, task.checker.is_some());
 
-    let solvers = mk_solvers(timeout);
-    let pool = ThreadPool::new(jobs);
+    let solvers = mk_solvers(&task);
+    let pool = ThreadPool::new(task.jobs);
     let (tx, rx) = mpsc::channel();
 
     // main thread
@@ -217,7 +278,7 @@ fn process_dir(f: &Path, timeout: i64, jobs: usize) -> Result<DirResult> {
     };
 
     // traverse dir, keep only files
-    let files = walkdir::WalkDir::new(f)
+    let files = walkdir::WalkDir::new(&task.path)
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -230,12 +291,13 @@ fn process_dir(f: &Path, timeout: i64, jobs: usize) -> Result<DirResult> {
         for solver in solvers.iter() {
             // solve in a worker thread
             let tx = tx.clone();
+            let checker = task.checker.clone();
             let solver = solver.clone();
             let path = path.to_owned();
             tx.send(SyncMsg::StartedJob).unwrap(); // must wait for one more job
 
             pool.execute(move || {
-                let c = solve_file(solver, &path).unwrap();
+                let c = solve_file(solver, &path, &checker).unwrap();
                 tx.send(SyncMsg::JobResult(c)).unwrap() // result of the job
             });
         }
@@ -252,8 +314,9 @@ fn main() -> Result<()> {
     let dir = std::env::var("DIR").ok().unwrap_or("msat".to_owned());
     let timeout: i64 = std::env::var("TIMEOUT").ok().unwrap_or("10".to_owned()).parse()?;
     let jobs: usize = std::env::var("JOBS").ok().unwrap_or("3".to_owned()).parse()?;
+    let checker = std::env::var("CHECKER").ok();
 
-    let dres = process_dir(Path::new(&dir), timeout, jobs)?;
+    let dres = process_task(DirTask {path: Path::new(&dir).to_owned(), timeout, jobs, checker})?;
 
     println!("{:?}", dres.stats);
     if dres.failures.len() == 0 {
