@@ -5,6 +5,10 @@ build: prebuild
 	@cargo build --release ${FLAGS}
 	@ln -sf target/release/ratsat-bin
 
+build-debug:
+	@cargo build ${FLAGS}
+	@ln -sf target/debug/ratsat-bin
+
 all: build test
 
 build-ipasir:
