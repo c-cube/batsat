@@ -234,7 +234,7 @@ impl Proof {
 
     /// register clause creation
     fn create_clause<C>(& mut self, c: & C) where C : ClauseIterable {
-        writeln!(self, "{}", c.pp_dimacs()).unwrap();
+        writeln!(self, "  {}", c.pp_dimacs()).unwrap();
     }
 
     /// register clause deletion
@@ -674,14 +674,13 @@ impl Solver {
                 self.conflicts += 1;
                 conflict_c += 1;
                 if self.v.decision_level() == 0 {
-                    if self.produce_proof { self.proof.create_clause(&self.ca.get_ref(confl)); }
                     return lbool::FALSE;
                 }
 
                 learnt_clause.clear();
                 let backtrack_level = self.analyze(confl, &mut learnt_clause);
-                self.cancel_until(backtrack_level as u32);
                 if self.produce_proof { self.proof.create_clause(&learnt_clause); }
+                self.cancel_until(backtrack_level as u32);
 
                 if learnt_clause.len() == 1 {
                     self.v.unchecked_enqueue(learnt_clause[0], CRef::UNDEF);
@@ -957,9 +956,6 @@ impl Solver {
         if learnt {
             self.v.num_learnts += 1;
             self.v.learnts_literals += size as u64;
-
-            // display new clause if proof production is enabled
-            if self.produce_proof { self.proof.create_clause(&self.ca.get_ref(cr)); }
         } else {
             self.v.num_clauses += 1;
             self.v.clauses_literals += size as u64;
@@ -1026,7 +1022,8 @@ impl Solver {
 
             let mut iter = c.iter();
             if p != Lit::UNDEF {
-                iter.next();
+                let first = iter.next();
+                assert_eq!(Some(&p), first);
             }
             for &q in iter {
                 if !self.seen[q.var()].is_seen() && self.v.level(q.var()) > 0 {
@@ -1132,7 +1129,7 @@ impl Solver {
         btlevel
     }
 
-    // COULD THIS BE IMPLEMENTED BY THE ORDINARIY "analyze" BY SOME REASONABLE GENERALIZATION?
+    // COULD THIS BE IMPLEMENTED BY THE ORDINARY "analyze" BY SOME REASONABLE GENERALIZATION?
     /// Specialized analysis procedure to express the final conflict in terms of assumptions.
     /// Calculates the (possibly empty) set of assumptions that led to the assignment of 'p', and
     /// stores the result in 'out_conflict'.
@@ -1140,9 +1137,8 @@ impl Solver {
         out_conflict.clear();
         out_conflict.insert(p);
 
-        // TODO: proof output
-
         if self.v.decision_level() == 0 {
+            if self.produce_proof { self.proof.create_clause(out_conflict); }
             return;
         }
 
@@ -1168,6 +1164,7 @@ impl Solver {
         }
 
         self.seen[p.var()] = Seen::UNDEF;
+        self.proof.create_clause(out_conflict);
     }
 
     // Check if 'p' can be removed from a conflict clause.

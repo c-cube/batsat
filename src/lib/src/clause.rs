@@ -336,6 +336,11 @@ impl ClauseIterable for Vec<Lit> {
     fn items(self: &Vec<Lit>) -> &[Self::Item] { &self }
 }
 
+impl ClauseIterable for IntSet<Lit> {
+    type Item = Lit;
+    fn items(&self) -> &[Self::Item] { self.as_slice() }
+}
+
 impl<'a> ClauseMut<'a> {
     #[inline(always)]
     pub fn mark(&self) -> u32 {

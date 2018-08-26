@@ -264,7 +264,6 @@ fn main2() -> io::Result<i32> {
     if solver.verbosity() > 0 {
         solver.print_stats();
         println!("c CPU time              : {:.3}s", resource.cpu_time());
-        println!("");
     }
     if ret == lbool::TRUE {
         println!("s SATISFIABLE");
