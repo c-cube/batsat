@@ -5,11 +5,11 @@
 extern crate walkdir;
 extern crate threadpool;
 
-use std::path::{PathBuf,Path};
+use std::path::{Path,PathBuf};
 use std::collections::{HashMap,HashSet};
 use std::time::{Instant,Duration};
 use std::thread;
-use std::sync::mpsc;
+use std::sync::{Arc,mpsc};
 use threadpool::ThreadPool;
 use std::process::{Command,Stdio};
 use std::io::Write;
@@ -31,7 +31,7 @@ impl SolverName {
 
 #[derive(Debug,Clone)]
 struct Solver {
-    name: SolverName,
+    name: Arc<SolverName>,
     mk_proof: bool, // produces proofs?
     cmd: String,
     args: Vec<String>,
@@ -41,7 +41,7 @@ struct Solver {
 fn mk_solvers(task: &DirTask) -> Vec<Solver> {
     vec![
         Solver {
-            name: SolverName::new("minisat"),
+            name: Arc::new(SolverName::new("minisat")),
             mk_proof: false,
             cmd:"minisat".to_owned(),
             args: vec![format!("-cpu-lim={}", task.timeout)]
@@ -53,7 +53,7 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
                 args.push("--proof".to_owned()); // output DRAT!
             };
             Solver {
-                name: SolverName::new("ratsat"),
+                name: Arc::new(SolverName::new("ratsat")),
                 mk_proof,
                 cmd:"./../ratsat-bin".to_owned(),
                 args,
@@ -65,8 +65,8 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
 #[derive(Debug,Clone)]
 /// A call along with what solver and what file it was
 struct SolverResult {
-    name: SolverName,
-    path: PathBuf,
+    name: Arc<SolverName>,
+    path: Arc<PathBuf>,
     time: f64,
     res: SolverAnswer,
 }
@@ -120,7 +120,7 @@ impl Stats {
 
 #[derive(Debug,Clone)]
 /// Results of all solvers on a given file
-struct FileResult(HashMap<SolverName, SolverResult>);
+struct FileResult(HashMap<Arc<SolverName>, SolverResult>);
 
 #[derive(Debug)]
 /// A test task
@@ -132,10 +132,10 @@ struct DirTask {
 }
 
 struct DirResult {
-    results: HashMap<PathBuf,FileResult>,
-    stats: HashMap<SolverName, Stats>,
-    failures: HashSet<PathBuf>,
-    expected: HashMap<PathBuf, SolverAnswer>, // if a solver found a result
+    results: HashMap<Arc<PathBuf>,FileResult>,
+    stats: HashMap<Arc<SolverName>, Stats>,
+    failures: HashSet<Arc<PathBuf>>,
+    expected: HashMap<Arc<PathBuf>, SolverAnswer>, // if a solver found a result
 }
 
 impl DirResult {
@@ -173,7 +173,7 @@ impl DirResult {
 }
 
 /// Call a solver on a file
-fn solve_file(solver: Solver, path: &Path, checker: &Option<String>) -> Result<SolverResult> {
+fn solve_file(solver: Solver, path: Arc<PathBuf>, checker: &Option<String>) -> Result<SolverResult> {
     let start = Instant::now();
 
     // run the solver on the file
@@ -219,7 +219,7 @@ fn solve_file(solver: Solver, path: &Path, checker: &Option<String>) -> Result<S
         }
     };
 
-    Ok(SolverResult {name: solver.name.clone(), path: path.to_owned(), time, res})
+    Ok(SolverResult {name: solver.name.clone(), path: path.clone(), time, res})
 }
 
 /// message sent on channels
@@ -256,7 +256,7 @@ fn collect_thread(mut res: DirResult, rx: mpsc::Receiver<SyncMsg>) -> DirResult 
     res
 }
 
-fn process_task(task: DirTask) -> Result<DirResult> {
+fn process_task(task: &DirTask) -> Result<DirResult> {
     println!("process {} with {} jobs (proof: {})",
         task.path.display(), task.jobs, task.checker.is_some());
 
@@ -266,7 +266,7 @@ fn process_task(task: DirTask) -> Result<DirResult> {
 
     // main thread
     let main_thread = {
-        let mut stats: HashMap<SolverName,Stats> =
+        let mut stats: HashMap<_,Stats> =
             solvers.iter()
             .map(|s| (s.name.clone(), Stats::new()))
             .collect();
@@ -287,17 +287,18 @@ fn process_task(task: DirTask) -> Result<DirResult> {
         .filter(|p| p.extension().map(|e| e == "cnf").unwrap_or(false));
 
     for path in files {
+        let path = Arc::new(path);
         //println!("test on {}", path.display());
         for solver in solvers.iter() {
             // solve in a worker thread
             let tx = tx.clone();
             let checker = task.checker.clone();
             let solver = solver.clone();
-            let path = path.to_owned();
+            let path = path.clone();
             tx.send(SyncMsg::StartedJob).unwrap(); // must wait for one more job
 
             pool.execute(move || {
-                let c = solve_file(solver, &path, &checker).unwrap();
+                let c = solve_file(solver, path, &checker).unwrap();
                 tx.send(SyncMsg::JobResult(c)).unwrap() // result of the job
             });
         }
@@ -316,7 +317,8 @@ fn main() -> Result<()> {
     let jobs: usize = std::env::var("JOBS").ok().unwrap_or("3".to_owned()).parse()?;
     let checker = std::env::var("CHECKER").ok();
 
-    let dres = process_task(DirTask {path: Path::new(&dir).to_owned(), timeout, jobs, checker})?;
+    let dres = process_task(
+        &DirTask {path: Path::new(&dir).to_owned(), timeout, jobs, checker})?;
 
     println!("{:?}", dres.stats);
     if dres.failures.len() == 0 {
