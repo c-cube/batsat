@@ -27,7 +27,7 @@ use std::u32;
 use intmap::{AsIndex, IntMap, IntSet};
 use alloc::{self, RegionAllocator};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Var(u32);
 
 impl fmt::Debug for Var {
@@ -35,17 +35,19 @@ impl fmt::Debug for Var {
         if self.0 == !0 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "Var({})", self.0)
+            write!(f, "{}", self.0+1)
         }
     }
 }
 
 impl Var {
     pub const UNDEF: Var = Var(!0);
+    #[inline(always)]
     pub(crate) fn from_idx(idx: u32) -> Self {
         debug_assert!(idx < u32::MAX / 2, "Var::from_idx: index too large");
         Var(idx)
     }
+    #[inline(always)]
     pub fn idx(&self) -> u32 {
         self.0
     }
@@ -62,24 +64,30 @@ impl AsIndex for Var {
 
 pub type VMap<V> = IntMap<Var, V>;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lit(u32);
 
 impl Lit {
     pub const UNDEF: Lit = Lit(!1);
     pub const ERROR: Lit = Lit(!0);
+
+    #[inline(always)]
     pub fn new(var: Var, sign: bool) -> Self {
         Lit(var.0 * 2 + (!sign) as u32)
     }
+    #[inline(always)]
     pub(crate) fn from_idx(idx: u32) -> Self {
         Lit(idx)
     }
+    #[inline(always)]
     pub fn idx(&self) -> u32 {
         self.0
     }
+    #[inline(always)]
     pub fn sign(&self) -> bool {
         (self.0 & 1) == 0
     }
+    #[inline(always)]
     pub fn var(&self) -> Var {
         Var(self.0 >> 1)
     }
@@ -92,13 +100,14 @@ impl fmt::Debug for Lit {
         } else if self.0 == !1 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "{}{}", if self.sign() {"+"} else {"-"}, self.0 / 2)
+            write!(f, "{}{}", if self.sign() {""} else {"-"}, self.0 / 2 + 1)
         }
     }
 }
 
 impl ops::Not for Lit {
     type Output = Self;
+    #[inline(always)]
     fn not(self) -> Self {
         Lit(self.0 ^ 1)
     }
@@ -116,9 +125,11 @@ impl ops::BitXorAssign<bool> for Lit {
 }
 
 impl AsIndex for Lit {
+    #[inline(always)]
     fn as_index(self) -> usize {
         self.0 as usize
     }
+    #[inline(always)]
     fn from_index(index: usize) -> Self {
         Lit(index as u32)
     }
@@ -333,6 +344,11 @@ impl<'a> ClauseIterable for ClauseRef<'a> {
 impl<'a> ClauseIterable for ClauseMut<'a> {
     type Item = ClauseData;
     fn items(& self) -> &[Self::Item] { self.data }
+}
+
+impl<'a> ClauseIterable for &'a [Lit] {
+    type Item = Lit;
+    fn items(&self) -> & [Self::Item] { &self }
 }
 
 impl ClauseIterable for Vec<Lit> {

@@ -143,7 +143,7 @@ pub struct Solver {
     free_vars: Vec<Var>,
 
     // Temporaries (to reduce allocation overhead). Each variable is prefixed by the method in which it is
-    // used, exept 'seen' wich is used in several places.
+    // used, exept `seen` wich is used in several places.
     seen: VMap<Seen>,
     analyze_stack: Vec<ShrinkStackElem>,
     analyze_toclear: Vec<Lit>,
@@ -235,7 +235,7 @@ impl Proof {
     fn create_clause<C>(& mut self, c: & C) where C : ClauseIterable {
         writeln!(self, "  {}", c.pp_dimacs()).unwrap();
         if cfg!(feature="log") {
-            debug!("proof.create_clause {:?}", c);
+            debug!("proof.create_clause [{}]", c.pp_dimacs());
         }
     }
 
@@ -244,7 +244,7 @@ impl Proof {
         // display deletion of clause if proof production is enabled
         writeln!(self, "d {}", c.pp_dimacs()).unwrap();
         if cfg!(feature="log") {
-            debug!("proof.delete_clause {:?}", c);
+            debug!("proof.delete_clause [{}]", c.pp_dimacs());
         }
     }
 }
@@ -560,6 +560,7 @@ impl Solver {
         }
     }
 
+    /// Pick a literal to make a decision with
     fn pick_branch_lit(&mut self) -> Lit {
         let mut next = Var::UNDEF;
 
@@ -687,12 +688,15 @@ impl Solver {
 
                 learnt_clause.clear();
                 let backtrack_level = self.analyze(confl, &mut learnt_clause);
-                if self.produce_proof { self.proof.create_clause(&learnt_clause); }
+                if self.produce_proof { self.proof.create_clause(&learnt_clause); } // emit proof
                 self.cancel_until(backtrack_level as u32);
 
+                // propagate the only lit of `learnt_clause` that isn't false
                 if learnt_clause.len() == 1 {
+                    // directly propagate the unit clause at level 0
                     self.v.unchecked_enqueue(learnt_clause[0], CRef::UNDEF);
                 } else {
+                    // propagate the lit, justified by `cr`
                     let cr = self.ca.alloc_with_learnt(&learnt_clause, true);
                     self.learnts.push(cr);
                     self.attach_clause(cr);
@@ -752,9 +756,10 @@ impl Solver {
                     // Perform user provided assumption:
                     let p = self.assumptions[self.v.decision_level() as usize];
                     if self.v.value_lit(p) == lbool::TRUE {
-                        // Dummy decision level:
+                        // Dummy decision level, since `p` is true already:
                         self.new_decision_level();
                     } else if self.v.value_lit(p) == lbool::FALSE {
+                        // conflict at level 0 because of `p`, unsat
                         let mut conflict = mem::replace(&mut self.conflict, LSet::new());
                         self.analyze_final(!p, &mut conflict);
                         self.conflict = conflict;
@@ -776,7 +781,8 @@ impl Solver {
                     }
                 }
 
-                // Increase decision level and enqueue 'next'
+                // Increase decision level and enqueue `next`
+                // with no justification since it's a decision
                 self.new_decision_level();
                 if cfg!(feature="log") {
                     debug!("pick-next {:?}", next);
@@ -1050,22 +1056,25 @@ impl Solver {
 
             let mut iter = c.iter();
             if p != Lit::UNDEF {
+                // skip first literal of `c`, because it should be the one propagated (`p`), on
+                // which we do resolution, so it can't appear in the learnt clause
                 let first = iter.next();
-                assert_eq!(Some(&p), first);
+                debug_assert_eq!(Some(&p), first);
             }
             for &q in iter {
                 if !self.seen[q.var()].is_seen() && self.v.level(q.var()) > 0 {
                     self.v.var_bump_activity(&mut self.order_heap_data, q.var());
                     self.seen[q.var()] = Seen::SOURCE;
                     if self.v.level(q.var()) >= self.v.decision_level() as i32 {
+                        // at decision level: need to eliminate this lit by resolution
                         path_c += 1;
                     } else {
-                        out_learnt.push(q);
+                        out_learnt.push(q); // part of the learnt clause
                     }
                 }
             }
 
-            // Select next clause to look at:
+            // Select next literal in the trail to look at:
             while !self.seen[self.v.trail[index - 1].var()].is_seen() {
                 index -= 1;
             }
@@ -1079,23 +1088,24 @@ impl Solver {
                 break;
             }
         }
-        out_learnt[0] = !p;
+        out_learnt[0] = !p; // literal that will be propagated when the clause is learnt
+        debug_assert!(self.v.value_lit(!p) != lbool::TRUE);
 
         // Simplify conflict clause:
-        //
         self.analyze_toclear.clear();
         self.analyze_toclear.extend_from_slice(&out_learnt);
-        let new_size = if self.ccmin_mode == 2 {
+        let new_size = if !self.produce_proof && self.ccmin_mode == 2 {
             let mut j = 1;
             for i in 1..out_learnt.len() {
                 let lit = out_learnt[i];
+                // can eliminate `lit` only if it's redundant *and* not a decision
                 if self.v.reason(lit.var()) == CRef::UNDEF || !self.lit_redundant(lit) {
                     out_learnt[j] = lit;
                     j += 1;
                 }
             }
             j
-        } else if self.ccmin_mode == 1 {
+        } else if !self.produce_proof && self.ccmin_mode == 1 {
             let mut j = 1;
             for i in 1..out_learnt.len() {
                 let lit = out_learnt[i];
@@ -1152,18 +1162,24 @@ impl Solver {
         };
 
         for &lit in &self.analyze_toclear {
-            self.seen[lit.var()] = Seen::UNDEF; // ('seen[]' is now cleared)
+            self.seen[lit.var()] = Seen::UNDEF; // (`seen[]` is now cleared)
         }
+        debug_assert!(out_learnt.iter().all(|&l| self.v.value_lit(l) == lbool::FALSE));
         btlevel
     }
 
     // COULD THIS BE IMPLEMENTED BY THE ORDINARY "analyze" BY SOME REASONABLE GENERALIZATION?
     /// Specialized analysis procedure to express the final conflict in terms of assumptions.
-    /// Calculates the (possibly empty) set of assumptions that led to the assignment of 'p', and
-    /// stores the result in 'out_conflict'.
+    /// Calculates the (possibly empty) set of assumptions that led to the assignment of `p`, and
+    /// stores the result in `out_conflict`.
     fn analyze_final(&mut self, p: Lit, out_conflict: &mut LSet) {
         out_conflict.clear();
         out_conflict.insert(p);
+        debug_assert!(self.v.value_lit(p) == lbool::FALSE);
+
+        if cfg!(feature="log") {
+            debug!("analyze_final lit={:?}", p);
+        }
 
         if self.v.decision_level() == 0 {
             if self.produce_proof { self.proof.create_clause(out_conflict); }
@@ -1192,10 +1208,11 @@ impl Solver {
         }
 
         self.seen[p.var()] = Seen::UNDEF;
-        self.proof.create_clause(out_conflict);
+        if self.produce_proof { self.proof.create_clause(out_conflict); }
     }
 
-    // Check if 'p' can be removed from a conflict clause.
+    // Check if `p` can be removed from a conflict clause. It can be removed
+    // if it is propagation-implied by literals of level 0 exclusively
     fn lit_redundant(&mut self, mut p: Lit) -> bool {
         debug_assert!(self.seen[p.var()] == Seen::UNDEF || self.seen[p.var()] == Seen::SOURCE);
         debug_assert!(self.v.reason(p.var()) != CRef::UNDEF);
@@ -1208,7 +1225,7 @@ impl Solver {
         loop {
             let c = self.ca.get_mut(cr);
             if i < c.size() {
-                // Checking 'p'-parents 'l':
+                // Checking `p`-parents `l`:
                 let l: Lit = c[i];
 
                 // Variable at level 0 or previously removable:
@@ -1219,10 +1236,13 @@ impl Solver {
                     continue;
                 }
 
-                // Check variable can not be removed for some local reason:
+                // Check if variable can not be removed for some local reason
+                // (e.g. if it's a decision or has failed to be removed already)
                 if self.v.reason(l.var()) == CRef::UNDEF || self.seen[l.var()] == Seen::FAILED {
                     stack.push(ShrinkStackElem::new(0, p));
                     for elem in stack.iter() {
+                        // elements in the stack can't justify making a literal
+                        // redundant, so remember that
                         if self.seen[elem.l.var()] == Seen::UNDEF {
                             self.seen[elem.l.var()] = Seen::FAILED;
                             self.analyze_toclear.push(elem.l);
@@ -1232,13 +1252,13 @@ impl Solver {
                     return false;
                 }
 
-                // Recursively check 'l':
+                // Recursively check if `l` is redundant itself
                 stack.push(ShrinkStackElem::new(i, p));
                 i = 0;
                 p = l;
                 cr = self.v.reason(p.var());
             } else {
-                // Finished with current element 'p' and reason 'c':
+                // Finished with current element `p` and reason `c`:
                 if self.seen[p.var()] == Seen::UNDEF {
                     self.seen[p.var()] = Seen::REMOVABLE;
                     self.analyze_toclear.push(p);
@@ -1272,8 +1292,9 @@ impl Solver {
         let mut num_props: u32 = 0;
 
         while (self.qhead as usize) < self.v.trail.len() {
-            // 'p' is enqueued fact to propagate.
+            // 'p` is enqueued fact to propagate.
             let p = self.v.trail[self.qhead as usize];
+
             // eprintln!("propagating trail[{}] = {:?}", self.qhead, p);
             self.qhead += 1;
             let watches_data_ptr: *mut OccListsData<_, _> = &mut self.watches_data;
@@ -1719,6 +1740,7 @@ impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+/// Elements of the stack used for conflict analysis
 struct ShrinkStackElem {
     i: u32,
     l: Lit,
