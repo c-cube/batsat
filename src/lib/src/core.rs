@@ -28,9 +28,8 @@ use std::fmt;
 use std::fmt::Write;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
-use dimacs::display::Print;
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
-    VMap, ClauseIterable};
+    VMap, ClauseIterable, display::Print};
 use interface::*;
 
 #[derive(Debug)]
@@ -322,6 +321,9 @@ impl SolverInterface for Solver {
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         // eprintln!("add_clause({:?})", clause);
         debug_assert_eq!(self.v.decision_level(), 0);
+        if cfg!(feature="log") {
+            debug!("add clause {:?}", clause);
+        }
         if !self.ok {
             return false;
         }
@@ -776,7 +778,9 @@ impl Solver {
 
                 // Increase decision level and enqueue 'next'
                 self.new_decision_level();
-                // eprintln!("assumption: {:?}", next);
+                if cfg!(feature="log") {
+                    debug!("pick-next {:?}", next);
+                }
                 self.v.unchecked_enqueue(next, CRef::UNDEF);
             }
         }
@@ -862,6 +866,10 @@ impl Solver {
     fn reduce_db(&mut self) {
         let extra_lim = self.cla_inc / self.learnts.len() as f64; // Remove any clause below this activity
 
+        if cfg!(feature="log") {
+            info!("reduce_db.start");
+        }
+
         {
             let ca = &self.ca;
             self.learnts.sort_unstable_by(|&x, &y| {
@@ -877,6 +885,7 @@ impl Solver {
         // Don't delete binary or locked clauses. From the rest, delete clauses from the first half
         // and clauses with activity smaller than 'extra_lim':
         let mut j = 0;
+        let mut deleted = 0;
         for i in 0..self.learnts.len() {
             let cr = self.learnts[i];
             let cond = {
@@ -885,8 +894,8 @@ impl Solver {
                     && (i < self.learnts.len() / 2 || (c.activity() as f64) < extra_lim)
             };
             if cond {
-                self.v
-                    .remove_clause(&mut self.ca, &mut self.watches_data, cr);
+                deleted += 1;
+                self.v.remove_clause(&mut self.ca, &mut self.watches_data, cr);
                 if self.produce_proof { self.proof.delete_clause(&self.ca.get_ref(cr)); }
             } else {
                 self.learnts[j] = cr;
@@ -895,6 +904,11 @@ impl Solver {
         }
         // self.learnts.resize_default(j);
         self.learnts.resize(j, CRef::UNDEF);
+
+        if cfg!(feature="log") {
+            debug!("reduce_db.done (deleted {}", deleted);
+        }
+
         self.check_garbage();
     }
 
@@ -1013,6 +1027,10 @@ impl Solver {
         let mut path_c = 0;
         let mut p = Lit::UNDEF;
 
+        if cfg!(feature="log") {
+            debug!("analyze.start [{}]", self.ca.get_ref(confl).pp_dimacs());
+        }
+
         // Generate conflict clause:
         //
         out_learnt.push(Lit::from_idx(0)); // (leave room for the asserting literal)
@@ -1025,6 +1043,10 @@ impl Solver {
             }
 
             let c = self.ca.get_mut(confl);
+
+            if cfg!(feature="log") {
+                debug!("analyze.resolve-with [{}]", c.pp_dimacs());
+            }
 
             let mut iter = c.iter();
             if p != Lit::UNDEF {

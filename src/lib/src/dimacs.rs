@@ -23,36 +23,6 @@ use std::io::{self, BufRead};
 use interface::SolverInterface;
 use {Lit, Var};
 
-/// Generic interface for objects printable in DIMACS
-pub mod display {
-    use std::fmt;
-
-    /// Objects that can be printed in DIMACS syntax
-    pub trait Print : Sized {
-        fn fmt_dimacs(&self, out: &mut fmt::Formatter) -> fmt::Result;
-
-        /// Any type implementing `T` can  be used in a format string by
-        /// just using `x.pp_dimacs()` instead of `x`.
-        ///
-        /// ```
-        /// use ratsat::*;
-        /// let v: Vec<Lit> = vec![];
-        /// format!("as dimacs: {}", v.pp_dimacs());
-        /// ```
-        fn pp_dimacs(&self) -> PrintWrapper<Self> { PrintWrapper(&self) }
-    }
-
-    /// A wrapper that can be used to display objects in format strings
-    pub struct PrintWrapper<'a, T:'a+Print>(&'a T);
-
-    // Whenever `T` is printable in DIMACS, its wrapper implements Display
-    impl<'a,T:Print> fmt::Display for PrintWrapper<'a,T> {
-        fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-            self.0.fmt_dimacs(out)
-        }
-    }
-}
-
 pub fn parse<S: SolverInterface, R: BufRead>(
     input: &mut R,
     solver: &mut S,

@@ -26,7 +26,6 @@ use std::u32;
 
 use intmap::{AsIndex, IntMap, IntSet};
 use alloc::{self, RegionAllocator};
-use dimacs;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Var(u32);
@@ -93,7 +92,7 @@ impl fmt::Debug for Lit {
         } else if self.0 == !1 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "{}{}", if (self.0 & 1) != 0 {"+"} else {"-"}, self.0 / 2)
+            write!(f, "{}{}", if (self.0 & 1) == 0 {"+"} else {"-"}, self.0 / 2)
         }
     }
 }
@@ -314,7 +313,7 @@ pub trait ClauseIterable: fmt::Debug {
 }
 
 /// Any iterable clause can be printed in DIMACS
-impl<T: ClauseIterable> dimacs::display::Print for T {
+impl<T: ClauseIterable> display::Print for T {
     // display as DIMACS
     fn fmt_dimacs(&self, out: &mut fmt::Formatter) -> fmt::Result {
         for &x in self.items().iter() {
@@ -327,6 +326,11 @@ impl<T: ClauseIterable> dimacs::display::Print for T {
 }
 
 impl<'a> ClauseIterable for ClauseRef<'a> {
+    type Item = ClauseData;
+    fn items(& self) -> &[Self::Item] { self.data }
+}
+
+impl<'a> ClauseIterable for ClauseMut<'a> {
     type Item = ClauseData;
     fn items(& self) -> &[Self::Item] { self.data }
 }
@@ -800,6 +804,36 @@ impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> ops::Deref for OccLists<'a, K
 impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> ops::DerefMut for OccLists<'a, K, V, P> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
+    }
+}
+
+/// Generic interface for objects printable in DIMACS
+pub mod display {
+    use std::fmt;
+
+    /// Objects that can be printed in DIMACS syntax
+    pub trait Print : Sized {
+        fn fmt_dimacs(&self, out: &mut fmt::Formatter) -> fmt::Result;
+
+        /// Any type implementing `T` can  be used in a format string by
+        /// just using `x.pp_dimacs()` instead of `x`.
+        ///
+        /// ```
+        /// use ratsat::*;
+        /// let v: Vec<Lit> = vec![];
+        /// format!("as dimacs: {}", v.pp_dimacs());
+        /// ```
+        fn pp_dimacs(&self) -> PrintWrapper<Self> { PrintWrapper(&self) }
+    }
+
+    /// A wrapper that can be used to display objects in format strings
+    pub struct PrintWrapper<'a, T:'a+Print>(&'a T);
+
+    // Whenever `T` is printable in DIMACS, its wrapper implements Display
+    impl<'a,T:Print> fmt::Display for PrintWrapper<'a,T> {
+        fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
+            self.0.fmt_dimacs(out)
+        }
     }
 }
 
