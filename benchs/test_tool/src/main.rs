@@ -184,7 +184,8 @@ fn solve_file(solver: Solver, path: Arc<PathBuf>, checker: &Option<String>) -> R
         .stderr(Stdio::null())
         .spawn()?
         .wait_with_output()?;
-    let time = (Instant::now() - start).as_secs() as f64;
+    let time = Instant::now() - start;
+    let time = time.as_secs() as f64 + (time.subsec_millis() as f64 / 1_000.);
 
     // parse error code
     let mut res = match out.status.code() {
