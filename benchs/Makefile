@@ -2,8 +2,8 @@
 TEST_TOOL=./test_tool.exe
 TIMEOUT ?= 10
 J ?= 3
-CHECKER ?= 
-#CHECKER ?= CHECKER=./drat-trim
+#CHECKER ?= 
+CHECKER ?= CHECKER=./drat-trim
 
 all: run_tests
 

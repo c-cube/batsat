@@ -205,6 +205,8 @@ fn solve_file(solver: Solver, path: Arc<PathBuf>, checker: &Option<String>) -> R
             let mut checker_p = Command::new(&check_cmd)
                 .arg(path.as_os_str()) // give problem as argument
                 .stdin(Stdio::piped()) // give proof on stdin
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .spawn()?;
             {
                 // write proof into its output
