@@ -39,7 +39,7 @@ struct Solver {
 
 // build set of solvers
 fn mk_solvers(task: &DirTask) -> Vec<Solver> {
-    vec![
+    let mut v = vec![
         Solver {
             name: Arc::new(SolverName::new("minisat")),
             mk_proof: false,
@@ -54,12 +54,26 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
             };
             Solver {
                 name: Arc::new(SolverName::new("ratsat")),
-                mk_proof,
+                mk_proof: false,
+                cmd:"./../ratsat-bin".to_owned(),
+                args: vec!["--cpu-lim".to_owned(), format!("{}", task.timeout)],
+            }
+        },
+    ];
+    // add a checked version of ratsat, if there's a checker
+    if task.checker.is_some() {
+        v.push({
+            let args =
+                vec!["--proof".to_owned(), "--cpu-lim".to_owned(), format!("{}", task.timeout)];
+            Solver {
+                name: Arc::new(SolverName::new("ratsat-proof")),
+                mk_proof: true,
                 cmd:"./../ratsat-bin".to_owned(),
                 args,
             }
-        },
-    ]
+        });
+    }
+    v
 }
 
 #[derive(Debug,Clone)]
