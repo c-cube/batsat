@@ -24,7 +24,7 @@ test-benchs: build
 	@make -C benchs
 
 test-rust: prebuild
-	@cargo test
+	@cargo test --release
 
 test: test-rust test-benchs
 
