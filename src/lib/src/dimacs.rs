@@ -79,7 +79,7 @@ fn read_clause<S: SolverInterface, R: BufRead>(
         while var >= solver.num_vars() {
             solver.new_var_default();
         }
-        lits.push(Lit::new(Var::from_idx(var), parsed_lit < 0));
+        lits.push(Lit::new(Var::from_idx(var), parsed_lit > 0));
     }
 }
 

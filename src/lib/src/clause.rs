@@ -69,7 +69,7 @@ impl Lit {
     pub const UNDEF: Lit = Lit(!1);
     pub const ERROR: Lit = Lit(!0);
     pub fn new(var: Var, sign: bool) -> Self {
-        Lit(var.0 * 2 + sign as u32)
+        Lit(var.0 * 2 + (!sign) as u32)
     }
     pub(crate) fn from_idx(idx: u32) -> Self {
         Lit(idx)
@@ -78,7 +78,7 @@ impl Lit {
         self.0
     }
     pub fn sign(&self) -> bool {
-        (self.0 & 1) != 0
+        (self.0 & 1) == 0
     }
     pub fn var(&self) -> Var {
         Var(self.0 >> 1)
@@ -92,7 +92,7 @@ impl fmt::Debug for Lit {
         } else if self.0 == !1 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "{}{}", if (self.0 & 1) == 0 {"+"} else {"-"}, self.0 / 2)
+            write!(f, "{}{}", if self.sign() {"+"} else {"-"}, self.0 / 2)
         }
     }
 }
