@@ -14,5 +14,7 @@ license = "MIT"
 clap = "2.31.2"
 flate2 = "1.0"
 cpu-time = "0.1"
-ratsat = { version = "=0.0.2", path = "../lib/" }
+ratsat = { version = "=0.0.2", path = "../lib/", features=["log"] }
+log = "0.4"
+env_logger = "0.5"
 

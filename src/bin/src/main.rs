@@ -23,6 +23,9 @@ extern crate clap;
 extern crate flate2;
 extern crate cpu_time;
 extern crate ratsat;
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
@@ -36,6 +39,7 @@ use ratsat::{lbool, Solver, SolverOpts, SolverInterface, HasStats};
 mod system;
 
 fn main() {
+    env_logger::init();
     let exitcode = main2().unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1)
@@ -205,6 +209,7 @@ fn main2() -> io::Result<i32> {
     let initial_time = Instant::now();
 
     if let Some(input_file) = input_file {
+        debug!("solve file {}", input_file);
         let file = BufReader::new(File::open(input_file)?);
         read_input_autogz(file, &mut solver, is_strict)?;
     } else {

@@ -24,6 +24,10 @@ pub mod dimacs;
 pub mod core;
 pub mod interface;
 
+#[cfg(feature="log")]
+#[macro_use]
+extern crate log;
+
 pub use interface::{SolverInterface, HasStats, HasUnsatCore};
 pub use core::{Solver, SolverOpts};
 pub use clause::{lbool, Lit, Var};

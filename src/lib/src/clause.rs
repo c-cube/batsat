@@ -93,7 +93,7 @@ impl fmt::Debug for Lit {
         } else if self.0 == !1 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "Lit({}, {})", self.0 / 2, (self.0 & 1) != 0)
+            write!(f, "{}{}", if (self.0 & 1) != 0 {"+"} else {"-"}, self.0 / 2)
         }
     }
 }
@@ -308,7 +308,7 @@ impl<'a> ClauseRef<'a> {
 ///
 /// We use `Into` to have more flexibility for `ClauseRef`, which contains
 /// a slice of a `union` type rather than pure literals
-pub trait ClauseIterable {
+pub trait ClauseIterable: fmt::Debug {
     type Item : Copy + Into<Lit>;
     fn items(& self) -> &[Self::Item];
 }

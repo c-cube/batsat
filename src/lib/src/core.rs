@@ -235,12 +235,18 @@ impl Proof {
     /// register clause creation
     fn create_clause<C>(& mut self, c: & C) where C : ClauseIterable {
         writeln!(self, "  {}", c.pp_dimacs()).unwrap();
+        if cfg!(feature="log") {
+            debug!("proof.create_clause {:?}", c);
+        }
     }
 
     /// register clause deletion
     fn delete_clause<C>(&mut self, c: &C) where C : ClauseIterable {
         // display deletion of clause if proof production is enabled
         writeln!(self, "d {}", c.pp_dimacs()).unwrap();
+        if cfg!(feature="log") {
+            debug!("proof.delete_clause {:?}", c);
+        }
     }
 }
 
