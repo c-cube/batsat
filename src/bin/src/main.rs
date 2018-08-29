@@ -22,7 +22,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 extern crate clap;
 extern crate flate2;
 extern crate cpu_time;
-extern crate ratsat;
+extern crate batsat;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -34,7 +34,7 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use ratsat::{lbool, Solver, SolverOpts, SolverInterface, HasStats};
+use batsat::{lbool, Solver, SolverOpts, SolverInterface, HasStats};
 
 mod system;
 
@@ -336,6 +336,6 @@ fn read_input<R: BufRead>(mut input: R, solver: &mut Solver, is_strict: bool) ->
         println!("c ============================[ Problem Statistics ]=============================");
         println!("c |                                                                             |");
     }
-    ratsat::dimacs::parse(&mut input, solver, is_strict)?;
+    batsat::dimacs::parse(&mut input, solver, is_strict)?;
     Ok(())
 }

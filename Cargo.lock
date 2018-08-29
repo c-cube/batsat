@@ -25,6 +25,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "batsat"
+version = "0.0.2"
+dependencies = [
+ "log 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "batsat-bin"
+version = "0.0.2"
+dependencies = [
+ "batsat 0.0.2",
+ "clap 2.31.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cpu-time 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "env_logger 0.5.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "flate2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "batsat-ipasir"
+version = "0.1.0"
+dependencies = [
+ "batsat 0.0.2",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -133,32 +159,6 @@ dependencies = [
 name = "quick-error"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "ratsat"
-version = "0.0.2"
-dependencies = [
- "log 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "ratsat-bin"
-version = "0.0.2"
-dependencies = [
- "clap 2.31.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "cpu-time 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "env_logger 0.5.13 (registry+https://github.com/rust-lang/crates.io-index)",
- "flate2 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "ratsat 0.0.2",
-]
-
-[[package]]
-name = "ratsat-ipasir"
-version = "0.1.0"
-dependencies = [
- "ratsat 0.0.2",
-]
 
 [[package]]
 name = "redox_syscall"

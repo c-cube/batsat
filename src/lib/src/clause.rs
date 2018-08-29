@@ -835,7 +835,7 @@ pub mod display {
         /// just using `x.pp_dimacs()` instead of `x`.
         ///
         /// ```
-        /// use ratsat::*;
+        /// use batsat::*;
         /// let v: Vec<Lit> = vec![];
         /// format!("as dimacs: {}", v.pp_dimacs());
         /// ```

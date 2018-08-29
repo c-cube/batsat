@@ -1,10 +1,10 @@
 [package]
-name = "ratsat-bin"
+name = "batsat-bin"
 version = "0.0.2"
-authors = ["Masaki Hara <ackie.h.gmai@gmail.com>"]
-description = "MiniSat reimplemented in Rust"
-homepage = "https://github.com/qnighy/ratsat"
-repository = "https://github.com/qnighy/ratsat"
+authors = ["Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
+description = "SAT solver in Rust"
+homepage = "https://github.com/c-cube/batsat"
+repository = "https://github.com/c-cube/batsat"
 readme = "README.md"
 keywords = ["sat", "dimacs"]
 categories = ["algorithms", "command-line-utilities"]
@@ -14,7 +14,7 @@ license = "MIT"
 clap = "2.31.2"
 flate2 = "1.0"
 cpu-time = "0.1"
-ratsat = { version = "=0.0.2", path = "../lib/", features=["log"] }
+batsat = { version = "=0.0.2", path = "../lib/", features=["log"] }
 log = "0.4"
 env_logger = "0.5"
 

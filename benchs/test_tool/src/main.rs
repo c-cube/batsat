@@ -53,22 +53,22 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
                 args.push("--proof".to_owned()); // output DRAT!
             };
             Solver {
-                name: Arc::new(SolverName::new("ratsat")),
+                name: Arc::new(SolverName::new("batsat")),
                 mk_proof: false,
-                cmd:"./../ratsat-bin".to_owned(),
+                cmd:"./../batsat-bin".to_owned(),
                 args: vec!["--cpu-lim".to_owned(), format!("{}", task.timeout)],
             }
         },
     ];
-    // add a checked version of ratsat, if there's a checker
+    // add a checked version of batsat, if there's a checker
     if task.checker.is_some() {
         v.push({
             let args =
                 vec!["--proof".to_owned(), "--cpu-lim".to_owned(), format!("{}", task.timeout)];
             Solver {
-                name: Arc::new(SolverName::new("ratsat-proof")),
+                name: Arc::new(SolverName::new("batsat-proof")),
                 mk_proof: true,
-                cmd:"./../ratsat-bin".to_owned(),
+                cmd:"./../batsat-bin".to_owned(),
                 args,
             }
         });

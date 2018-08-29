@@ -1,17 +1,17 @@
 
 /// # IPASIR
 ///
-/// API for ratsat following the [IPASIR](https://github.com/biotomas/ipasir) convention.
+/// API for batsat following the [IPASIR](https://github.com/biotomas/ipasir) convention.
 /// See `ipasir` directory at the root of the project
 
-extern crate ratsat;
+extern crate batsat;
 
-use ratsat::{Solver,Var,Lit,lbool};
+use batsat::{Solver,Var,Lit,lbool};
 use std::mem;
 use std::boxed::Box;
 use std::os::raw::{c_char,c_void,c_int};
 
-static NAME : &'static str = "ratsat-0.2\0";
+static NAME : &'static str = "batsat-0.2\0";
 
 /// The wrapper around a solver. It contains partial clauses, assumptions, etc.
 struct IpasirSolver {
