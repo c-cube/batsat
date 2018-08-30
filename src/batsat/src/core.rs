@@ -301,7 +301,7 @@ impl SolverInterface for Solver {
             self.v.activity.insert_default(v, 0.0);
         }
         self.seen.insert_default(v, Seen::UNDEF);
-        self.polarity.insert_default(v, true);
+        self.polarity.insert_default(v, false);
         self.user_pol.insert_default(v, upol);
         self.decision.reserve_default(v);
         let len = self.v.trail.len();
