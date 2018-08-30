@@ -8,4 +8,4 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 
-batsat = { path = "../lib/" }
+batsat = { path = "../batsat/" }

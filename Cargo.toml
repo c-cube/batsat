@@ -2,12 +2,12 @@
 [workspace]
 
 members = [
-  "src/lib",
-  "src/bin",
-  "src/ipasir",
+  "src/batsat",
+  "src/batsat-bin",
+  "src/batsat-ipasir",
 ]
 
 default-members = [
-  "src/lib",
-  "src/bin"
+  "src/batsat",
+  "src/batsat-bin"
 ]
