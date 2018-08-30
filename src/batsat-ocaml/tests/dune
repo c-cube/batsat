@@ -1,0 +1,10 @@
+
+(executable
+  (name test1)
+  (modes native)
+  (flags :standard -w @8 -safe-string)
+  (libraries batsat))
+
+(alias
+  (name runtest)
+  (action (run ./test1.exe)))

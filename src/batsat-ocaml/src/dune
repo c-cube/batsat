@@ -1,0 +1,40 @@
+
+(rule
+ (targets batsat_stubs.c libbatsat_c.a) ;libbatsat_c.so)
+ (deps ./lib.rs ../Cargo.toml (source_tree ../batsat))
+ (action
+  (progn
+    (chdir ..
+      (progn
+       (run cp -r ../../../batsat ..)
+       (chdir src (run cargo build --release))))
+    ; TODO: strip the libs first
+    (run cp ../target/release/libbatsat_c.a .)
+    ;(run cp ../target/release/libbatsat_c.so .)
+    (copy batsat_stubs.c.pre batsat_stubs.c)
+    )))
+
+;(install
+;  (section stublibs)
+;  (files libbatsat_c.so))
+
+(install
+  (section lib)
+  (files libbatsat_c.a))
+
+(library
+  (name batsat)
+  (public_name batsat)
+  (libraries threads)
+  (wrapped false)
+  (modules batsat)
+  (flags :standard -safe-string -w @8)
+  (c_library_flags -Lsrc/ -ldl -lpthread -lbatsat_c) ; -static)
+  ;(modes native)
+  (no_dynlink)  ; .so suck too much, especially to run the tests
+  (ocamlc_flags (-linkall -dllpath . -I . -cclib -lpthread))
+  (ocamlopt_flags (-linkall -ccopt -L. -cclib -lpthread))
+  ;(self_build_stubs_archive (libbatsat_stubs)) ; custom!
+  (c_names batsat_stubs)
+  (c_flags -fPIC -std=c99)
+  )

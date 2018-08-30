@@ -1,0 +1,186 @@
+
+#include <caml/mlvalues.h>
+#include <caml/memory.h>
+#include <caml/alloc.h>
+
+#include "string.h"
+#include "stdlib.h"
+#include "assert.h"
+#include <stdbool.h>
+
+/* API */
+
+typedef int lit;
+typedef struct solver solver;
+typedef enum lbool {
+  l_True = 0,
+  l_False = 1,
+  l_Undef = 2,
+} lbool;
+
+static inline lit lit_of_int(int i) { return i; }
+static inline int  lit_sign(lit l) { return (l > 0); }
+static inline int  lit_var (lit l) { return (lit_sign(l)?l : -l); }
+
+solver* batsat_new(void);
+void    batsat_delete(solver*);
+bool    batsat_simplify(solver*);
+bool    batsat_addlit(solver*, int);
+void    batsat_assume(solver*, int);
+bool    batsat_solve(solver*);
+lbool   batsat_getmodel(solver*,int);
+bool    batsat_check_assumption(solver*,int);
+int     batsat_nvars(solver*);
+int     batsat_nclauses(solver*);
+int     batsat_nconflicts(solver*);
+
+/* stubs */
+
+
+CAMLprim value caml_batsat_new(value unit)
+{
+  CAMLparam0 ();
+  CAMLlocal1 (block);
+
+  solver *s = batsat_new();
+
+  // allocate a block to store the pointer
+  block = caml_alloc_small(sizeof(s), Abstract_tag);
+  *((solver**)(Data_custom_val(block))) = s;
+
+  CAMLreturn (block);
+}
+
+// fast access to the solver
+static inline solver* get_solver(value block)
+{
+  solver *s = *((solver**)Data_custom_val(block));
+  return s;
+}
+
+CAMLprim value caml_batsat_delete(value block)
+{
+  CAMLparam1 (block);
+
+  // already cleaned?
+  if (*((solver**)(Data_custom_val(block)))==0) {
+    goto exit;
+  }
+
+  solver *s = get_solver(block);
+  batsat_delete(s);
+
+  // clear block content
+  memset(Data_custom_val(block), 0, sizeof(solver*));
+
+exit:
+  CAMLreturn (Val_unit);
+}
+
+
+CAMLprim value caml_batsat_simplify(value block)
+{
+  CAMLparam1 (block);
+
+  solver *s = get_solver(block);
+  bool res = batsat_simplify(s);
+
+  CAMLreturn (Val_bool(res));
+}
+
+CAMLprim value caml_batsat_assume(value block, value v_lit)
+{
+  CAMLparam2 (block, v_lit);
+
+  solver *s = get_solver(block);
+  int lit = lit_of_int(Int_val(v_lit));
+  batsat_assume(s, lit);
+
+  CAMLreturn (Val_unit);
+}
+
+
+CAMLprim value caml_batsat_solve(value block)
+{
+  CAMLparam1 (block);
+
+  // solve
+  solver *s = get_solver(block);
+  bool res = batsat_solve(s);
+
+  CAMLreturn (Val_bool(res));
+}
+
+CAMLprim value caml_batsat_addlit(value block, value v_lit)
+{
+  CAMLparam2 (block, v_lit);
+
+  solver *s = get_solver(block);
+  int lit = lit_of_int(Int_val(v_lit));
+  bool res = batsat_addlit(s, lit);
+
+  CAMLreturn (Val_bool(res));
+}
+
+CAMLprim value caml_batsat_value(value block, value v_lit)
+{
+  CAMLparam2 (block, v_lit);
+
+  lit lit = lit_of_int(Int_val(v_lit));
+
+  solver *s = get_solver(block);
+  lbool cur_val = batsat_getmodel(s, lit);
+
+  CAMLreturn (Val_int(cur_val));
+}
+
+CAMLprim value caml_batsat_check_assumption(value block, value v_lit)
+{
+  CAMLparam1 (block);
+
+  solver *s = get_solver(block);
+  lit lit = lit_of_int(Int_val(v_lit));
+
+  bool res = batsat_check_assumption(s, lit);
+
+  CAMLreturn (Val_bool(res));
+}
+
+
+CAMLprim value caml_batsat_set_verbose(value block, value v_lev)
+{
+  CAMLparam1 (block);
+
+  int lev = Int_val(v_lev);
+
+  solver *s = get_solver(block);
+  // FIXME
+  //s->verbosity = lev;
+
+  CAMLreturn (Val_unit);
+}
+
+CAMLprim value caml_batsat_nvars(value block)
+{
+  CAMLparam1 (block);
+
+  solver *s = get_solver(block);
+  CAMLreturn (Val_int (batsat_nvars(s)));
+}
+
+CAMLprim value caml_batsat_nclauses(value block)
+{
+  CAMLparam1 (block);
+
+  solver *s = get_solver(block);
+  CAMLreturn (Val_int (batsat_nclauses(s)));
+}
+
+CAMLprim value caml_batsat_nconflicts(value block)
+{
+  CAMLparam1 (block);
+
+  solver *s = get_solver(block);
+  CAMLreturn (Val_int (batsat_nconflicts(s)));
+}
+
