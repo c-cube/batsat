@@ -355,6 +355,9 @@ impl SolverInterface for Solver {
         self.assumptions.extend_from_slice(assumps);
         self.solve_internal()
     }
+
+    fn value_var(&self, v: Var) -> lbool { self.v.value(v) }
+    fn value_lit(&self, v: Lit) -> lbool { self.v.value_lit(v) }
 }
 
 impl HasStats for Solver {

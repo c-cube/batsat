@@ -24,6 +24,12 @@ pub trait SolverInterface {
 
     /// Search for a model that respects a given set of assumptions (With resource constraints).
     fn solve_limited(&mut self, assumps: &[Lit]) -> lbool;
+
+    /// Query model for var
+    fn value_var(&self, Var) -> lbool;
+
+    /// Query model for lit
+    fn value_lit(&self, Lit) -> lbool;
 }
 
 /// Trait for solvers able to provide an unsat core if `unsat` was found

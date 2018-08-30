@@ -49,4 +49,4 @@ pub mod interface;
 
 pub use interface::{SolverInterface, HasStats, HasUnsatCore};
 pub use core::{Solver, SolverOpts};
-pub use clause::{lbool, Lit, Var, display::Print};
+pub use clause::{lbool, Lit, Var, LMap, LSet, VMap, display::Print};
