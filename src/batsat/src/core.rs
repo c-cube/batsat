@@ -234,18 +234,14 @@ impl Proof {
     /// register clause creation
     fn create_clause<C>(& mut self, c: & C) where C : ClauseIterable {
         writeln!(self, "  {}", c.pp_dimacs()).unwrap();
-        if cfg!(feature="log") {
-            debug!("proof.create_clause [{}]", c.pp_dimacs());
-        }
+        debug!("proof.create_clause [{}]", c.pp_dimacs());
     }
 
     /// register clause deletion
     fn delete_clause<C>(&mut self, c: &C) where C : ClauseIterable {
         // display deletion of clause if proof production is enabled
         writeln!(self, "d {}", c.pp_dimacs()).unwrap();
-        if cfg!(feature="log") {
-            debug!("proof.delete_clause [{}]", c.pp_dimacs());
-        }
+        debug!("proof.delete_clause [{}]", c.pp_dimacs());
     }
 }
 
@@ -321,9 +317,7 @@ impl SolverInterface for Solver {
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         // eprintln!("add_clause({:?})", clause);
         debug_assert_eq!(self.v.decision_level(), 0);
-        if cfg!(feature="log") {
-            debug!("add clause {:?}", clause);
-        }
+        debug!("add clause {:?}", clause);
         if !self.ok {
             return false;
         }
@@ -784,9 +778,7 @@ impl Solver {
                 // Increase decision level and enqueue `next`
                 // with no justification since it's a decision
                 self.new_decision_level();
-                if cfg!(feature="log") {
-                    debug!("pick-next {:?}", next);
-                }
+                debug!("pick-next {:?}", next);
                 self.v.unchecked_enqueue(next, CRef::UNDEF);
             }
         }
@@ -872,9 +864,7 @@ impl Solver {
     fn reduce_db(&mut self) {
         let extra_lim = self.cla_inc / self.learnts.len() as f64; // Remove any clause below this activity
 
-        if cfg!(feature="log") {
-            info!("reduce_db.start");
-        }
+        info!("reduce_db.start");
 
         {
             let ca = &self.ca;
@@ -891,7 +881,7 @@ impl Solver {
         // Don't delete binary or locked clauses. From the rest, delete clauses from the first half
         // and clauses with activity smaller than 'extra_lim':
         let mut j = 0;
-        let mut deleted = 0;
+        let mut _deleted = 0; // only used if logging is enabled
         for i in 0..self.learnts.len() {
             let cr = self.learnts[i];
             let cond = {
@@ -900,7 +890,7 @@ impl Solver {
                     && (i < self.learnts.len() / 2 || (c.activity() as f64) < extra_lim)
             };
             if cond {
-                deleted += 1;
+                _deleted += 1;
                 self.v.remove_clause(&mut self.ca, &mut self.watches_data, cr);
                 if self.produce_proof { self.proof.delete_clause(&self.ca.get_ref(cr)); }
             } else {
@@ -911,9 +901,7 @@ impl Solver {
         // self.learnts.resize_default(j);
         self.learnts.resize(j, CRef::UNDEF);
 
-        if cfg!(feature="log") {
-            debug!("reduce_db.done (deleted {}", deleted);
-        }
+        debug!("reduce_db.done (deleted {})", _deleted);
 
         self.check_garbage();
     }
@@ -1033,9 +1021,7 @@ impl Solver {
         let mut path_c = 0;
         let mut p = Lit::UNDEF;
 
-        if cfg!(feature="log") {
-            debug!("analyze.start [{}]", self.ca.get_ref(confl).pp_dimacs());
-        }
+        debug!("analyze.start [{}]", self.ca.get_ref(confl).pp_dimacs());
 
         // Generate conflict clause:
         //
@@ -1050,9 +1036,7 @@ impl Solver {
 
             let c = self.ca.get_mut(confl);
 
-            if cfg!(feature="log") {
-                debug!("analyze.resolve-with [{}]", c.pp_dimacs());
-            }
+            debug!("analyze.resolve-with [{}]", c.pp_dimacs());
 
             let mut iter = c.iter();
             if p != Lit::UNDEF {
@@ -1177,9 +1161,7 @@ impl Solver {
         out_conflict.insert(p);
         debug_assert!(self.v.value_lit(p) == lbool::FALSE);
 
-        if cfg!(feature="log") {
-            debug!("analyze_final lit={:?}", p);
-        }
+        debug!("analyze_final lit={:?}", p);
 
         if self.v.decision_level() == 0 {
             if self.produce_proof { self.proof.create_clause(out_conflict); }

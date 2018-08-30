@@ -14,7 +14,7 @@ license = "MIT"
 clap = "2.31.2"
 flate2 = "1.0"
 cpu-time = "0.1"
-batsat = { version = "=0.0.2", path = "../batsat/", features=["log"] }
+batsat = { version = "=0.0.2", path = "../batsat/", features=["logging"] }
 log = "0.4"
 env_logger = "0.5"
 

@@ -17,16 +17,35 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
+//======== LOG ============
+
+// stubs when logging is not enabled
+#[cfg(not(feature="logging"))]
+#[macro_use]
+pub(crate) mod log {
+    macro_rules! debug {
+        ($( $x:expr ),*) => {
+        }
+    }
+
+    macro_rules! info {
+        ($( $x:expr ),*) => {
+        }
+    }
+}
+
+#[cfg(feature="logging")]
+#[macro_use]
+extern crate log;
+
+//======== PUBLIC INTERFACE ============
+
 pub mod alloc;
 pub mod intmap;
 pub mod clause;
 pub mod dimacs;
 pub mod core;
 pub mod interface;
-
-#[cfg(feature="log")]
-#[macro_use]
-extern crate log;
 
 pub use interface::{SolverInterface, HasStats, HasUnsatCore};
 pub use core::{Solver, SolverOpts};
