@@ -277,10 +277,6 @@ impl SolverInterface for Solver {
     }
     fn verbosity(&self) -> i32 { self.verbosity }
 
-    fn num_vars(&self) -> u32 {
-        self.next_var.idx()
-    }
-
     fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
         let v = self.free_vars.pop().unwrap_or_else(|| {
             let v = self.next_var;
@@ -359,9 +355,9 @@ impl SolverInterface for Solver {
     fn value_var(&self, v: Var) -> lbool { self.v.value(v) }
     fn value_lit(&self, v: Lit) -> lbool { self.v.value_lit(v) }
 
-    fn num_clauses(&self) -> u32 {
-        self.v.num_clauses as u32
-    }
+    fn num_vars(&self) -> u32 { self.next_var.idx() }
+    fn num_clauses(&self) -> u32 { self.v.num_clauses as u32 }
+    fn num_conflicts(&self) -> u32 { self.conflicts as u32 }
 
     fn print_stats(&self) {
         println!("c restarts              : {}", self.starts);

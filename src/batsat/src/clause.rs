@@ -189,15 +189,34 @@ impl Eq for lbool {}
 
 impl ops::Neg for lbool {
     type Output = lbool;
+
+    /// Negation of a `lbool`
+    ///
+    /// ```
+    /// use batsat::lbool;
+    /// assert_eq!(- lbool::TRUE, lbool::FALSE);
+    /// assert_eq!(- lbool::FALSE, lbool::TRUE);
+    /// assert_eq!(- lbool::UNDEF, lbool::UNDEF);
+    /// ```
     fn neg(self) -> Self {
-        if self.0 == 0 { lbool::FALSE }
-        else if self.0 == 1 { lbool::TRUE }
-        else { lbool::UNDEF }
+        lbool(self.0 ^ 1)
     }
 }
 
 impl ops::BitXor<bool> for lbool {
     type Output = lbool;
+
+    /// Xor of a lbool with a boolean.
+    ///
+    /// ```
+    /// use batsat::lbool;
+    /// assert_eq!(lbool::TRUE ^ true, lbool::FALSE);
+    /// assert_eq!(lbool::TRUE ^ false, lbool::TRUE);
+    /// assert_eq!(lbool::FALSE ^ true, lbool::TRUE);
+    /// assert_eq!(lbool::FALSE ^ false, lbool::FALSE);
+    /// assert_eq!(lbool::UNDEF ^ true, lbool::UNDEF);
+    /// assert_eq!(lbool::UNDEF ^ false, lbool::UNDEF);
+    /// ```
     fn bitxor(self, rhs: bool) -> Self {
         lbool(self.0 ^ rhs as u8)
     }

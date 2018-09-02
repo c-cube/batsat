@@ -10,8 +10,8 @@ pub trait SolverInterface {
     fn verbosity(&self) -> i32;
 
     fn num_vars(&self) -> u32;
-
     fn num_clauses(&self) -> u32;
+    fn num_conflicts(&self) -> u32;
 
     /// Print some current statistics to standard output.
     fn print_stats(&self);
