@@ -1081,7 +1081,7 @@ impl Solver {
         // Simplify conflict clause:
         self.analyze_toclear.clear();
         self.analyze_toclear.extend_from_slice(&out_learnt);
-        let new_size = if !self.produce_proof && self.ccmin_mode == 2 {
+        let new_size = if self.ccmin_mode == 2 {
             let mut j = 1;
             for i in 1..out_learnt.len() {
                 let lit = out_learnt[i];
@@ -1092,7 +1092,7 @@ impl Solver {
                 }
             }
             j
-        } else if !self.produce_proof && self.ccmin_mode == 1 {
+        } else if self.ccmin_mode == 1 {
             let mut j = 1;
             for i in 1..out_learnt.len() {
                 let lit = out_learnt[i];
