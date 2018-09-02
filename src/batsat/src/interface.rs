@@ -30,6 +30,11 @@ pub trait SolverInterface {
     /// Search for a model that respects a given set of assumptions (With resource constraints).
     fn solve_limited(&mut self, assumps: &[Lit]) -> lbool;
 
+    /// Obtain the slice of literals that are proved at level 0.
+    ///
+    /// These literals will keep this value from now on.
+    fn proved_at_lvl_0(&self) -> &[Lit];
+
     /// Query model for var
     ///
     /// Precondition: last result was `Sat` (ie `lbool::TRUE`)

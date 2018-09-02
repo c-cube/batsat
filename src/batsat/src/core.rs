@@ -401,6 +401,13 @@ impl SolverInterface for Solver {
         self.unsat_core_contains_lit(lit)
             || self.unsat_core_contains_lit(!lit)
     }
+
+    fn proved_at_lvl_0(&self) -> &[Lit] {
+        // find where the end of the level-0 part of the trail is
+        let end =
+            self.v.trail_lim.get(0).map_or(self.v.trail.len(), |&x| x as usize);
+        &self.v.trail[..end]
+    }
 }
 
 impl Solver {
