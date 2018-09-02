@@ -35,6 +35,11 @@ pub trait SolverInterface {
     /// These literals will keep this value from now on.
     fn proved_at_lvl_0(&self) -> &[Lit];
 
+    /// Query whole model
+    ///
+    /// Precondition: last result was `Sat` (ie `lbool::TRUE`)
+    fn get_model(&self) -> &[lbool];
+
     /// Query model for var
     ///
     /// Precondition: last result was `Sat` (ie `lbool::TRUE`)

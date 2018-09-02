@@ -36,7 +36,7 @@ use interface::*;
 pub struct Solver {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
-    pub model: Vec<lbool>,
+    model: Vec<lbool>,
     /// If problem is unsatisfiable (possibly under assumptions),
     /// this vector represent the final conflict clause expressed in the assumptions.
     conflict: LSet,
@@ -352,8 +352,9 @@ impl SolverInterface for Solver {
         self.solve_internal()
     }
 
-    fn value_var(&self, v: Var) -> lbool { self.v.value(v) }
-    fn value_lit(&self, v: Lit) -> lbool { self.v.value_lit(v) }
+    fn value_var(&self, v: Var) -> lbool { self.model[v.idx() as usize] }
+    fn value_lit(&self, v: Lit) -> lbool { self.value_var(v.var()) ^ !v.sign() }
+    fn get_model(&self) -> &[lbool] { &self.model }
 
     fn num_vars(&self) -> u32 { self.next_var.idx() }
     fn num_clauses(&self) -> u32 { self.v.num_clauses as u32 }
