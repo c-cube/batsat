@@ -1,0 +1,20 @@
+
+[package]
+name = "batsat-smt"
+version = "0.0.2"
+authors = ["Simon Cruanes"]
+description = "SMT utils for rust"
+homepage = "https://github.com/c-cube/batsat"
+repository = "https://github.com/c-cube/batsat"
+readme = "README.md"
+keywords = ["sat", "smt"]
+categories = ["algorithms"]
+license = "MIT"
+
+[dependencies]
+
+log = "0.4"
+fnv = "^1.0"  # fast hashmap
+
+# TODO: later?
+# rug = "1.2"   # big numerals

@@ -954,6 +954,8 @@ impl Solver {
         }
     }
 
+    // FIXME: unit propagated lits of level 0 should be re-done if pushed
+    // above assumptions
     /// Revert to the state at given level (keeping all assignment at 'level' but not beyond).
     fn cancel_until(&mut self, level: u32) {
         if self.v.decision_level() > level {

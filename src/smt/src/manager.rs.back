@@ -1,0 +1,342 @@
+
+///! Manager
+///
+/// An AST manager, parametrized by the cells composing the nodes of
+/// the DAG structure it is responsible for maintaining.
+///
+
+use std::{slice,hash,fmt,u8};
+use std::vec::Vec;
+use std::fmt;
+use fnv;
+
+use super::util;
+
+/// Unique IDs of terms in a given term manager.
+///
+/// Two terms with the same ID are effectively the same term.
+#[derive(Copy,Clone,PartialEq,Eq,PartialOrd,Ord,Hash)]
+pub struct ID(u32);
+
+/// A pointer to a slice of arguments
+#[derive(Copy,Clone,PartialEq,Eq,PartialOrd,Ord,Hash)]
+pub struct ArgsID {
+    offset: u32,
+    len: u32,
+}
+
+impl ArgsID {
+    /// Create a new slice offset
+    fn new(offset: u32, len: u32) -> Self { ArgsID {offset, len} }
+
+    /// Empty slice
+    const EMPTY : ArgsID = ArgsID::new(0,0);
+}
+
+/// Trait that must be implemented by term cells.
+pub trait Cell : fmt::Debug {
+
+    /// Get a view on the immediate subterms of this term. Return the
+    /// empty slice if the term has no arguments.
+    fn get_subterms(&self) -> &[ID];
+
+    /// Replace the internal slice of arguments by the given slice offset
+    fn update_subterms(&self, ArgsID) -> Self;
+}
+
+
+/// Main manager structure
+pub struct Manager<C : Cell> {
+
+    /// apply terms
+    apps: Vec<term::ApplyTerm>,
+
+    /// Used to store the arguments of sorts
+    sorts_args: Vec<sort::Sort>,
+
+    /// Sorts, indexed by ID.
+    sorts: Vec<SortInternal>,
+
+    /// Map a sort cell (key) into the corresponding ID
+    sorts_set: fnv::FnvHashMap<SortInternalRef, sort::ID>,
+
+    /// Plugins
+    plugins: Vec<Box<plugin::Plugin>>,
+}
+
+/// Internal representation of sorts
+struct SortInternal {
+    atom: sort::Atom,
+    args: * const sort::Sort,
+    n_args: usize,
+}
+
+/// A wrapped pointer to an internal sort. It is used as a key in the hashmap
+struct SortInternalRef(* const SortInternal);
+
+impl SortInternal {
+    /// Obtain the sort's arguments as a slice
+    #[inline]
+    fn args_as_slice<'a>(&'a self) -> &'a [sort::Sort] {
+        unsafe {slice::from_raw_parts(self.args, self.n_args)}
+    }
+}
+
+impl PartialEq for SortInternalRef {
+    // do not compare IDs yet
+    fn eq(&self, other: &SortInternalRef) -> bool {
+        let a1 = unsafe {&*self.0};
+        let a2 = unsafe {&*other.0};
+        a1.atom == a2.atom && a1.args_as_slice() == a2.args_as_slice()
+    }
+}
+impl Eq for SortInternalRef {}
+
+impl hash::Hash for SortInternalRef {
+    fn hash<H>(&self, h:&mut H) where H : hash::Hasher {
+        let a = unsafe {&*self.0};
+        a.atom.hash(h);
+        a.args_as_slice().hash(h)
+    }
+}
+
+// used internally
+const SORT_EMPTY : &'static [sort::Sort] = &[];
+const TERM_EMPTY : &'static [term::Term] = &[];
+
+impl Manager {
+    pub fn new() -> Self {
+        Manager {
+            apps: Vec::with_capacity(1_024),
+            sorts_args: Vec::with_capacity(64),
+            sorts: Vec::with_capacity(32),
+            sorts_set: fnv::FnvHashMap::default(),
+            plugins: Vec::new(),
+        }
+    }
+
+    /// Create a new plugin from a builder function
+    pub fn add_plugin(&mut self, b: plugin::Builder) -> plugin::ID {
+        let pid = self.plugins.len() as u8;
+        if pid == u8::MAX {
+            panic!("maximum number of plugins reached");
+        }
+        let pid = super::plugin::ID(pid);
+        let plugin = b(pid, self); // build plugin
+        self.plugins.push(plugin);
+        pid
+    }
+
+    pub fn n_plugins(&self) -> usize {
+        self.plugins.len()
+    }
+
+    #[inline]
+    pub fn get_apply(& self, id: term::ID) -> & term::ApplyTerm {
+        &self.apps[id.0 as usize]
+    }
+
+    /// `m.get_sort(s)` returns the description of sort `s`
+    pub fn get_sort<'a>(&'a self, id: sort::ID) -> sort::SortCell<'a> {
+        let s = & self.sorts[id.0 as usize];
+        // rebuild from parts
+        let args = unsafe { slice::from_raw_parts(s.args, s.n_args) };
+        sort::SortCell { id, atom: s.atom, args }
+    }
+
+    #[inline]
+    pub fn get_plugin(& self, id: plugin::ID) -> & plugin::Plugin {
+        &*self.plugins[id.0 as usize]
+    }
+
+    /// Iterate on the plugins
+    #[inline]
+    pub fn iter_plugins<'b>(&'b self) -> impl Iterator<Item=&'b plugin::Plugin> {
+        self.plugins.iter().map(|p| &**p)
+    }
+
+    /// Create a new term
+    pub fn mk_apply<'b>(&mut self, fun: fun::Fun, t_args: &'b [term::Term]) -> term::Term {
+        let id = term::ID(self.apps.len() as i32);
+        // copy args into the local array
+        let args =
+            if t_args.len() == 0 { Vec::new() }
+            else {
+                let mut v = Vec::with_capacity(t_args.len());
+                v.extend_from_slice(t_args);
+                v
+            };
+        let app = term::ApplyTerm { id, args, fun, flags: term::Flags::empty(), };
+        self.apps.push(app);
+        term::Term::App(id) // make a new term
+    }
+
+    /// Create a constant term
+    #[inline]
+    pub fn mk_const(&mut self, f: fun::Fun) -> term::Term {
+        self.mk_apply(f, TERM_EMPTY)
+    }
+
+    /// Create a sort
+    ///
+    /// `mk_sort(atom, args)` returns the hashconsed version of this sort.
+    pub fn mk_sort<'a>(&mut self, a: sort::Atom, args: &'a [sort::Sort]) -> sort::Sort {
+        // build a key for lookup
+        let key = SortInternal { atom: a, args: args.as_ptr(), n_args: args.len() };
+        let key = SortInternalRef(& key as *const _);
+        // query using the local key
+        match self.sorts_set.get(&key) {
+            Some(&id) => sort::Sort(id),
+            None => {
+                // allocate a new slot for this sort.
+                let id = sort::ID(self.sorts.len() as u32);
+                let offset = self.sorts_args.len();
+                // allocate arguments of the slice
+                self.sorts_args.extend_from_slice(args);
+                let n = args.len();
+                let v_args = & self.sorts_args[offset .. n];
+                let s = SortInternal { atom: a, args: v_args.as_ptr(), n_args: n };
+                // The sort is owned by the vec, and pointed to by the hashmap
+                self.sorts.push(s);
+                // also add to the map
+                let key2 = SortInternalRef(self.sorts.last().unwrap() as *const _);
+                let present = self.sorts_set.insert(key2, id);
+                assert!(present.is_none());
+                sort::Sort(id)
+            }
+        }
+    }
+
+    #[inline]
+    pub fn mk_const_sort(&mut self, a: sort::Atom) -> sort::Sort {
+        self.mk_sort(a, SORT_EMPTY)
+    }
+
+    /// Check equality of terms
+    pub fn eq_term(&self, t1: term::Term, t2: term::Term) -> bool {
+        // traverse terms as a DAG
+        let mut tbl : fnv::FnvHashSet<(term::Term, term::Term)> = fnv::FnvHashSet::default();
+        let mut q = Vec::new();
+        q.push((t1,t2));
+        while let Some (pair) = q.pop() {
+            use term::Term::*;
+            match pair {
+                (Value(v1), Value(v2)) => if v1 != v2 { return false },
+                (Value(_), App(_)) => return false,
+                (App(_), Value(_)) => return false,
+                (App(f1), App(f2)) => {
+                    let t1 = self.get_apply(f1);
+                    let t2 = self.get_apply(f2);
+                    // check function and arity
+                    if t1.fun != t2.fun || t1.args.len() != t2.args.len() { return false }
+                    if t1.args.len() == 0 { continue; }
+                    if ! tbl.contains(&pair) {
+                        tbl.insert(pair);
+                        // check sub-terms recursively
+                        for i in 0 .. t1.args.len() {
+                            q.push((t1.args[i], t2.args[i]))
+                        }
+                    }
+                },
+            }
+        }
+        true
+    }
+    
+    /// Obtain the ID of a plugin by its name
+    pub fn get_plugin_by_name(&self, name: &str) -> plugin::ID {
+        for p in self.plugins.iter() {
+            if p.name() == name { return p.id() }
+        }
+        panic!("get_dependency: no plugin named {}", name);
+    }
+
+    /// Pretty-print a term
+    pub fn pp_term(&self, fmt: &mut fmt::Formatter, t: term::Term) -> fmt::Result {
+        match t {
+            term::Term::Value(v) => v.fmt(fmt),
+            term::Term::App(id) => {
+                let app = self.get_apply(id);
+                let plugin = self.get_plugin(app.fun.plugin);
+                fun::Manager::pp_apply(plugin, fmt, self, app.fun.id, &app.args)
+            }
+        }
+    }
+
+    /// Pretty-print a sort
+    pub fn pp_sort(&self, fmt: &mut fmt::Formatter, s: sort::Sort) -> fmt::Result {
+        let c = self.get_sort(s.0);
+        let plugin = self.get_plugin(c.atom.plugin);
+        if c.args.len() == 0 {
+            plugin.pp_atom(fmt, c.atom.id)
+        } else {
+            write!(fmt, "(")?;
+            plugin.pp_atom(fmt, c.atom.id)?;
+            for x in c.args.iter() {
+                write!(fmt, " ")?;
+                self.pp_sort(fmt, *x)?;
+            };
+            write!(fmt,")")
+        }
+    }
+
+    /// Install all plugins to the manager
+    pub fn load_all_theories(&mut self) {
+        for b in theories::ALL.iter() {
+            let _ = self.add_plugin(b);
+        }
+    }
+}
+
+/// When a manager is dropped, we can reclaim all memory
+impl Drop for Manager {
+    fn drop(& mut self) {
+        for p in self.plugins.drain(..) {
+            drop(p)
+        }
+        // cleanup sort table
+        self.sorts_set.clear();
+        self.sorts.clear();
+        self.sorts_args.clear();
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use term::TRef;
+
+    macro_rules!ppt {
+        ($t:expr, $m: expr) => {
+            TRef($t as term::Term, &$m)
+        }
+    }
+
+    fn get_manager() -> Manager {
+        let mut m = Manager::new();
+        m.load_all_theories();
+        m
+    }
+
+    // test that we have one plugin, and that we can access it
+    #[test]
+    fn test_manager() {
+        let m = get_manager();
+        assert!(m.n_plugins() >= 1);
+        let p1 = m.get_plugin(plugin::ID(0));
+        assert_eq!(p1.id(), plugin::ID(0));
+    }
+
+    #[test]
+    fn test_apply1() {
+        let mut m = get_manager();
+        let pid = m.get_plugin(plugin::ID(0)).id();
+        let f = fun::Fun {plugin: pid, id: fun::ID(0)};
+        {
+            let t1 = m.mk_apply(f, &vec![]);
+            let t2 = m.mk_apply(f, &vec![]);
+            assert!(t1 != t2, format!("{:?} !== {:?}", ppt!(t1,m), ppt!(t2,m)));
+            assert!(m.eq_term(t1, t2), format!("{:?} = {:?}", ppt!(t1,m), ppt!(t2,m)));
+        }
+    }
+}
