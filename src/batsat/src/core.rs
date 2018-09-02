@@ -358,9 +358,7 @@ impl SolverInterface for Solver {
 
     fn value_var(&self, v: Var) -> lbool { self.v.value(v) }
     fn value_lit(&self, v: Lit) -> lbool { self.v.value_lit(v) }
-}
 
-impl HasStats for Solver {
     fn num_clauses(&self) -> u32 {
         self.v.num_clauses as u32
     }
@@ -386,9 +384,7 @@ impl HasStats for Solver {
             (self.max_literals - self.tot_literals) as f64 * 100.0 / self.max_literals as f64
         );
     }
-}
 
-impl HasUnsatCore for Solver {
     fn unsat_core(&self) -> Vec<Lit> {
         let c = self.conflict.as_slice();
         let mut res = Vec::with_capacity(c.len());
@@ -859,6 +855,7 @@ impl Solver {
         }
 
         self.cancel_until(0);
+        debug!("proved at lvl 0: {:?}", self.v.trail.iter().collect::<Vec<_>>());
         status
     }
 

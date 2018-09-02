@@ -34,7 +34,7 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use batsat::{lbool, Solver, SolverOpts, SolverInterface, HasStats};
+use batsat::{lbool, Solver, SolverOpts, SolverInterface};
 
 mod system;
 

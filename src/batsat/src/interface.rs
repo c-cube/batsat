@@ -11,6 +11,11 @@ pub trait SolverInterface {
 
     fn num_vars(&self) -> u32;
 
+    fn num_clauses(&self) -> u32;
+
+    /// Print some current statistics to standard output.
+    fn print_stats(&self);
+
     /// Creates a new SAT variable in the solver. If 'decision' is cleared, variable will not be
     /// used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
     fn new_var(&mut self, upol: lbool, dvar: bool) -> Var;
@@ -26,27 +31,26 @@ pub trait SolverInterface {
     fn solve_limited(&mut self, assumps: &[Lit]) -> lbool;
 
     /// Query model for var
+    ///
+    /// Precondition: last result was `Sat` (ie `lbool::TRUE`)
     fn value_var(&self, Var) -> lbool;
 
     /// Query model for lit
     fn value_lit(&self, Lit) -> lbool;
-}
 
-/// Trait for solvers able to provide an unsat core if `unsat` was found
-pub trait HasUnsatCore : SolverInterface {
-    /// Return unsat core (as a subset of assumptions)
+    /// Return unsat core (as a subset of assumptions).
+    ///
+    /// Precondition: last result was `Unsat`
     fn unsat_core(&self) -> Vec<Lit>;
 
     /// Does this literal occur in the unsat-core?
+    ///
+    /// Precondition: last result was `Unsat`
     fn unsat_core_contains_lit(&self, lit: Lit) -> bool;
 
     /// Does this variable occur in the unsat-core?
+    ///
+    /// Precondition: last result was `Unsat`
     fn unsat_core_contains_var(&self, v: Var) -> bool;
 }
 
-pub trait HasStats : SolverInterface {
-    fn num_clauses(&self) -> u32;
-
-    /// Print some current statistics to standard output.
-    fn print_stats(&self);
-}

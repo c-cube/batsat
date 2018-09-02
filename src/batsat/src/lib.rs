@@ -47,6 +47,6 @@ pub mod dimacs;
 pub mod core;
 pub mod interface;
 
-pub use interface::{SolverInterface, HasStats, HasUnsatCore};
+pub use interface::SolverInterface;
 pub use core::{Solver, SolverOpts};
 pub use clause::{lbool, Lit, Var, LMap, LSet, VMap, display::Print};
