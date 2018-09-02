@@ -1534,7 +1534,7 @@ impl SolverV {
         self.assigns[x]
     }
     pub fn value_lit(&self, x: Lit) -> lbool {
-        self.assigns[x.var()] ^ x.sign()
+        self.assigns[x.var()] ^ !x.sign()
     }
 
     /// Increase a variable with the current 'bump' value.
@@ -1645,7 +1645,7 @@ impl SolverV {
 
     fn unchecked_enqueue(&mut self, p: Lit, from: CRef) {
         debug_assert_eq!(self.value_lit(p), lbool::UNDEF);
-        self.assigns[p.var()] = lbool::new(!p.sign());
+        self.assigns[p.var()] = lbool::new(p.sign());
         self.vardata[p.var()] = VarData::new(from, self.decision_level() as i32);
         self.trail.push(p);
     }
