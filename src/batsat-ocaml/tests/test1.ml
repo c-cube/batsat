@@ -19,6 +19,8 @@ S.add_clause_l s [l1; S.Lit.neg l3];;
 print_endline "should succeed with sat...";;
 try S.solve s; print_endline "ok!"
 with S.Unsat -> print_endline "failure, got unsat";; (* should not fail *)
+print_endline "gc.major...";;
+Gc.major();;
 S.value s l1;;
 S.value s l2;;
 print_endline "should succeed with sat...";;
@@ -32,11 +34,21 @@ try S.solve s; print_endline "ok!"
 with S.Unsat -> assert false;; (* should not fail *)
 Format.printf "val(l3) = %a@." S.pp_value (S.value s l3);;
 l3, S.value s l3, S.value s (S.Lit.neg l3);;
+
 assert (S.value s l3 = S.V_false);;
 assert (S.value s (S.Lit.neg l3) = S.V_true);;
 print_endline "ok!";;
+print_endline "gc.compact...";;
+Gc.compact();;
+print_endline "done!";;
 print_endline "should return undef...";;
 let l2000 = S.Lit.make 2000 ;;
 assert (S.value s l2000 = S.V_undef);;
 assert (S.value s (S.Lit.neg l2000) = S.V_undef);;
 print_endline "ok!";;
+S.Raw.delete s;;
+S.Raw.delete s;;
+print_endline "gc.compact...!";;
+let s = ();; (* shadow *)
+Gc.compact();;
+print_endline "deleted successfully!";;
