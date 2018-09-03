@@ -76,7 +76,7 @@ macro_rules! with_solver {
 
 fn delete_value(v: Value) {
     if unsafe{ *v.custom_ptr_val::<*const Solver>() } != ptr::null() {
-        println!("delete value");
+        //println!("delete value");
         let s = unsafe { Box::from_raw(*v.custom_ptr_val_mut::<*mut Solver>()) };
         mem::drop(s); // delete!
     }
@@ -151,7 +151,7 @@ caml!(ml_batsat_solve, |ptr|, <res>, {
             assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
             lb != lbool::FALSE
         };
-        println!("res: {:?}, model: {:?}", r, solver.get_model());
+        //println!("res: {:?}, model: {:?}", r, solver.get_model());
         res = Value::bool(r);
     })
 } -> res);
