@@ -2,6 +2,7 @@
 (rule
  (targets libbatsat_stubs.a dllbatsat_stubs.so) ;libbatsat_c.so)
  (deps ./lib.rs ../Cargo.toml (source_tree ../batsat))
+ (mode fallback)
  (action
   (progn
     (chdir ..
@@ -13,10 +14,6 @@
     (run cp ../target/release/libbatsat_stubs.so dllbatsat_stubs.so)
     )))
 
-(install
-  (section stublibs)
-  (files dllbatsat_stubs.so))
-
 (library
   (name batsat)
   (public_name batsat)
@@ -24,12 +21,9 @@
   (wrapped false)
   (modules batsat)
   (flags :standard -safe-string -w @8)
-  (c_library_flags -Lsrc/ -ldl -lpthread) ; -lbatsat_c) ; -static)
+  (c_library_flags :standard -ldl -lpthread) ; -lbatsat_c) ; -static)
   ;(modes native)
-  (no_dynlink)  ; .so suck too much, especially to run the tests
-  (ocamlc_flags (-linkall -dllpath . -I . -cclib -lpthread))
-  (ocamlopt_flags (-linkall -ccopt -L. -cclib -lpthread))
   (self_build_stubs_archive (libbatsat_stubs)) ; custom!
-  ;(c_names batsat_stubs)
+  (c_names batsat_stubs)
   (c_flags -fPIC -std=c99)
   )
