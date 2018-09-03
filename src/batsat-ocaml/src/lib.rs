@@ -58,24 +58,30 @@ impl ops::DerefMut for Solver {
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.s }
 }
 
+// NOTE on storage:
+// we use an OCaml custom block to store the pointer to the Solver (not the
+// solver itself).
+
 // macro to locally borrow solver. `with_solver!(s, v, block)`
 // runs `block` in a context where `s` binds to a `&mut solver` from `v`
 macro_rules! with_solver {
     ($s: ident, $v:expr, $code:block) => {
         {
-            let $s = &mut *($v.custom_ptr_val_mut() as *mut Solver) as &mut Solver;
+            assert!($v.custom_ptr_val::<* const Solver>() != ptr::null());
+            let $s : &mut Solver = &mut (**$v.custom_ptr_val_mut::<*mut Solver>());
             $code;
         };
     }
 }
 
 fn delete_value(v: Value) {
-    if (v.custom_ptr_val() as *const Solver) != ptr::null() {
-        let s = unsafe { Box::from_raw(v.custom_ptr_val_mut() as *mut Solver) };
+    if unsafe{ *v.custom_ptr_val::<*const Solver>() } != ptr::null() {
+        println!("delete value");
+        let s = unsafe { Box::from_raw(*v.custom_ptr_val_mut::<*mut Solver>()) };
         mem::drop(s); // delete!
     }
     // be sure not to delete twice
-    unsafe { * v.custom_ptr_val_mut() = ptr::null() as *const Solver };
+    unsafe { * v.custom_ptr_val_mut::<*const Solver>() = ptr::null() };
 }
 
 // finalizer for values
@@ -104,7 +110,7 @@ caml!(ml_batsat_simplify, |ptr|, <res>, {
 /// Add literal, or add clause if the lit is 0
 caml!(ml_batsat_addlit, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.i32_val();
+        let lit = lit.isize_val() as i32;
 
         let mut r = true;
         if lit == 0 {
@@ -126,7 +132,7 @@ caml!(ml_batsat_addlit, |ptr, lit|, <res>, {
 /// Add assumption into the solver
 caml!(ml_batsat_assume, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.i32_val();
+        let lit = lit.isize_val() as i32;
 
         assert!(lit != 0);
         let lit = solver.get_lit(lit);
@@ -145,15 +151,14 @@ caml!(ml_batsat_solve, |ptr|, <res>, {
             assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
             lb != lbool::FALSE
         };
-        //println!("res: {:?}, model: {:?}", r, solver.get_model());
+        println!("res: {:?}, model: {:?}", r, solver.get_model());
         res = Value::bool(r);
-
     })
 } -> res);
 
 caml!(ml_batsat_value, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.i32_val();
+        let lit = lit.isize_val() as i32;
         let r =
             if lit.abs() >= solver.num_vars() as i32 {
                 lbool::UNDEF
@@ -162,14 +167,14 @@ caml!(ml_batsat_value, |ptr, lit|, <res>, {
                 solver.s.value_lit(lit)
             };
         //println!("val for {:?}: {:?}", lit, r);
-        res = Value::i32(r.to_u8() as i32);
+        res = Value::isize(r.to_u8() as isize);
 
     });
 } -> res);
 
 caml!(ml_batsat_check_assumption, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
-        let lit = lit.i32_val();
+        let lit = lit.isize_val() as i32;
 
         // check unsat-core
         let lit = solver.get_lit(lit);
@@ -181,7 +186,7 @@ caml!(ml_batsat_check_assumption, |ptr, lit|, <res>, {
 
 caml!(ml_batsat_set_verbose, |ptr, level|, <res>, {
     with_solver!(solver, ptr, {
-        let level = level.i32_val();
+        let level = level.isize_val() as i32;
         solver.s.set_verbosity(level);
         res = value::UNIT;
     })
@@ -189,22 +194,22 @@ caml!(ml_batsat_set_verbose, |ptr, level|, <res>, {
 
 caml!(ml_batsat_nvars, |ptr|, <res>, {
     with_solver!(solver, ptr, {
-        let r = solver.s.num_vars() as i64;
-        res = Value::i64(r);
+        let r = solver.s.num_vars() as isize;
+        res = Value::isize(r);
     });
 } -> res);
 
 caml!(ml_batsat_nclauses, |ptr|, <res>, {
     with_solver!(solver, ptr, {
         let r = solver.s.num_clauses();
-        res = Value::i64(r as i64);
+        res = Value::isize(r as isize);
     })
 } -> res);
 
 caml!(ml_batsat_nconflicts, |ptr|, <res>, {
     with_solver!(solver, ptr, {
         let r = solver.s.num_conflicts();
-        res = Value::i64(r as i64);
+        res = Value::isize(r as isize);
     })
 } -> res);
 

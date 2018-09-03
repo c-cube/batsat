@@ -45,7 +45,6 @@ end
 
 let create () =
   let s = Raw.create() in
-  Gc.finalise Raw.delete s;
   s
 
 exception Unsat

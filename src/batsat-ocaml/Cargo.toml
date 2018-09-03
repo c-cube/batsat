@@ -8,7 +8,8 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 
-ocaml = "0.4"
+ocaml = "0.5"
+#ocaml = {version="0.5", path = "/home/simon/workspace/ocaml-rs"}
 batsat = {path = "../batsat/", features=[]}
 
 [workspace]
