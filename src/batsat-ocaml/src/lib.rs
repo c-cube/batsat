@@ -1,12 +1,15 @@
 extern crate batsat;
+#[macro_use]
+extern crate ocaml;
 
 #[link(name="batsat")]
 
+use ocaml::{Value,value};
+
 use std::mem;
 use std::ops;
-use std::os::raw::{c_int,c_void};
 
-use batsat::{Solver as InnerSolver,Var,Lit,lbool,SolverInterface,HasStats,HasUnsatCore};
+use batsat::{Solver as InnerSolver,Var,Lit,lbool,SolverInterface};
 
 pub struct Solver {
     s: InnerSolver,
@@ -38,7 +41,7 @@ impl Solver {
     }
 
     #[inline]
-    fn get_lit(&mut self, lit: c_int) -> Lit {
+    fn get_lit(&mut self, lit: i32) -> Lit {
         assert!(lit != 0);
         let v = self.get_var(lit.abs() as usize);
         Lit::new(v, lit>0)
@@ -55,66 +58,79 @@ impl ops::DerefMut for Solver {
 }
 
 #[inline]
-fn get_solver(ptr: * mut c_void) -> Box<Solver> {
+fn get_solver(v: Value) -> Box<Solver> {
+    let ptr : *mut Solver = v.custom_ptr_val_mut();
     unsafe{ Box::from_raw(ptr as *mut Solver) }
 }
 
-#[no_mangle]
-pub extern "C" fn batsat_delete(ptr: *mut c_void) {
-    let s = get_solver(ptr);
-    mem::drop(s);
+// finalizer for values
+extern "C" fn batsat_finalizer(v: ocaml::core::Value) {
+    let v = Value::new(v);
+    let s = get_solver(v);
+    mem::drop(s); // delete!
 }
 
-#[no_mangle]
-pub extern "C" fn batsat_new() -> *mut c_void {
+caml!(ml_batsat_new, |_params|, <res>, {
     let solver = Box::new(Solver::new());
-    let ptr = Box::into_raw(solver) as *mut Solver as *mut c_void;
-    return ptr
-}
+    let ptr = Box::into_raw(solver) as *mut Solver;
+    res = Value::alloc_custom(ptr, batsat_finalizer);
+} -> res);
 
-#[no_mangle]
-pub extern "C" fn batsat_simplify(ptr: *mut c_void) -> bool {
+caml!(ml_batsat_delete, |param|, <res>, {
+    // FIXME:
+    // already cleaned?
+    // if (*((solver**)(Data_custom_val(block)))==0) {
+    //     goto exit;
+    // }
+    let s = get_solver(param);
+    mem::drop(s);
+    res = value::UNIT;
+} -> res);
+
+caml!(ml_batsat_simplify, |ptr|, <res>, {
     let mut solver = get_solver(ptr);
-    let res = solver.simplify();
+    let r = solver.simplify().into();
     mem::forget(solver);
-    return res
-}
+    res = Value::bool(r);
+} -> res);
 
 /// Add literal, or add clause if the lit is 0
-#[no_mangle]
-pub extern "C" fn batsat_addlit(ptr: *mut c_void, lit: c_int) -> bool {
+caml!(ml_batsat_addlit, |ptr, lit|, <res>, {
     let mut solver = get_solver(ptr);
+    let lit = lit.i32_val();
 
-    let mut res = true;
+    let mut r = true;
     if lit == 0 {
         // push current clause into vector `clauses`, reset it
+        //println!("add-lit {:?}", 0);
         let (solver, cur, _) = solver.decompose();
-        res = solver.add_clause_reuse(cur);
+        r = solver.add_clause_reuse(cur);
         cur.clear();
     } else {
         // push literal into clause
         let lit = solver.get_lit(lit);
+        //println!("add-lit {:?}", lit);
         solver.cur_clause.push(lit);
     }
 
     mem::forget(solver);
-    res
-}
+    res = Value::bool(r);
+} -> res);
 
 /// Add assumption into the solver
-#[no_mangle]
-pub extern "C" fn batsat_assume(ptr: *mut c_void, lit: c_int) {
+caml!(ml_batsat_assume, |ptr, lit|, <res>, {
     let mut solver = get_solver(ptr);
+    let lit = lit.i32_val();
 
     assert!(lit != 0);
     let lit = solver.get_lit(lit);
     solver.assumptions.push(lit);
 
     mem::forget(solver);
-}
+    res = value::UNIT;
+} -> res);
 
-#[no_mangle]
-pub extern "C" fn batsat_solve(ptr: *mut c_void) -> bool {
+caml!(ml_batsat_solve, |ptr|, <res>, {
     let mut solver = get_solver(ptr);
 
     let r = {
@@ -124,51 +140,67 @@ pub extern "C" fn batsat_solve(ptr: *mut c_void) -> bool {
         assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
         lb != lbool::FALSE
     };
+    //println!("res: {:?}, model: {:?}", r, solver.get_model());
     mem::forget(solver);
-    r
-}
+    res = Value::bool(r);
+} -> res);
 
-#[no_mangle]
-pub extern "C" fn batsat_getmodel(ptr: *mut c_void, lit: c_int) -> c_int {
+caml!(ml_batsat_value, |ptr, lit|, <res>, {
     let mut solver = get_solver(ptr);
-
-    let lit = solver.get_lit(lit);
-    let r = solver.s.value_lit(lit);
+    let lit = lit.i32_val();
+    let r =
+        if lit.abs() >= solver.num_vars() as i32 {
+            lbool::UNDEF
+        } else {
+            let lit = solver.get_lit(lit as i32);
+            solver.s.value_lit(lit)
+        };
+    //println!("val for {:?}: {:?}", lit, r);
     mem::forget(solver);
-    r.to_u8() as c_int
-}
+    res = Value::i32(r.to_u8() as i32);
+} -> res);
 
-#[no_mangle]
-pub extern "C" fn batsat_check_assumption(ptr: *mut c_void, lit: c_int) -> bool {
+caml!(ml_batsat_check_assumption, |ptr, lit|, <res>, {
     let mut solver = get_solver(ptr);
+    let lit = lit.i32_val();
 
     // check unsat-core
     let lit = solver.get_lit(lit);
-    let res = solver.s.unsat_core_contains_var(lit.var());
+    let r = solver.s.unsat_core_contains_var(lit.var());
 
     mem::forget(solver);
-    res
-}
+    res = Value::bool(r);
+} -> res);
 
-#[no_mangle]
-pub extern "C" fn batsat_nvars(ptr: *mut c_void) -> c_int {
+caml!(ml_batsat_set_verbose, |ptr, level|, <res>, {
+    let mut solver = get_solver(ptr);
+    let level = level.i32_val();
+
+    solver.s.set_verbosity(level);
+
+    mem::forget(solver);
+    res = value::UNIT;
+} -> res);
+
+caml!(ml_batsat_nvars, |ptr|, <res>, {
     let solver = get_solver(ptr);
-    let r = solver.s.num_vars() as c_int;
+    let r = solver.s.num_vars() as i64;
     mem::forget(solver);
-    r
-}
+    res = Value::i64(r);
+} -> res);
 
-#[no_mangle]
-pub extern "C" fn batsat_nclauses(ptr: *mut c_void) -> c_int {
+caml!(ml_batsat_nclauses, |ptr|, <res>, {
     let solver = get_solver(ptr);
-    let r = solver.s.num_clauses() as c_int;
+    let r = solver.s.num_clauses();
     mem::forget(solver);
-    r
-}
+    res = Value::i64(r as i64);
+} -> res);
 
-#[no_mangle]
-pub extern "C" fn batsat_nconflicts(_ptr: *mut c_void) -> c_int {
-    unimplemented!();
-}
+caml!(ml_batsat_nconflicts, |ptr|, <res>, {
+    let solver = get_solver(ptr);
+    let r = solver.s.num_conflicts();
+    mem::forget(solver);
+    res = Value::i64(r as i64);
+} -> res);
 
 

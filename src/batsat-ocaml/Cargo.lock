@@ -7,5 +7,13 @@ name = "batsat-c"
 version = "0.1.0"
 dependencies = [
  "batsat 0.0.2",
+ "ocaml 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
+[[package]]
+name = "ocaml"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[metadata]
+"checksum ocaml 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)" = "f90c79c33a1202eec91da8fa19d8158cdb5ca7ca89d45c2366d4f32a20bf2739"

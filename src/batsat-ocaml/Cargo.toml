@@ -1,5 +1,5 @@
 [package]
-name = "batsat-c"
+name = "batsat-stubs"
 version = "0.1.0"
 authors = ["Simon Cruanes"]
 
@@ -8,7 +8,7 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 
-#ocaml = "0.4"
+ocaml = "0.4"
 batsat = {path = "../batsat/", features=[]}
 
 [workspace]

@@ -2,6 +2,9 @@
 build:
 	@dune build @install
 
+check:
+	@cargo check
+
 clean:
 	@dune clean
 	@cargo clean

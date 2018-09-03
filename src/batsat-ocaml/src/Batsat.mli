@@ -40,26 +40,26 @@ type assumptions = Lit.t array
 
 module Raw : sig
   type lbool = int (* 0,1,2 *)
-  external create : unit -> t = "caml_batsat_new"
-  external delete : t -> unit = "caml_batsat_delete"
+  external create : unit -> t = "ml_batsat_new"
+  external delete : t -> unit = "ml_batsat_delete"
 
   (* the [add_clause] functions return [false] if the clause
      immediately makes the problem unsat *)
 
-  external simplify : t -> bool = "caml_batsat_simplify"
+  external simplify : t -> bool = "ml_batsat_simplify"
 
-  external add_lit : t -> Lit.t -> bool = "caml_batsat_addlit"
-  external assume : t -> Lit.t -> unit = "caml_batsat_assume"
-  external solve : t -> bool = "caml_batsat_solve"
+  external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit"
+  external assume : t -> Lit.t -> unit = "ml_batsat_assume"
+  external solve : t -> bool = "ml_batsat_solve"
 
-  external nvars : t -> int = "caml_batsat_nvars"
-  external nclauses : t -> int = "caml_batsat_nclauses"
-  external nconflicts : t -> int = "caml_batsat_nconflicts"
+  external nvars : t -> int = "ml_batsat_nvars"
+  external nclauses : t -> int = "ml_batsat_nclauses"
+  external nconflicts : t -> int = "ml_batsat_nconflicts"
 
-  external value : t -> Lit.t -> lbool = "caml_batsat_value"
-  external check_assumption: t -> Lit.t -> bool = "caml_batsat_check_assumption"
+  external value : t -> Lit.t -> lbool = "ml_batsat_value"
+  external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption"
 
-  external set_verbose: t -> int -> unit = "caml_batsat_set_verbose"
+  external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
 end
 
 val create : unit -> t
@@ -88,6 +88,7 @@ type value =
   | V_true
   | V_false
 
+val pp_value : value printer
 val value : t -> Lit.t -> value
 
 val set_verbose: t -> int -> unit

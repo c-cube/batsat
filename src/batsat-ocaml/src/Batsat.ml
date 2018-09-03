@@ -13,7 +13,7 @@ module Lit = struct
   let abs = abs
   let sign n = n > 0
   let to_int n = n
-  let to_string x = (if sign x then "" else "-") ^ string_of_int (to_int x)
+  let to_string x = (if sign x then "" else "-") ^ string_of_int (abs @@ to_int x)
   let pp out x = Format.pp_print_string out (to_string x)
 end
 
@@ -21,26 +21,26 @@ type assumptions = Lit.t array
 
 module Raw = struct
   type lbool = int (* 0,1,2 *)
-  external create : unit -> t = "caml_batsat_new"
-  external delete : t -> unit = "caml_batsat_delete"
+  external create : unit -> t = "ml_batsat_new"
+  external delete : t -> unit = "ml_batsat_delete"
 
   (* the [add_clause] functions return [false] if the clause
      immediately makes the problem unsat *)
 
-  external simplify : t -> bool = "caml_batsat_simplify"
+  external simplify : t -> bool = "ml_batsat_simplify"
 
-  external add_lit : t -> Lit.t -> bool = "caml_batsat_addlit"
-  external assume : t -> Lit.t -> unit = "caml_batsat_assume"
-  external solve : t -> bool = "caml_batsat_solve"
+  external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit"
+  external assume : t -> Lit.t -> unit = "ml_batsat_assume"
+  external solve : t -> bool = "ml_batsat_solve"
 
-  external nvars : t -> int = "caml_batsat_nvars"
-  external nclauses : t -> int = "caml_batsat_nclauses"
-  external nconflicts : t -> int = "caml_batsat_nconflicts"
+  external nvars : t -> int = "ml_batsat_nvars"
+  external nclauses : t -> int = "ml_batsat_nclauses"
+  external nconflicts : t -> int = "ml_batsat_nconflicts"
 
-  external value : t -> Lit.t -> lbool = "caml_batsat_value"
-  external check_assumption: t -> Lit.t -> bool = "caml_batsat_check_assumption"
+  external value : t -> Lit.t -> lbool = "ml_batsat_value"
+  external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption"
 
-  external set_verbose: t -> int -> unit = "caml_batsat_set_verbose"
+  external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
 end
 
 let create () =
@@ -84,6 +84,11 @@ type value =
   | V_undef
   | V_true
   | V_false
+
+let pp_value out = function
+  | V_undef -> Format.pp_print_string out "undef"
+  | V_true -> Format.pp_print_string out "true"
+  | V_false -> Format.pp_print_string out "false"
 
 let value s lit = match Raw.value s lit with
   | 0 -> V_true
