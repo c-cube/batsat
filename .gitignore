@@ -2,3 +2,5 @@
 **/*.rs.bk
 *.a
 benchs
+*.install
+_build
