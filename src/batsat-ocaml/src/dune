@@ -7,7 +7,7 @@
   (progn
     (chdir ..
       (progn
-       (run cp -r ../../../batsat ..)
+       (run cp -r ../../../../src/batsat ..)
        (chdir src (run cargo build --release))))
     ; TODO: strip the libs first
     (run cp ../target/release/libbatsat_stubs.a .)
