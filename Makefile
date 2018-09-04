@@ -14,6 +14,12 @@ all: build test
 build-ipasir:
 	@cargo build --release -p batsat-ipasir
 
+build-ocaml:
+	@dune build -p batsat
+
+test-ocaml:
+	@dune runtest --force --no-buffer
+
 check: prebuild
 	@cargo check ${FLAGS}
 

@@ -16,6 +16,6 @@ to extend batsat further and to provide the following features:
 - [x] ipasir interface for incremental solving
   * [ ] testing this interface
 - [x] debug framework using `log` (optional)
-- [ ] OCaml bindings (wip)
+- [x] OCaml bindings
 - [ ] templated API to write SMT solvers
 - [ ] simplification techniques from Minisat+ (as an optional internal structure)

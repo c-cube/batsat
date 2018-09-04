@@ -58,6 +58,10 @@ module Raw : sig
 
   external value : t -> Lit.t -> lbool = "ml_batsat_value"
   external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption"
+  external unsat_core: t -> Lit.t array = "ml_batsat_unsat_core"
+
+  external n_proved: t -> int = "ml_batsat_n_proved"
+  external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
 
   external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
 end
@@ -82,6 +86,25 @@ val solve : ?assumptions:assumptions -> t -> unit
 
 val n_vars : t -> int
 val n_clauses : t -> int
+
+val is_in_unsat_core : t -> Lit.t -> bool
+(** [is_in_unsat_core s lit] checks whether [abs(lit)] is part of the
+    unsat core (if it was an assumption)
+    precondition: last call to {!solve} raised {!Unsat} *)
+
+val unsat_core : t -> Lit.t array
+(** Access the whole unsat core
+    precondition: last call to {!solve} raised {!Unsat} *)
+
+val n_proved_lvl_0 : t -> int
+(** Number of literals true at level0 (ie proved unconditionally).
+    Can only grow. *)
+
+val get_proved_lvl_0 : t -> int -> Lit.t
+(** Get the n-th proved literal *)
+
+val proved_lvl_0 : t -> Lit.t array
+(** All literals currently proved at level 0 *)
 
 type value =
   | V_undef

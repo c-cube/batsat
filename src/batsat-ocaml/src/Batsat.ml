@@ -39,6 +39,10 @@ module Raw = struct
 
   external value : t -> Lit.t -> lbool = "ml_batsat_value"
   external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption"
+  external unsat_core: t -> Lit.t array = "ml_batsat_unsat_core"
+
+  external n_proved: t -> int = "ml_batsat_n_proved"
+  external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
 
   external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
 end
@@ -73,11 +77,20 @@ let pp_clause out l =
 let simplify s = Raw.simplify s |> check_ret_
 let n_vars = Raw.nvars
 let n_clauses = Raw.nclauses
+let n_proved_lvl_0 = Raw.n_proved
+let get_proved_lvl_0 = Raw.get_proved
+
+let proved_lvl_0 s =
+  Array.init (n_proved_lvl_0 s) (get_proved_lvl_0 s)
 
 let solve ?(assumptions=[||]) s =
   simplify s;
   Array.iter (fun x -> Raw.assume s x) assumptions;
   Raw.solve s |> check_ret_
+
+let is_in_unsat_core s lit = Raw.check_assumption s lit
+
+let unsat_core = Raw.unsat_core
 
 type value =
   | V_undef

@@ -51,7 +51,7 @@ pub trait SolverInterface {
     /// Return unsat core (as a subset of assumptions).
     ///
     /// Precondition: last result was `Unsat`
-    fn unsat_core(&self) -> Vec<Lit>;
+    fn unsat_core(&self) -> &[Lit];
 
     /// Does this literal occur in the unsat-core?
     ///

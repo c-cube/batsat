@@ -382,11 +382,8 @@ impl SolverInterface for Solver {
         );
     }
 
-    fn unsat_core(&self) -> Vec<Lit> {
-        let c = self.conflict.as_slice();
-        let mut res = Vec::with_capacity(c.len());
-        res.extend_from_slice(c);
-        res
+    fn unsat_core(&self) -> &[Lit] {
+        self.conflict.as_slice()
     }
 
     fn unsat_core_contains_lit(&self, lit: Lit) -> bool {

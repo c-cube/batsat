@@ -4,7 +4,7 @@ extern crate ocaml;
 
 #[link(name="batsat")]
 
-use ocaml::{Value,value};
+use ocaml::{ToValue,Value,value};
 
 use std::ptr;
 use std::mem;
@@ -184,6 +184,23 @@ caml!(ml_batsat_check_assumption, |ptr, lit|, <res>, {
     })
 } -> res);
 
+/// Convert a literal into a signed integer for the OCaml frontend
+#[inline]
+fn int_of_lit(lit: Lit) -> isize {
+    lit.var().idx() as isize * if lit.sign() { 1 } else { -1 }
+}
+
+caml!(ml_batsat_unsat_core, |ptr|, <res>, {
+    with_solver!(solver, ptr, {
+        let core =
+            solver.s.unsat_core()
+            .iter()
+            .map(|&lit| int_of_lit(lit))
+            .collect::<Vec<_>>();
+        res = core.to_value();
+    })
+} -> res);
+
 caml!(ml_batsat_set_verbose, |ptr, level|, <res>, {
     with_solver!(solver, ptr, {
         let level = level.isize_val() as i32;
@@ -213,4 +230,19 @@ caml!(ml_batsat_nconflicts, |ptr|, <res>, {
     })
 } -> res);
 
+caml!(ml_batsat_n_proved, |ptr|, <res>, {
+    with_solver!(solver, ptr, {
+        let r = solver.s.proved_at_lvl_0().len();
+        res = Value::isize(r as isize);
+    })
+} -> res);
+
+caml!(ml_batsat_get_proved, |ptr, idx|, <res>, {
+    let i = idx.isize_val() as usize;
+    with_solver!(solver, ptr, {
+        let lit = solver.s.proved_at_lvl_0()[i];
+        let lit = lit.var().idx() as isize * if lit.sign() { 1 } else { -1 };
+        res = Value::isize(lit);
+    })
+} -> res);
 
