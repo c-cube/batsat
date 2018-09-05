@@ -25,6 +25,7 @@ check: prebuild
 
 clean:
 	@cargo clean
+	@dune clean || true
 
 test-benchs: build
 	@make -C benchs
