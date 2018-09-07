@@ -15,6 +15,9 @@ module Lit = struct
   let to_int n = n
   let to_string x = (if sign x then "" else "-") ^ string_of_int (abs @@ to_int x)
   let pp out x = Format.pp_print_string out (to_string x)
+  let equal : t -> t -> bool = Pervasives.(=)
+  let compare : t -> t -> int = Pervasives.compare
+  let hash : t -> int = Hashtbl.hash
 end
 
 type assumptions = Lit.t array
@@ -96,11 +99,12 @@ type value =
   | V_undef
   | V_true
   | V_false
+let string_of_value = function
+  | V_undef -> "undef"
+  | V_true -> "true"
+  | V_false -> "false"
 
-let pp_value out = function
-  | V_undef -> Format.pp_print_string out "undef"
-  | V_true -> Format.pp_print_string out "true"
-  | V_false -> Format.pp_print_string out "false"
+let pp_value out v = Format.pp_print_string out (string_of_value v)
 
 let value s lit = match Raw.value s lit with
   | 0 -> V_true

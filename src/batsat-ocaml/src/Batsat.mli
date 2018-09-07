@@ -12,6 +12,10 @@ module Lit : sig
   type t = private int
   (** Some representation of literals that will be accepted by the SAT solver. *)
 
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val compare : t -> t -> int
+
   val make : int -> t
   (** [make n] creates the literal whose index is [n].
       {b NOTE} [n] must be strictly positive. Use {!neg} to obtain
@@ -113,5 +117,6 @@ type value =
 
 val pp_value : value printer
 val value : t -> Lit.t -> value
+val string_of_value : value -> string
 
 val set_verbose: t -> int -> unit
