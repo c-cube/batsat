@@ -60,7 +60,9 @@ pub fn parse<S: SolverInterface, R: BufRead>(
         } else if incremental && ch == Some(b'a') {
             input.consume(1); // skip 'a'
             read_clause(input, solver, &mut lits)?;
-            let res = solver.solve_limited(&mut lits); // solve under assumptions
+            debug!("solve with assumptions {:?} (ok: {})", &lits, solver.is_ok());
+            solver.simplify();
+            let res = solver.solve_limited(&lits); // solve under assumptions
             match res {
                 x if x == lbool::TRUE => println!("SAT"),
                 x if x == lbool::FALSE => println!("UNSAT"),
@@ -74,7 +76,7 @@ pub fn parse<S: SolverInterface, R: BufRead>(
             break;
         }
     }
-    if is_strict && num_clauses != num_read_clauses {
+    if is_strict && !incremental && num_clauses != num_read_clauses {
         return parse_error(format!(
             "PARSE ERROR! DIMACS header mismatch: wrong number of clauses"
         ));

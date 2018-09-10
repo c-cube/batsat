@@ -210,6 +210,7 @@ fn main2() -> io::Result<i32> {
 
     if let Some(input_file) = input_file {
         let incremental = input_file.ends_with(".icnf");
+        if incremental { solver.set_verbosity(0) }
         debug!("solve file {} (incremental: {})", input_file, incremental);
         let file = BufReader::new(File::open(input_file)?);
         read_input_autogz(file, &mut solver, is_strict, incremental)?;
