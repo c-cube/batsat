@@ -30,6 +30,9 @@ clean:
 test-benchs: build
 	@make -C benchs
 
+test-benchs-debug: build-debug
+	@make -C benchs
+
 test-rust: prebuild
 	@cargo test --release
 
