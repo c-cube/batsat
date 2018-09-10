@@ -345,8 +345,8 @@ impl SolverInterface for Solver {
     }
 
     fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
-        self.assumptions.clear();
         self.asynch_interrupt.store(false, Ordering::SeqCst);
+        self.assumptions.clear();
         self.assumptions.extend_from_slice(assumps);
         self.solve_internal()
     }
@@ -756,9 +756,9 @@ impl Solver {
         }
     }
 
-    // NOTE: assumptions passed in member-variable 'assumptions'.
-    /// Main solve method (assumptions given in 'assumptions').
+    /// Main solve method (assumptions given in `self.assumptions`).
     fn solve_internal(&mut self) -> lbool {
+        assert!(self.v.decision_level()==0);
         self.model.clear();
         self.conflict.clear();
         if !self.ok {
@@ -777,18 +777,10 @@ impl Solver {
         let mut status = lbool::UNDEF;
 
         if self.verbosity >= 1 {
-            println!(
-                "c ============================[ Search Statistics ]=============================="
-            );
-            println!(
-                "c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |"
-            );
-            println!(
-                "c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |"
-            );
-            println!(
-                "c ==============================================================================="
-            );
+            println!( "c ============================[ Search Statistics ]==============================");
+            println!( "c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |");
+            println!( "c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |");
+            println!( "c ===============================================================================");
         }
 
         // Search:
@@ -852,9 +844,8 @@ impl Solver {
             });
         }
         // Don't delete binary or locked clauses. From the rest, delete clauses from the first half
-        // and clauses with activity smaller than 'extra_lim':
+        // and clauses with activity smaller than `extra_lim`:
         let mut j = 0;
-        let mut _deleted = 0; // only used if logging is enabled
         for i in 0..self.learnts.len() {
             let cr = self.learnts[i];
             let cond = {
@@ -863,7 +854,6 @@ impl Solver {
                     && (i < self.learnts.len() / 2 || (c.activity() as f64) < extra_lim)
             };
             if cond {
-                _deleted += 1;
                 self.v.remove_clause(&mut self.ca, &mut self.watches_data, cr);
                 if self.produce_proof { self.proof.delete_clause(&self.ca.get_ref(cr)); }
             } else {
@@ -871,7 +861,9 @@ impl Solver {
                 j += 1;
             }
         }
+
         // self.learnts.resize_default(j);
+        let _deleted = self.learnts.len()-j;
         self.learnts.resize(j, CRef::UNDEF);
 
         debug!("reduce_db.done (deleted {})", _deleted);
@@ -1399,6 +1391,8 @@ impl Solver {
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
             && (! self.stop_pred.stop())
     }
+
+    /// Move to the given clause allocator, where clause indices might differ
     fn reloc_all(&mut self, to: &mut ClauseAllocator) {
         macro_rules! is_removed {
             ($ca:expr, $cr:expr) => {
@@ -1406,7 +1400,6 @@ impl Solver {
             };
         }
         // All watchers:
-        //
         self.watches().clean_all();
         for v in (0..self.num_vars()).map(Var::from_idx) {
             for s in 0..2 {
@@ -1418,12 +1411,11 @@ impl Solver {
         }
 
         // All reasons:
-        //
         for &lit in &self.v.trail {
             let v = lit.var();
 
-            // Note: it is not safe to call 'locked()' on a relocated clause. This is why we keep
-            // 'dangling' reasons here. It is safe and does not hurt.
+            // Note: it is not safe to call `locked()` on a relocated clause. This is why we keep
+            // `dangling` reasons here. It is safe and does not hurt.
             let reason = self.v.reason(v);
             if reason != CRef::UNDEF {
                 let cond = {
@@ -1438,17 +1430,7 @@ impl Solver {
         }
 
         // All learnt:
-        //
         {
-            // let ca = &mut self.ca;
-            // self.learnts.drain_filter(|cr| {
-            //     if !is_removed!(ca, *cr) {
-            //         ca.reloc(cr, to);
-            //         false
-            //     } else {
-            //         true
-            //     }
-            // }).count();
             let mut j = 0;
             for i in 0..self.learnts.len() {
                 let mut cr = self.learnts[i];
@@ -1462,17 +1444,7 @@ impl Solver {
         }
 
         // All original:
-        //
         {
-            // let ca = &mut self.ca;
-            // self.clauses.drain_filter(|cr| {
-            //     if !is_removed!(ca, *cr) {
-            //         ca.reloc(cr, to);
-            //         false
-            //     } else {
-            //         true
-            //     }
-            // }).count();
             let mut j = 0;
             for i in 0..self.clauses.len() {
                 let mut cr = self.clauses[i];
