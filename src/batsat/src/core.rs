@@ -139,7 +139,6 @@ pub struct Solver {
     next_var: Var,
     ca: ClauseAllocator,
 
-    released_vars: Vec<Var>,
     free_vars: Vec<Var>,
 
     // Temporaries (to reduce allocation overhead). Each variable is prefixed by the method in which it is
@@ -477,7 +476,6 @@ impl Solver {
             next_var: Var::from_idx(0),
 
             ca: ClauseAllocator::new(),
-            released_vars: vec![],
             free_vars: vec![],
             seen: VMap::new(),
             analyze_stack: vec![],
@@ -614,37 +612,11 @@ impl Solver {
             return true;
         }
 
-        // Remove satisfied clauses:
+        // Remove satisfied learnt clauses:
         self.remove_satisfied(true);
         if self.remove_satisfied {
             // Can be turned off.
-            self.remove_satisfied(false);
-
-            // TODO: what todo in if 'remove_satisfied' is false?
-
-            // Remove all released variables from the trail:
-            for &rvar in &self.released_vars {
-                debug_assert_eq!(self.seen[rvar], Seen::UNDEF);
-                self.seen[rvar] = Seen::SOURCE;
-            }
-
-            {
-                let seen = &self.seen;
-                self.v.trail.retain(|&lit| !seen[lit.var()].is_seen());
-            }
-            // eprintln!(
-            //     "trail.size()= {}, qhead = {}",
-            //     self.v.trail.len(),
-            //     self.qhead
-            // );
-            self.qhead = self.v.trail.len() as i32;
-
-            for &rvar in &self.released_vars {
-                self.seen[rvar] = Seen::UNDEF;
-            }
-
-            // Released variables are now ready to be reused:
-            self.free_vars.extend(self.released_vars.drain(..));
+            self.remove_satisfied(false); // remove satisfied normal clauses
         }
         self.check_garbage();
         self.rebuild_order_heap();
