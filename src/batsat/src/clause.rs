@@ -665,6 +665,9 @@ impl ClauseAllocator {
         self.ra.free(size);
     }
 
+    /// Relocate clause `cr` into allocator `to`.
+    ///
+    /// post condition: `*cr` now contains the index of the copy in `to`
     pub fn reloc(&mut self, cr: &mut CRef, to: &mut ClauseAllocator) {
         let mut c = self.get_mut(*cr);
 

@@ -614,11 +614,10 @@ impl Solver {
             return true;
         }
 
-        // Remove satisfied learnt clauses:
-        self.remove_satisfied(true);
+        self.remove_satisfied(ClauseSet::Learnt); // Remove satisfied learnt clauses
         if self.remove_satisfied {
-            // Can be turned off.
-            self.remove_satisfied(false); // remove satisfied normal clauses
+            // FIXME: seems very wrong in incremental context (see incremental regression test1)
+            self.remove_satisfied(ClauseSet::Original); // remove satisfied normal clauses
         }
         self.check_garbage();
         self.rebuild_order_heap();
@@ -873,13 +872,12 @@ impl Solver {
         self.check_garbage();
     }
 
-    /// Shrink 'cs' to contain only non-satisfied clauses.
-    // fn remove_satisfied(&mut self, cs: &mut Vec<CRef>) {
-    fn remove_satisfied(&mut self, shrink_learnts: bool) {
-        let cs: &mut Vec<CRef> = if shrink_learnts {
-            &mut self.learnts
-        } else {
-            &mut self.clauses
+    /// Shrink the given set to contain only non-satisfied clauses.
+    fn remove_satisfied(&mut self, which: ClauseSet) {
+        assert_eq!(self.v.decision_level(), 0);
+        let cs: &mut Vec<CRef> = match which {
+            ClauseSet::Learnt => &mut self.learnts,
+            ClauseSet::Original => &mut self.clauses,
         };
         let ca = &mut self.ca;
         let watches_data = &mut self.watches_data;
@@ -889,10 +887,11 @@ impl Solver {
             if satisfied {
                 self_v.remove_clause(ca, watches_data, cr);
                 debug!("remove satisfied clause {}", ca.get_ref(cr).pp_dimacs());
+                // we should not need to tell the proof checker to remove the clause
             } else {
-                let amount = {
+                let amount_shaved = {
                     let mut c = ca.get_mut(cr);
-                    // Trim clause:
+                    // Trim clause (but keep the 2 first lits as they are watching):
                     debug_assert_eq!(self_v.value_lit(c[0]), lbool::UNDEF);
                     debug_assert_eq!(self_v.value_lit(c[1]), lbool::UNDEF);
                     let mut k = 2;
@@ -900,6 +899,7 @@ impl Solver {
                     let mut end = c.size();
                     while k < end {
                         if self_v.value_lit(c[k]) == lbool::FALSE {
+                            // this lit is false at level 0, remove it from `c`
                             debug_assert!(self_v.level(c[k].var()) == 0);
                             end -= 1;
                             c[k] = c[end];
@@ -911,7 +911,7 @@ impl Solver {
                     orig_size - end
                 };
                 // It was not in MiniSAT, but it is needed for correct wasted calculation.
-                ca.free_amount(amount);
+                ca.free_amount(amount_shaved);
             }
             !satisfied
         });
@@ -1163,6 +1163,7 @@ impl Solver {
 
     // Check if `p` can be removed from a conflict clause. It can be removed
     // if it is propagation-implied by literals of level 0 exclusively
+    // TODO: port abstract levels from minisat
     fn lit_redundant(&mut self, mut p: Lit) -> bool {
         debug_assert!(self.seen[p.var()] == Seen::UNDEF || self.seen[p.var()] == Seen::SOURCE);
         debug_assert!(self.v.reason(p.var()) != CRef::UNDEF);
@@ -1293,6 +1294,7 @@ impl Solver {
                         c[k] = false_lit;
 
                         // self.watches()[!c[1]].push(w);
+                        // safe because `!c[1]!=p`, so watches are not aliased
                         assert_ne!(!c[1], p);
                         unsafe { &mut (*watches_data_ptr)[!c[1]] }.push(w);
                         continue 'clauses;
@@ -1317,10 +1319,7 @@ impl Solver {
                     self.v.unchecked_enqueue(first, cr);
                 }
             }
-            let dummy = Watcher {
-                cref: CRef::UNDEF,
-                blocker: Lit::UNDEF,
-            };
+            let dummy = Watcher::DUMMY;
             ws.resize(j, dummy);
         }
         self.propagations += num_props as u64;
@@ -1329,12 +1328,16 @@ impl Solver {
         confl
     }
 
+    /// Check whether the space wasted by dead clauses in the clause allocator exceeds
+    /// the threshold
     fn check_garbage(&mut self) {
         if self.ca.wasted() as f64 > self.ca.len() as f64 * self.garbage_frac {
             self.garbage_collect();
         }
     }
 
+    /// Garbage collect the clause allocator by moving alive clauses into
+    /// another allocator.
     fn garbage_collect(&mut self) {
         // Initialize the next region to a size corresponding to the estimated utilization degree. This
         // is not precise but should avoid some unnecessary reallocations for the new region:
@@ -1502,8 +1505,11 @@ impl SolverV {
         }
     }
 
-    /// Detach a clause to watcher lists.
-    fn detach_clause_strict(
+    /// Detach a clause from watcher lists.
+    ///
+    /// param `strict` means we remove the clause from watchers eagerly, instead
+    /// of just marking the watchlist as "dirty"
+    fn detach_clause(
         &mut self,
         ca: &mut ClauseAllocator,
         watches_data: &mut OccListsData<Lit, Watcher>,
@@ -1545,14 +1551,7 @@ impl SolverV {
             self.clauses_literals -= csize as u64;
         }
     }
-    fn detach_clause(
-        &mut self,
-        ca: &mut ClauseAllocator,
-        watches_data: &mut OccListsData<Lit, Watcher>,
-        cr: CRef,
-    ) {
-        self.detach_clause_strict(ca, watches_data, cr, false)
-    }
+
     /// Detach and free a clause.
     fn remove_clause(
         &mut self,
@@ -1560,7 +1559,7 @@ impl SolverV {
         watches_data: &mut OccListsData<Lit, Watcher>,
         cr: CRef,
     ) {
-        self.detach_clause(ca, watches_data, cr);
+        self.detach_clause(ca, watches_data, cr, false);
         {
             let c = ca.get_ref(cr);
             // Don't leave pointers to free'd memory!
@@ -1568,7 +1567,7 @@ impl SolverV {
                 self.vardata[c[0].var()].reason = CRef::UNDEF;
             }
         }
-        ca.get_mut(cr).set_mark(1);
+        ca.get_mut(cr).set_mark(1); // used in reloc
         ca.free(cr);
     }
 
@@ -1606,6 +1605,12 @@ impl SolverV {
     // inline bool     Solver::locked          (const Clause& c) const { return value(c[0]) == l_True && reason(var(c[0])) != CRef_Undef && ca.lea(reason(var(c[0]))) == &c; }
 }
 
+#[derive(Debug)]
+enum ClauseSet {
+    Original,
+    Learnt,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct VarData {
     reason: CRef,
@@ -1634,6 +1639,10 @@ struct Watcher {
 }
 
 impl Watcher {
+    const DUMMY : Watcher = Watcher {
+        cref: CRef::UNDEF,
+        blocker: Lit::UNDEF,
+    };
     fn new(cref: CRef, blocker: Lit) -> Self {
         Self { cref, blocker }
     }
