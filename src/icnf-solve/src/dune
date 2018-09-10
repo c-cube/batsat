@@ -1,0 +1,6 @@
+(executable
+  (name icnf_solve)
+  (modes native)
+  (libraries containers batsat minisat))
+
+(ocamllex (modules lexer))

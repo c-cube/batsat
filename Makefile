@@ -38,6 +38,12 @@ test-rust: prebuild
 
 test: test-rust test-benchs
 
+ICNF_SOLVE=src/icnf-solve/src/icnf_solve.exe
+icnf-solve: build
+	@dune build $(ICNF_SOLVE)
+	@strip _build/default/$(ICNF_SOLVE)
+	@ln -sf _build/default/$(ICNF_SOLVE) .
+
 prebuild:
 
 .PHONY: prebuild check release clean
