@@ -21,12 +21,17 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use std::io::{self, BufRead};
 use interface::SolverInterface;
-use {Lit, Var};
+use {Lit, Var, lbool};
 
+/// `parse(input, solver)` adds the content of `input` to the solver
+///
+/// param `is_strict` if true, will fail if number of clauses/vars does not match the declared header
+/// param `incremental` if true, accept the [.icnf format](http://www.siert.nl/icnf/)
 pub fn parse<S: SolverInterface, R: BufRead>(
     input: &mut R,
     solver: &mut S,
-    is_strict: bool
+    is_strict: bool,
+    incremental: bool,
 ) -> io::Result<()> {
     let mut lits = vec![];
     // let mut num_vars = 0;
@@ -36,6 +41,10 @@ pub fn parse<S: SolverInterface, R: BufRead>(
         skip_whitespace(input)?;
         let ch = next_byte(input)?;
         if ch == Some(b'p') {
+            if incremental {
+                skip_line(input)?;
+                continue;
+            }
             let mut header = [0; 5];
             input.read_exact(&mut header)?;
             if &header != b"p cnf" {
@@ -48,6 +57,15 @@ pub fn parse<S: SolverInterface, R: BufRead>(
         // eprintln!("num_clauses = {}", num_clauses);
         } else if ch == Some(b'c') {
             skip_line(input)?;
+        } else if incremental && ch == Some(b'a') {
+            input.consume(1); // skip 'a'
+            read_clause(input, solver, &mut lits)?;
+            let res = solver.solve_limited(&mut lits); // solve under assumptions
+            match res {
+                x if x == lbool::TRUE => println!("SAT"),
+                x if x == lbool::FALSE => println!("UNSAT"),
+                x => { assert_eq!(x,lbool::UNDEF); println!("UNKNOWN") }
+            }
         } else if let Some(_) = ch {
             read_clause(input, solver, &mut lits)?;
             solver.add_clause_reuse(&mut lits);

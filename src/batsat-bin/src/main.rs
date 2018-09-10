@@ -209,13 +209,14 @@ fn main2() -> io::Result<i32> {
     let initial_time = Instant::now();
 
     if let Some(input_file) = input_file {
-        debug!("solve file {}", input_file);
+        let incremental = input_file.ends_with(".icnf");
+        debug!("solve file {} (incremental: {})", input_file, incremental);
         let file = BufReader::new(File::open(input_file)?);
-        read_input_autogz(file, &mut solver, is_strict)?;
+        read_input_autogz(file, &mut solver, is_strict, incremental)?;
     } else {
         println!("c Reading from standard input... Use '--help' for help.");
         let stdin = io::stdin();
-        read_input_autogz(stdin.lock(), &mut solver, is_strict)?;
+        read_input_autogz(stdin.lock(), &mut solver, is_strict, false)?;
     }
 
     let mut resfile = if let Some(result_output_file) = result_output_file {
@@ -322,20 +323,23 @@ fn read_input_autogz<R: BufRead>(
     mut input: R,
     solver: &mut Solver,
     is_strict: bool,
+    incremental: bool,
 ) -> io::Result<()> {
     let is_gz = input.fill_buf()?.starts_with(b"\x1F\x8B");
     if is_gz {
-        read_input(BufReader::new(GzDecoder::new(input)), solver, is_strict)
+        read_input(BufReader::new(GzDecoder::new(input)), solver, is_strict, incremental)
     } else {
-        read_input(input, solver, is_strict)
+        read_input(input, solver, is_strict, incremental)
     }
 }
 
-fn read_input<R: BufRead>(mut input: R, solver: &mut Solver, is_strict: bool) -> io::Result<()> {
+fn read_input<R: BufRead>(
+    mut input: R, solver: &mut Solver, is_strict: bool, incremental: bool
+) -> io::Result<()> {
     if solver.verbosity() > 0 {
         println!("c ============================[ Problem Statistics ]=============================");
         println!("c |                                                                             |");
     }
-    batsat::dimacs::parse(&mut input, solver, is_strict)?;
+    batsat::dimacs::parse(&mut input, solver, is_strict, incremental)?;
     Ok(())
 }
