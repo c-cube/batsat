@@ -87,7 +87,6 @@ let proved_lvl_0 s =
   Array.init (n_proved_lvl_0 s) (get_proved_lvl_0 s)
 
 let solve ?(assumptions=[||]) s =
-  simplify s;
   Array.iter (fun x -> Raw.assume s x) assumptions;
   Raw.solve s |> check_ret_
 
