@@ -856,7 +856,7 @@ impl Solver {
         }
 
         self.cancel_until(0);
-        debug!("proved at lvl 0: {:?}", self.v.trail.iter().collect::<Vec<_>>());
+        debug!("res: {:?}; proved at lvl 0: {:?}", status, self.v.trail.iter().collect::<Vec<_>>());
         status
     }
 
@@ -922,7 +922,7 @@ impl Solver {
             let satisfied = self_v.satisfied(ca.get_ref(cr));
             if satisfied {
                 self_v.remove_clause(ca, watches_data, cr);
-                // TODO: print deletion of clause here
+                debug!("remove satisfied clause {}", ca.get_ref(cr).pp_dimacs());
             } else {
                 let amount = {
                     let mut c = ca.get_mut(cr);
@@ -934,6 +934,7 @@ impl Solver {
                     let mut end = c.size();
                     while k < end {
                         if self_v.value_lit(c[k]) == lbool::FALSE {
+                            debug_assert!(self_v.level(c[k].var()) == 0);
                             end -= 1;
                             c[k] = c[end];
                         } else {
