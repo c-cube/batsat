@@ -476,7 +476,7 @@ impl Solver {
             simp_db_assigns: -1,
             simp_db_props: 0,
             progress_estimate: 0.0,
-            remove_satisfied: true,
+            remove_satisfied: false, // FIXME: before enabling, check ICNF regression test
             next_var: Var::from_idx(0),
 
             ca: ClauseAllocator::new(),
