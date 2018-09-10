@@ -1,6 +1,9 @@
 extern crate batsat;
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate ocaml;
+extern crate env_logger;
 
 #[link(name="batsat")]
 
@@ -148,6 +151,7 @@ caml!(ml_batsat_solve, |ptr|, <res>, {
             let (s, _, assumptions) = solver.decompose();
             let lb = s.solve_limited(&assumptions);
             assumptions.clear(); // reset assumptions
+            debug!("solve: result is {:?}", lb);
             assert_ne!(lb, lbool::UNDEF); // can't express that in a bool
             lb != lbool::FALSE
         };
@@ -246,3 +250,7 @@ caml!(ml_batsat_get_proved, |ptr, idx|, <res>, {
     })
 } -> res);
 
+caml!(ml_batsat_init_log, |unit_|, <res>, {
+    env_logger::init();
+    res = value::UNIT;
+} -> res);

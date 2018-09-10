@@ -9,7 +9,9 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 
 ocaml = "0.5"
+log = "0.4"
+env_logger = "0.5"
 #ocaml = {version="0.5", path = "/home/simon/workspace/ocaml-rs"}
-batsat = {path = "../batsat/", features=[]}
+batsat = {path = "../batsat/", features=["logging"]}
 
 [workspace]

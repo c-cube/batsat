@@ -48,6 +48,10 @@ module Raw = struct
   external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
 
   external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
+
+  external init_log : unit -> unit = "ml_batsat_init_log"
+
+  let () = init_log()
 end
 
 let create () =
