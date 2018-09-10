@@ -13,6 +13,8 @@ pub trait SolverInterface {
     fn num_clauses(&self) -> u32;
     fn num_conflicts(&self) -> u32;
 
+    fn is_ok(&self) -> bool;
+
     /// Print some current statistics to standard output.
     fn print_stats(&self);
 
@@ -26,6 +28,10 @@ pub trait SolverInterface {
     /// Add a clause to the solver. Returns `false` if the solver is in
     /// an `UNSAT` state.
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool;
+
+    /// Simplify the clause database according to the current top-level assigment. Currently, the only
+    /// thing done here is the removal of satisfied clauses, but more things can be put here.
+    fn simplify(&mut self) -> bool;
 
     /// Search for a model that respects a given set of assumptions (With resource constraints).
     fn solve_limited(&mut self, assumps: &[Lit]) -> lbool;

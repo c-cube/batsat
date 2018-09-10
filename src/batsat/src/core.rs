@@ -351,9 +351,13 @@ impl SolverInterface for Solver {
         self.solve_internal()
     }
 
+    #[inline]
+    fn simplify(&mut self) -> bool { self.simplify_internal() }
+
     fn value_var(&self, v: Var) -> lbool { self.model[v.idx() as usize] }
     fn value_lit(&self, v: Lit) -> lbool { self.value_var(v.var()) ^ !v.sign() }
     fn get_model(&self) -> &[lbool] { &self.model }
+    fn is_ok(&self) -> bool { self.ok }
 
     fn num_vars(&self) -> u32 { self.next_var.idx() }
     fn num_clauses(&self) -> u32 { self.v.num_clauses as u32 }
@@ -598,9 +602,7 @@ impl Solver {
         self.v.trail_lim.push(self.v.trail.len() as i32);
     }
 
-    /// Simplify the clause database according to the current top-level assigment. Currently, the only
-    /// thing done here is the removal of satisfied clauses, but more things can be put here.
-    pub fn simplify(&mut self) -> bool {
+    fn simplify_internal(&mut self) -> bool {
         debug_assert_eq!(self.v.decision_level(), 0);
 
         if !self.ok || self.propagate() != CRef::UNDEF {
@@ -1574,14 +1576,17 @@ impl SolverV {
         c.iter().any(|&lit| self.value_lit(lit) == lbool::TRUE)
     }
 
+    #[inline(always)]
     pub fn decision_level(&self) -> u32 {
         self.trail_lim.len() as u32
     }
 
+    #[inline(always)]
     fn reason(&self, x: Var) -> CRef {
         self.vardata[x].reason
     }
 
+    #[inline(always)]
     fn level(&self, x: Var) -> i32 {
         self.vardata[x].level
     }
