@@ -1127,8 +1127,6 @@ impl Solver {
     fn analyze_final(&mut self, p: Lit, out_conflict: &mut LSet) {
         out_conflict.clear();
         out_conflict.insert(p);
-        debug_assert!(self.v.value_lit(p) == lbool::FALSE);
-
         debug!("analyze_final lit={:?}", p);
 
         if self.v.decision_level() == 0 {
@@ -1138,7 +1136,7 @@ impl Solver {
 
         self.seen[p.var()] = Seen::SOURCE;
 
-        for &lit in &self.v.trail[self.v.trail_lim[0] as usize..] {
+        for &lit in self.v.trail[self.v.trail_lim[0] as usize..].iter().rev() {
             let x = lit.var();
             if self.seen[x].is_seen() {
                 let reason = self.v.reason(x);
@@ -1158,6 +1156,7 @@ impl Solver {
         }
 
         self.seen[p.var()] = Seen::UNDEF;
+        debug_assert!(self.seen.iter().all(|(_,&s)| s==Seen::UNDEF));
         if self.produce_proof { self.proof.create_clause(out_conflict); }
     }
 
