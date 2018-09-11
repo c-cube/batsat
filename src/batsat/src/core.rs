@@ -354,7 +354,9 @@ impl SolverInterface for Solver {
     #[inline]
     fn simplify(&mut self) -> bool { self.simplify_internal() }
 
-    fn value_var(&self, v: Var) -> lbool { self.model[v.idx() as usize] }
+    fn value_var(&self, v: Var) -> lbool {
+        self.model.get(v.idx() as usize).map_or(lbool::UNDEF, |&v| v)
+    }
     fn value_lit(&self, v: Lit) -> lbool { self.value_var(v.var()) ^ !v.sign() }
     fn level_var(&self, v: Var) -> i32 { self.v.level(v) }
     fn get_model(&self) -> &[lbool] { &self.model }
