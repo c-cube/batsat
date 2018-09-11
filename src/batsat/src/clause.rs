@@ -191,13 +191,6 @@ impl ops::Neg for lbool {
     type Output = lbool;
 
     /// Negation of a `lbool`
-    ///
-    /// ```
-    /// use batsat::lbool;
-    /// assert_eq!(- lbool::TRUE, lbool::FALSE);
-    /// assert_eq!(- lbool::FALSE, lbool::TRUE);
-    /// assert_eq!(- lbool::UNDEF, lbool::UNDEF);
-    /// ```
     fn neg(self) -> Self {
         lbool(self.0 ^ 1)
     }
@@ -207,16 +200,6 @@ impl ops::BitXor<bool> for lbool {
     type Output = lbool;
 
     /// Xor of a lbool with a boolean.
-    ///
-    /// ```
-    /// use batsat::lbool;
-    /// assert_eq!(lbool::TRUE ^ true, lbool::FALSE);
-    /// assert_eq!(lbool::TRUE ^ false, lbool::TRUE);
-    /// assert_eq!(lbool::FALSE ^ true, lbool::TRUE);
-    /// assert_eq!(lbool::FALSE ^ false, lbool::FALSE);
-    /// assert_eq!(lbool::UNDEF ^ true, lbool::UNDEF);
-    /// assert_eq!(lbool::UNDEF ^ false, lbool::UNDEF);
-    /// ```
     fn bitxor(self, rhs: bool) -> Self {
         lbool(self.0 ^ rhs as u8)
     }
@@ -890,6 +873,51 @@ mod test {
     fn test_size_clause_data() {
         use std::mem;
         assert_eq!(mem::size_of::<super::ClauseData>(), 4);
+    }
+
+    #[test]
+    fn test_not() {
+        use super::lbool;
+        assert_eq!(- lbool::TRUE, lbool::FALSE);
+        assert_eq!(- lbool::FALSE, lbool::TRUE);
+        assert_eq!(- lbool::UNDEF, lbool::UNDEF);
+    }
+
+    #[test]
+    fn test_bitxor() {
+        use super::lbool;
+        assert_eq!(lbool::TRUE ^ true, lbool::FALSE);
+        assert_eq!(lbool::TRUE ^ false, lbool::TRUE);
+        assert_eq!(lbool::FALSE ^ true, lbool::TRUE);
+        assert_eq!(lbool::FALSE ^ false, lbool::FALSE);
+        assert_eq!(lbool::UNDEF ^ true, lbool::UNDEF);
+        assert_eq!(lbool::UNDEF ^ false, lbool::UNDEF);
+    }
+
+    #[test]
+    fn test_bitand() {
+        use super::lbool;
+        assert_eq!(lbool::TRUE & lbool::TRUE, lbool::TRUE);
+        assert_eq!(lbool::TRUE & lbool::FALSE, lbool::FALSE);
+        assert_eq!(lbool::FALSE & lbool::TRUE, lbool::FALSE);
+        assert_eq!(lbool::FALSE & lbool::FALSE, lbool::FALSE);
+        assert_eq!(lbool::UNDEF & lbool::FALSE, lbool::FALSE);
+        assert_eq!(lbool::FALSE & lbool::UNDEF, lbool::FALSE);
+        assert_eq!(lbool::UNDEF & lbool::TRUE, lbool::UNDEF);
+        assert_eq!(lbool::TRUE & lbool::UNDEF, lbool::UNDEF);
+    }
+
+    #[test]
+    fn test_bitor() {
+        use super::lbool;
+        assert_eq!(lbool::TRUE | lbool::TRUE, lbool::TRUE);
+        assert_eq!(lbool::TRUE | lbool::FALSE, lbool::TRUE);
+        assert_eq!(lbool::FALSE | lbool::TRUE, lbool::TRUE);
+        assert_eq!(lbool::FALSE | lbool::FALSE, lbool::FALSE);
+        assert_eq!(lbool::UNDEF | lbool::FALSE, lbool::UNDEF);
+        assert_eq!(lbool::FALSE | lbool::UNDEF, lbool::UNDEF);
+        assert_eq!(lbool::UNDEF | lbool::TRUE, lbool::TRUE);
+        assert_eq!(lbool::TRUE | lbool::UNDEF, lbool::TRUE);
     }
 }
 
