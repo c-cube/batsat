@@ -180,10 +180,7 @@ caml!(ml_batsat_value_lvl_0, |ptr, lit|, <res>, {
                 lbool::UNDEF
             } else {
                 let lit = solver.get_lit(lit as i32);
-                let mut res = solver.s.value_lit(lit);
-                // only keep `res` if level=0
-                if solver.level_var(lit.var()) != 0 { res = lbool::UNDEF }
-                res
+                solver.s.value_lvl_0(lit)
             };
         //println!("val for {:?}: {:?}", lit, r);
         res = Value::isize(r.to_u8() as isize);

@@ -358,13 +358,18 @@ impl SolverInterface for Solver {
         self.model.get(v.idx() as usize).map_or(lbool::UNDEF, |&v| v)
     }
     fn value_lit(&self, v: Lit) -> lbool { self.value_var(v.var()) ^ !v.sign() }
-    fn level_var(&self, v: Var) -> i32 { self.v.level(v) }
     fn get_model(&self) -> &[lbool] { &self.model }
     fn is_ok(&self) -> bool { self.ok }
 
     fn num_vars(&self) -> u32 { self.next_var.idx() }
     fn num_clauses(&self) -> u32 { self.v.num_clauses as u32 }
     fn num_conflicts(&self) -> u32 { self.conflicts as u32 }
+
+    fn value_lvl_0(&self, lit: Lit) -> lbool {
+        let mut res = self.v.value_lit(lit);
+        if self.v.level(lit.var()) != 0 { res = lbool::UNDEF; }
+        res
+    }
 
     fn print_stats(&self) {
         println!("c restarts              : {}", self.starts);

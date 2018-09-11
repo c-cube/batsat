@@ -54,8 +54,8 @@ pub trait SolverInterface {
     /// Query model for lit
     fn value_lit(&self, Lit) -> lbool;
 
-    /// Current level of assignment for the variable (unspecified if `v` is not assigned)
-    fn level_var(&self, Var) -> i32;
+    /// Value of this literal if it's assigned at level 0, or `UNDEF` otherwise
+    fn value_lvl_0(&self, Lit) -> lbool;
 
     /// Return unsat core (as a subset of assumptions).
     ///
