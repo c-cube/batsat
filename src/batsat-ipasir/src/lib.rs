@@ -6,7 +6,7 @@
 
 extern crate batsat;
 
-use batsat::{Solver,Var,Lit,lbool};
+use batsat::{Solver,Var,Lit,lbool,SolverInterface};
 use std::mem;
 use std::boxed::Box;
 use std::os::raw::{c_char,c_void,c_int};
@@ -136,7 +136,7 @@ pub extern "C" fn ipasir_val(ptr: *mut c_void, lit: c_int) -> c_int {
 
     let var = s.get_var(lit.abs() as usize);
     let val = {
-        let v = s.solver.model[var.idx() as usize];
+        let v = s.solver.get_model()[var.idx() as usize];
         if lit > 0 { v } else { -v }
     };
 
@@ -158,7 +158,7 @@ pub extern "C" fn ipasir_failed(ptr: *mut c_void, lit: c_int) -> c_int {
     let res = s.solver.unsat_core_contains_var(lit.var());
 
     mem::forget(s);
-    res
+    res as c_int
 }
 
 #[no_mangle]
