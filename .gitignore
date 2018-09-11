@@ -4,3 +4,5 @@
 benchs
 *.install
 _build
+*.exe
+.merlin
