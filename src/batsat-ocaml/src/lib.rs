@@ -172,6 +172,26 @@ caml!(ml_batsat_value, |ptr, lit|, <res>, {
     });
 } -> res);
 
+caml!(ml_batsat_value_lvl_0, |ptr, lit|, <res>, {
+    with_solver!(solver, ptr, {
+        let lit = lit.isize_val() as i32;
+        let r =
+            if lit.abs() >= solver.num_vars() as i32 {
+                lbool::UNDEF
+            } else {
+                let lit = solver.get_lit(lit as i32);
+                let mut res = solver.s.value_lit(lit);
+                // only keep `res` if level=0
+                if solver.level_var(lit.var()) != 0 { res = lbool::UNDEF }
+                res
+            };
+        //println!("val for {:?}: {:?}", lit, r);
+        res = Value::isize(r.to_u8() as isize);
+
+    });
+} -> res);
+
+
 caml!(ml_batsat_check_assumption, |ptr, lit|, <res>, {
     with_solver!(solver, ptr, {
         let lit = lit.isize_val() as i32;

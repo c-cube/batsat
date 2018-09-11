@@ -46,6 +46,7 @@ module Raw = struct
 
   external n_proved: t -> int = "ml_batsat_n_proved"
   external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
+  external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
 
   external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
 end
@@ -105,10 +106,13 @@ let string_of_value = function
 
 let pp_value out v = Format.pp_print_string out (string_of_value v)
 
-let value s lit = match Raw.value s lit with
+let mk_val = function
   | 0 -> V_true
   | 1 -> V_false
   | 2 | 3 -> V_undef (* yep… *)
   | n -> failwith (Printf.sprintf "unknown lbool: %d" n)
+
+let value s lit = mk_val @@ Raw.value s lit
+let value_lvl_0 s lit = mk_val @@ Raw.value_lvl_0 s lit
 
 let set_verbose = Raw.set_verbose
