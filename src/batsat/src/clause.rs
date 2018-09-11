@@ -271,14 +271,14 @@ impl ops::BitOrAssign for lbool {
 
 #[derive(Debug, Clone, Copy)]
 /// A reference to some clause
-pub struct ClauseRef<'a> {
+pub(crate) struct ClauseRef<'a> {
     header: ClauseHeader,
     data: &'a [ClauseData],
     extra: Option<ClauseData>,
 }
 #[derive(Debug)]
 /// A mutable reference to some clause, with a temporary lifetime
-pub struct ClauseMut<'a> {
+pub(crate) struct ClauseMut<'a> {
     header: &'a mut ClauseHeader,
     data: &'a mut [ClauseData],
     extra: Option<&'a mut ClauseData>,
@@ -291,6 +291,7 @@ impl<'a, 'b> PartialEq<ClauseRef<'b>> for ClauseRef<'a> {
 }
 impl<'a> Eq for ClauseRef<'a> {}
 
+#[allow(dead_code)]
 impl<'a> ClauseRef<'a> {
     #[inline(always)]
     pub fn mark(&self) -> u32 {
@@ -380,6 +381,7 @@ impl ClauseIterable for IntSet<Lit> {
     fn items(&self) -> &[Self::Item] { self.as_slice() }
 }
 
+#[allow(dead_code)]
 impl<'a> ClauseMut<'a> {
     #[inline(always)]
     pub fn mark(&self) -> u32 {
@@ -501,7 +503,7 @@ pub struct ClauseAllocator {
 #[derive(Clone, Copy)]
 /// Items used in the clause allocator. It should be compact enough that
 /// we do no waste space.
-pub union ClauseData {
+pub(crate) union ClauseData {
     u32: u32,
     f32: f32,
     cref: CRef,
@@ -613,7 +615,7 @@ impl ClauseAllocator {
     pub fn wasted(&self) -> u32 {
         self.ra.wasted()
     }
-    pub fn alloc_with_learnt(&mut self, clause: &[Lit], learnt: bool) -> CRef {
+    pub(crate) fn alloc_with_learnt(&mut self, clause: &[Lit], learnt: bool) -> CRef {
         let use_extra = learnt | self.extra_clause_field;
         let cid = self.ra.alloc(1 + clause.len() as u32 + use_extra as u32);
         self.ra[cid].header = ClauseHeader::new(0, learnt, use_extra, false, clause.len() as u32);
@@ -625,6 +627,7 @@ impl ClauseAllocator {
             if learnt {
                 self.ra[clause_ptr + clause.len() as u32].f32 = 0.0;
             } else {
+                // NOTE: not used right now, but can be used to accelerate `lit_redundant`
                 let mut abstraction: u32 = 0;
                 for &lit in clause {
                     abstraction |= 1 << (lit.var().idx() & 31);
@@ -635,10 +638,8 @@ impl ClauseAllocator {
 
         cid
     }
-    pub fn alloc(&mut self, clause: &[Lit]) -> CRef {
-        self.alloc_with_learnt(clause, false)
-    }
-    pub fn alloc_copy(&mut self, from: ClauseRef) -> CRef {
+
+    pub(crate) fn alloc_copy(&mut self, from: ClauseRef) -> CRef {
         let use_extra = from.learnt() | self.extra_clause_field;
         let cid = self.ra.alloc(1 + from.size() + use_extra as u32);
         self.ra[cid].header = from.header;
@@ -653,7 +654,7 @@ impl ClauseAllocator {
         cid
     }
 
-    pub fn free(&mut self, cr: CRef) {
+    pub(crate) fn free(&mut self, cr: CRef) {
         let size = {
             let c = self.get_ref(cr);
             1 + c.size() + c.has_extra() as u32
@@ -668,7 +669,7 @@ impl ClauseAllocator {
     /// Relocate clause `cr` into allocator `to`.
     ///
     /// post condition: `*cr` now contains the index of the copy in `to`
-    pub fn reloc(&mut self, cr: &mut CRef, to: &mut ClauseAllocator) {
+    pub(crate) fn reloc(&mut self, cr: &mut CRef, to: &mut ClauseAllocator) {
         let mut c = self.get_mut(*cr);
 
         if c.reloced() {
@@ -680,7 +681,8 @@ impl ClauseAllocator {
         c.relocate(*cr);
     }
 
-    pub fn get_ref<'a>(&'a self, cr: CRef) -> ClauseRef<'a> {
+    /// Get a reference on the clause `cr` points to
+    pub(crate) fn get_ref<'a>(&'a self, cr: CRef) -> ClauseRef<'a> {
         let header = unsafe { self.ra[cr].header };
         let has_extra = header.has_extra();
         let size = header.size();
@@ -697,7 +699,9 @@ impl ClauseAllocator {
             extra,
         }
     }
-    pub fn get_mut(&mut self, cr: CRef) -> ClauseMut {
+
+    /// Get a mutable reference on the clause `cr` points to
+    pub(crate) fn get_mut(&mut self, cr: CRef) -> ClauseMut {
         let header = unsafe { self.ra[cr].header };
         let has_extra = header.has_extra();
         let size = header.size();
@@ -714,7 +718,7 @@ impl ClauseAllocator {
     }
 }
 
-pub type CRef = alloc::Ref<ClauseData>;
+pub(crate) type CRef = alloc::Ref<ClauseData>;
 
 /// Predicate that decides whether a value `V` is deleted or not
 pub trait DeletePred<V> {
@@ -727,7 +731,7 @@ pub trait DeletePred<V> {
 pub struct OccListsData<K: AsIndex, V> {
     occs: IntMap<K, Vec<V>>,
     dirty: IntMap<K, bool>,
-    dirties: Vec<K>,
+    dirties: Vec<K>, // to know what keys to examine in `clean_all_pred`
 }
 
 impl<K: AsIndex, V> OccListsData<K, V> {
@@ -738,19 +742,21 @@ impl<K: AsIndex, V> OccListsData<K, V> {
             dirties: Vec::new(),
         }
     }
+
+    /// Initialize occurrence list for the given `idx`
     pub fn init(&mut self, idx: K) {
         self.occs.reserve_default(idx);
         self.occs[idx].clear();
         self.dirty.reserve(idx, false);
     }
 
+    /// Obtain a fully usable occurrence list using the given predicate
     pub fn promote<P: DeletePred<V>>(&mut self, pred: P) -> OccLists<K, V, P> {
-        OccLists {
-            data: self,
-            pred: pred,
-        }
+        OccLists { data: self, pred: pred, }
     }
 
+    /// `oclist.lookup_mut_pred(idx, p)` returns an up-to-date list of occurrences
+    /// for `idx`. It will clean up the occurrence list with `p` if it's dirty.
     pub fn lookup_mut_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) -> &mut Vec<V> {
         if self.dirty[idx] {
             self.clean_pred(idx, pred);
@@ -813,6 +819,7 @@ impl<K: AsIndex, V> ops::IndexMut<K> for OccListsData<K, V> {
     }
 }
 
+/// Packs together an occurrence list and the filtering predicate
 pub struct OccLists<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> {
     data: &'a mut OccListsData<K, V>,
     pred: P,

@@ -142,7 +142,7 @@ pub struct Solver {
     free_vars: Vec<Var>,
 
     // Temporaries (to reduce allocation overhead). Each variable is prefixed by the method in which it is
-    // used, exept `seen` wich is used in several places.
+    // used, except `seen` wich is used in several places.
     seen: VMap<Seen>,
     analyze_stack: Vec<ShrinkStackElem>,
     analyze_toclear: Vec<Lit>,
