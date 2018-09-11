@@ -208,8 +208,9 @@ fn main2() -> io::Result<i32> {
 
     let initial_time = Instant::now();
 
+    let mut incremental = false;
     if let Some(input_file) = input_file {
-        let incremental = input_file.ends_with(".icnf");
+        incremental = input_file.ends_with(".icnf");
         if incremental { solver.set_verbosity(0) }
         debug!("solve file {} (incremental: {})", input_file, incremental);
         let file = BufReader::new(File::open(input_file)?);
@@ -272,7 +273,10 @@ fn main2() -> io::Result<i32> {
         solver.print_stats();
         println!("c CPU time              : {:.3}s", resource.cpu_time());
     }
-    if ret == lbool::TRUE {
+    if incremental {
+        return Ok(0);
+    }
+    else if ret == lbool::TRUE {
         println!("s SATISFIABLE");
 
         // print model
