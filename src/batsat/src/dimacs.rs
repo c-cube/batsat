@@ -134,11 +134,13 @@ fn parse_int<R: BufRead>(input: &mut R) -> io::Result<i32> {
     }
 }
 
+#[inline(always)]
+fn is_whitespace(ch:Option<u8>) -> bool {
+    ch.map(|ch| b'\x09' <= ch && ch <= b'\x0d' || ch == b' ')
+        .unwrap_or(false)
+}
+
 fn skip_whitespace<R: BufRead>(input: &mut R) -> io::Result<()> {
-    let is_whitespace = |ch: Option<u8>| {
-        ch.map(|ch| b'\x09' <= ch && ch <= b'\x0d' || ch == b' ')
-            .unwrap_or(false)
-    };
     while is_whitespace(next_byte(input)?) {
         input.consume(1);
     }
