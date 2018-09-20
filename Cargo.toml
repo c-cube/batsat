@@ -11,3 +11,11 @@ default-members = [
   "src/batsat",
   "src/batsat-bin"
 ]
+
+[profile.release]
+opt-level = 3
+
+[features]
+
+default=[]
+logging = [ "batsat/logging", "batsat-bin/logging" ]

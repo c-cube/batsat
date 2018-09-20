@@ -11,10 +11,16 @@ categories = ["algorithms", "command-line-utilities"]
 license = "MIT"
 
 [dependencies]
+
 clap = "2.31.2"
 flate2 = "1.0"
 cpu-time = "0.1"
-batsat = { version = "=0.0.2", path = "../batsat/", features=["logging"] }
-log = "0.4"
-env_logger = "0.5"
+batsat = { version = "=0.0.2", path = "../batsat/" }
 
+log = {version = "0.4", optional=true}
+env_logger = {version="0.5", optional=true}
+
+[features]
+
+default = []
+logging = [ "log", "env_logger", "batsat/logging" ]

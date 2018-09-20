@@ -23,9 +23,26 @@ extern crate clap;
 extern crate flate2;
 extern crate cpu_time;
 extern crate batsat;
+
+#[cfg(not(feature="logging"))]
+#[macro_use]
+pub(crate) mod log {
+    macro_rules! debug {
+        ($( $x:expr ),*) => { }
+    }
+}
+
+#[cfg(not(feature="logging"))]
+mod env_logger {
+    pub fn init() {}
+}
+
+#[cfg(feature="logging")]
+extern crate env_logger;
+
+#[cfg(feature="logging")]
 #[macro_use]
 extern crate log;
-extern crate env_logger;
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};

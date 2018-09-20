@@ -1,8 +1,12 @@
 
 FLAGS ?=
 
-build: prebuild
-	@cargo build --release ${FLAGS}
+build:
+	@cargo build --release ${FLAGS} --no-default-features
+	@ln -sf target/release/batsat-bin
+
+build-log:
+	@cargo build --release ${FLAGS} --features "logging"
 	@ln -sf target/release/batsat-bin
 
 build-debug:
@@ -43,8 +47,6 @@ icnf-solve: build
 	@dune build $(ICNF_SOLVE)
 	@strip _build/default/$(ICNF_SOLVE)
 	@ln -sf _build/default/$(ICNF_SOLVE) .
-
-prebuild:
 
 .PHONY: prebuild check release clean
 
