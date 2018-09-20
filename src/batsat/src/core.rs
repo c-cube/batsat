@@ -1302,7 +1302,7 @@ impl Solver {
 
                         // self.watches()[!c[1]].push(w);
                         // safe because `!c[1]!=p`, so watches are not aliased
-                        assert_ne!(!c[1], p);
+                        debug_assert_ne!(!c[1], p);
                         unsafe { &mut (*watches_data_ptr)[!c[1]] }.push(w);
                         continue 'clauses;
                     }
@@ -1481,13 +1481,17 @@ impl Solver {
 }
 
 impl SolverV {
+    #[inline(always)]
     pub fn num_assigns(&self) -> u32 {
         self.trail.len() as u32
     }
 
+    #[inline(always)]
     pub fn value(&self, x: Var) -> lbool {
         self.assigns[x]
     }
+
+    #[inline(always)]
     pub fn value_lit(&self, x: Lit) -> lbool {
         self.assigns[x.var()] ^ !x.sign()
     }

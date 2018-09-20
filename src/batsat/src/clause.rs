@@ -171,15 +171,20 @@ impl lbool {
         debug_assert!(v == (v & 3), "lbool::from_u8: invalid value");
         lbool(v)
     }
+    #[inline(always)]
     pub fn new(v: bool) -> Self {
         lbool((!v) as u8)
     }
+    #[inline(always)]
     pub fn to_u8(&self) -> u8 {
         self.0
     }
 }
 
+// from minisat:
+// bool operator == (lbool b) const { return ((b.value&2) & (value&2)) | (!(b.value&2)&(value == b.value)); }
 impl PartialEq for lbool {
+    #[inline(always)]
     fn eq(&self, rhs: &Self) -> bool {
         self.0 == rhs.0 || (self.0 & rhs.0 & 2) != 0
     }
@@ -873,6 +878,23 @@ mod test {
     fn test_size_clause_data() {
         use std::mem;
         assert_eq!(mem::size_of::<super::ClauseData>(), 4);
+    }
+
+    #[test]
+    fn test_eq() {
+        use super::lbool;
+        for i in 0..4 {
+            let a = lbool::from_u8(i);
+            for j in 0..4 {
+                let b = lbool::from_u8(j);
+                let are_eq =
+                    (i==0 && j==0) ||
+                    (i==1 && j==1) ||
+                    (i >= 2 && j >= 2);
+                assert_eq!(are_eq, a==b, "{:?}[{}] == {:?}[{}] should be {}",
+                           a, i, b, j, are_eq);
+            }
+        }
     }
 
     #[test]
