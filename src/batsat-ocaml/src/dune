@@ -24,6 +24,6 @@
   (c_library_flags :standard -ldl -lpthread) ; -lbatsat_c) ; -static)
   ;(modes native)
   (self_build_stubs_archive (libbatsat_stubs)) ; custom!
-  (c_names batsat_stubs)
+  ;(c_names batsat_stubs)
   (c_flags -fPIC -std=c99)
   )
