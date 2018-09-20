@@ -38,6 +38,8 @@ pub(crate) mod log {
 #[macro_use]
 pub extern crate log;
 
+extern crate smallvec;
+
 //======== PUBLIC INTERFACE ============
 
 pub mod alloc;

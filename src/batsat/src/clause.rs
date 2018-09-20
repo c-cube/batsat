@@ -23,6 +23,7 @@ use std::fmt;
 use std::iter::DoubleEndedIterator;
 use std::ops;
 use std::u32;
+use smallvec::SmallVec;
 
 use intmap::{AsIndex, IntMap, IntSet};
 use alloc::{self, RegionAllocator};
@@ -713,11 +714,13 @@ pub trait DeletePred<V> {
     fn deleted(&self, &V) -> bool;
 }
 
+pub type OccVec<V> = SmallVec<[V;4]>;
+
 #[derive(Debug, Clone)]
 /// List of occurrences of objects of type `K` (e.g. literals) in values
 /// of type `V` (e.g. clauses)
 pub struct OccListsData<K: AsIndex, V> {
-    occs: IntMap<K, Vec<V>>,
+    occs: IntMap<K, OccVec<V>>,
     dirty: IntMap<K, bool>,
     dirties: Vec<K>, // to know what keys to examine in `clean_all_pred`
 }
@@ -745,7 +748,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
 
     /// `oclist.lookup_mut_pred(idx, p)` returns an up-to-date list of occurrences
     /// for `idx`. It will clean up the occurrence list with `p` if it's dirty.
-    pub fn lookup_mut_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) -> &mut Vec<V> {
+    pub fn lookup_mut_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) -> &mut OccVec<V> {
         if self.dirty[idx] {
             self.clean_pred(idx, pred);
         }
@@ -796,7 +799,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
 }
 
 impl<K: AsIndex, V> ops::Index<K> for OccListsData<K, V> {
-    type Output = Vec<V>;
+    type Output = OccVec<V>;
     fn index(&self, index: K) -> &Self::Output {
         &self.occs[index]
     }
@@ -814,7 +817,7 @@ pub struct OccLists<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> {
 }
 
 impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> OccLists<'a, K, V, P> {
-    pub fn lookup_mut(&mut self, idx: K) -> &mut Vec<V> {
+    pub fn lookup_mut(&mut self, idx: K) -> &mut OccVec<V> {
         self.data.lookup_mut_pred(idx, &self.pred)
     }
 

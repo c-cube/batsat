@@ -300,7 +300,9 @@ impl SolverInterface for Solver {
         self.user_pol.insert_default(v, upol);
         self.decision.reserve_default(v);
         let len = self.v.trail.len();
-        self.v.trail.reserve(v.idx() as usize + 1 - len);
+        if v.idx() as usize > len {
+            self.v.trail.reserve(v.idx() as usize + 1 - len);
+        }
         self.set_decision_var(v, dvar);
         v
     }

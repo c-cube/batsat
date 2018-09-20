@@ -12,6 +12,7 @@ license = "MIT"
 
 [dependencies]
 
+smallvec = "0.6"
 log = {version="0.4", optional=true}
 
 [features]
