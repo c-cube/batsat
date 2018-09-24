@@ -1,20 +1,17 @@
 
 [package]
-name = "batsat-smt"
+name = "batsat-term-allocator"
 version = "0.0.2"
 authors = ["Simon Cruanes"]
-description = "SMT utils for rust"
+description = "term allocator with perfect sharing"
 homepage = "https://github.com/c-cube/batsat"
 repository = "https://github.com/c-cube/batsat"
 readme = "README.md"
-keywords = ["sat", "smt"]
+keywords = ["sat", "smt", "term-manager", "hasconsing"]
 categories = ["algorithms"]
 license = "MIT"
 
 [dependencies]
 
-log = "0.4"
+typed-arena = "1.4"
 fnv = "^1.0"  # fast hashmap
-
-# TODO: later?
-# rug = "1.2"   # big numerals
