@@ -9,7 +9,7 @@ use std::{hash::Hash,u32,fmt};
 use typed_arena::Arena;
 use std::vec::Vec;
 use fnv::FnvHashMap as HM;
-use std::borrow::{Borrow,ToOwned};
+use std::borrow::Borrow;
 use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::cell::{RefCell as MCell,Ref as MRef};
@@ -45,15 +45,13 @@ pub trait PreCell<Key : KeyT> : Borrow<Key> {
 
 /// A key in the hashtable, that doesn't own the cell itself, only an index
 struct HKey<K:KeyT, C : Cell<K>> {
-    cells: *const Vec<C>,  // NOTE: it is very important that the vector never moves
-    k: u32, // offset in `cells`
+    k: *const C,
     _mark: PhantomData<K>,
 }
 
 impl<K:KeyT, C:Cell<K>, Other: Hash+Borrow<K>> PartialEq<Other> for HKey<K, C> {
     fn eq(&self, other: &Other) -> bool {
-        let cells : & Vec<C> = unsafe { &* self.cells };
-        let c1 = cells[self.k as usize].borrow();
+        let c1 = unsafe { &* self.k as &C }.borrow();
         let c2 = other.borrow();
         c1 == c2
     }
@@ -63,16 +61,14 @@ impl<K:KeyT, C:Cell<K>> Eq for HKey<K, C> {}
 
 impl<K:KeyT, C:Cell<K>> Hash for HKey<K, C> {
     fn hash<H:Hasher>(&self, out: &mut H) {
-        let cells : & Vec<C> = unsafe { &* self.cells };
-        let c = cells[self.k as usize].borrow();
+        let c = unsafe { &* self.k as &C }.borrow();
         c.hash(out)
     }
 }
 
 impl<K:KeyT, C:Cell<K>> Borrow<K> for HKey<K, C> {
     fn borrow(&self) -> &K {
-        let cells: & Vec<C> = unsafe { &* self.cells };
-        let c: &C = & cells[self.k as usize];
+        let c = unsafe { &* self.k as &C }.borrow();
         c.borrow()
     }
 }
@@ -85,8 +81,10 @@ pub struct AstManager<K : KeyT, C : Cell<K>> {
 }
 
 struct AstManagerImpl<K : KeyT, C : Cell<K>> {
-    cells: Box<Vec<C>>,  // vector of nodes. NOTE: must never move.
+    arena: Arena<C>,  // vector of nodes. NOTE: must never move.
+    cells: Vec<* const C>, // ptrs into arena
     tbl: HM<HKey<K, C>, u32>, // hashmap of offsets into `cells`
+    _mark: PhantomData<K>,
 }
 
 impl<K : KeyT, C:Cell<K>> AstManager<K, C> {
@@ -94,8 +92,10 @@ impl<K : KeyT, C:Cell<K>> AstManager<K, C> {
     pub fn new() -> Self {
         Self {
             m: MCell::new(AstManagerImpl {
-                cells: Box::new(Vec::with_capacity(256)),
+                arena: Arena::with_capacity(2_048),
+                cells: Vec::with_capacity(2_048),
                 tbl: HM::default(),
+                _mark: PhantomData::default(),
             })
         }
     }
@@ -105,35 +105,37 @@ impl<K: KeyT, C: Cell<K>> AstManager<K, C> {
     /// View the content of the node for this given AST
     #[inline]
     pub fn view(&self, a: AST) -> MRef<C> {
-        MRef::map(self.m.borrow(), |m| &m.cells[a.0 as usize])
+        MRef::map(self.m.borrow(), |m| unsafe { &*m.cells[a.0 as usize] as &C})
     }
 
     /// Insert a new AST node built from pre-node `b`
     pub fn insert<PC: PreCell<K, Output=C>>(&self, b: &PC) -> AST {
         // lookup by key
-        let key = b.borrow();
-        let mut m = self.m.borrow_mut();
-        match m.tbl.get(key) {
+        let key : &K = b.borrow();
+        // local borrow
+        let AstManagerImpl {
+            ref mut cells, ref mut tbl, ref arena, ..
+        } = *self.m.borrow_mut();
+        match tbl.get(key) {
             Some(&id) => {
                 AST(id) // found!
             },
             None => {
                 // allocate a new slot for this sort.
-                let id = m.cells.len() as u32;
+                let id = cells.len() as u32;
                 let ast = AST(id);
 
                 // make the final cell, owned by the vec
-                let new_cell = b.into_cell();
-                m.cells.push(new_cell);
+                let new_cell = arena.alloc(b.into_cell());
+                cells.push(&* new_cell as *const C);
 
                 // also insert into the hashtable
                 let new_key = HKey {
-                    cells: &*m.cells as *const Vec<_>,
-                    k: id,
+                    k: &* new_cell as *const C,
                     _mark: PhantomData::default(),
                 };
 
-                let _present = m.tbl.insert(new_key, id);
+                let _present = tbl.insert(new_key, id);
                 assert!(_present.is_none());
 
                 ast
@@ -171,21 +173,6 @@ impl<'a, K : 'a+KeyT, C:'a+Cell<K>> AST_ref<'a, K, C> {
         self.m.view(self.ast)
     }
 }
-
-
-/* TODO remove
-impl<'a, K: 'a+KeyT, C:'a+Cell<K>> fmt::Display for AST_ref<'a,K,C> {
-    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-        self.m.pp_ast(self.ast, out)
-    }
-}
-
-impl<'a, K:'a+KeyT, C:'a+Cell<K>> fmt::Debug for AST_ref<'a,K,C> {
-    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-        self.m.pp_ast_debug(self.ast, out)
-    }
-}
-*/
 
 #[cfg(test)]
 #[allow(dead_code)]
