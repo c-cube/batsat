@@ -149,6 +149,7 @@ struct DirResult {
     results: HashMap<Arc<PathBuf>,FileResult>,
     stats: HashMap<Arc<SolverName>, Stats>,
     failures: HashSet<Arc<PathBuf>>,
+    n_check_failed: usize,
     expected: HashMap<Arc<PathBuf>, SolverAnswer>, // if a solver found a result
 }
 
@@ -168,6 +169,9 @@ impl DirResult {
             self.failures.insert(c.path.clone());
         } else if c.res.is_definite() && !is_present {
             self.expected.insert(c.path.clone(), c.res.clone()); // we know what to expect!
+        }
+        if let SolverAnswer::CheckFailed = c.res {
+            self.n_check_failed += 1;
         }
 
         // update stats for this solver
@@ -288,7 +292,7 @@ fn process_task(task: &DirTask) -> Result<DirResult> {
             .map(|s| (s.name.clone(), Stats::new()))
             .collect();
         let state = DirResult {
-            stats, results: HashMap::new(),
+            stats, results: HashMap::new(), n_check_failed: 0,
             failures: HashSet::new(), expected: HashMap::new(),
         };
         thread::spawn(move || collect_thread(state, rx))
@@ -338,14 +342,17 @@ fn main() -> Result<()> {
         &DirTask {path: Path::new(&dir).to_owned(), timeout, jobs, checker})?;
 
     println!("{:?}", dres.stats);
-    if dres.failures.len() == 0 {
-        println!("OK");
-        Ok(())
-    } else {
+    if dres.failures.len() != 0 {
         println!("FAILURE ({})", dres.failures.len());
         for f in dres.failures.iter() {
             println!("  failure on: {:?}", f)
         }
         panic!() // oh no
+    } else if dres.n_check_failed != 0 {
+        println!("CHECK FAILURE(S) ({})", dres.n_check_failed);
+        panic!() // oh no
+    } else {
+        println!("OK");
+        Ok(())
     }
 }
