@@ -20,16 +20,16 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 
 use std::cmp;
+use std::i32;
 use std::f64;
 use std::mem;
 use std::sync::atomic::{Ordering,AtomicBool};
-use std::ops::{Deref,DerefMut};
 use std::fmt;
 use std::fmt::Write;
 use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData, PartialComparator};
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
-    VMap, ClauseIterable, display::Print};
+    VMap, ClauseIterable};
 use interface::*;
 
 #[derive(Debug)]
@@ -210,36 +210,40 @@ impl<'a> fmt::Display for SolverPrintDimacs<'a> {
 }
 
 #[derive(Debug)]
-struct Proof(String);
-
-impl Deref for Proof {
-    type Target=String;
-    fn deref(&self) -> &String { & self.0 }
-}
-
-impl DerefMut for Proof {
-    fn deref_mut(&mut self) -> &mut String { &mut self.0 }
-}
+struct Proof(Vec<i32>);
 
 impl fmt::Display for Proof {
     fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-        write!(out, "{}", self.0)
+        for &i in &self.0 {
+            if i == i32::MAX { out.write_char('d')? }
+            else if i == 0 { out.write_str(" 0\n")? }
+            else { write!(out, " {}", i)? }
+        }
+        Ok(())
     }
 }
 
 impl Proof {
-    fn new() -> Self { Proof(String::new()) }
+    fn new() -> Self { Proof(Vec::new()) }
+
+    fn push_lit(&mut self, lit: Lit) {
+        let i: i32 = (if lit.sign() {1} else {-1}) * ((lit.var().idx()+1) as i32);
+        self.0.push(i)
+    }
 
     /// register clause creation
     fn create_clause<C>(& mut self, c: & C) where C : ClauseIterable {
-        writeln!(self, "  {}", c.pp_dimacs()).unwrap();
+        for lit in c.items() { self.push_lit((*lit).into()); }
+        self.0.push(0);
         debug!("proof.create_clause [{}]", c.pp_dimacs());
     }
 
     /// register clause deletion
     fn delete_clause<C>(&mut self, c: &C) where C : ClauseIterable {
         // display deletion of clause if proof production is enabled
-        writeln!(self, "d {}", c.pp_dimacs()).unwrap();
+        self.0.push(i32::MAX);
+        for lit in c.items() { self.push_lit((*lit).into()); }
+        self.0.push(0);
         debug!("proof.delete_clause [{}]", c.pp_dimacs());
     }
 }
