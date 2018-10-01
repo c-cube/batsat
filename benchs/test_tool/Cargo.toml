@@ -7,5 +7,6 @@ authors = ["Simon Cruanes <simon.cruanes.2007@m4x.org>"]
 
 walkdir = "2"
 threadpool = "1.7.1"
+ansi_term = "0.11"
 
 [workspace]

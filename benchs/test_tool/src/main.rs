@@ -4,6 +4,7 @@
 
 extern crate walkdir;
 extern crate threadpool;
+extern crate ansi_term;
 
 use std::path::{Path,PathBuf};
 use std::collections::{HashMap,HashSet};
@@ -13,6 +14,7 @@ use std::sync::{Arc,mpsc};
 use threadpool::ThreadPool;
 use std::process::{Command,Stdio};
 use std::io::Write;
+use ansi_term::Colour::{Green,Red};
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
@@ -343,16 +345,16 @@ fn main() -> Result<()> {
 
     println!("{:?}", dres.stats);
     if dres.failures.len() != 0 {
-        println!("FAILURE ({})", dres.failures.len());
+        println!("{} ({})", Red.bold().paint("FAILURE"), dres.failures.len());
         for f in dres.failures.iter() {
             println!("  failure on: {:?}", f)
         }
         panic!() // oh no
     } else if dres.n_check_failed != 0 {
-        println!("CHECK FAILURE(S) ({})", dres.n_check_failed);
+        println!("{} ({})", Red.bold().paint("CHECK FAILURE(S)"), dres.n_check_failed);
         panic!() // oh no
     } else {
-        println!("OK");
+        println!("{}", Green.bold().paint("OK"));
         Ok(())
     }
 }
