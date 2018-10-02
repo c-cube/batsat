@@ -1,6 +1,6 @@
 
 (rule
- (targets libbatsat_stubs.a dllbatsat_stubs.so) ;libbatsat_c.so)
+ (targets libbatsat_stubs%{ext_lib} dllbatsat_stubs%{ext_dll}) ;libbatsat_c.so)
  (deps ./lib.rs ../Cargo.toml (source_tree ../batsat))
  (mode fallback)
  (action
@@ -10,8 +10,8 @@
        (run cp -r ../../../../src/batsat ..)
        (chdir src (run cargo build --release))))
     ; TODO: strip the libs first
-    (run cp ../target/release/libbatsat_stubs.a .)
-    (run cp ../target/release/libbatsat_stubs.so dllbatsat_stubs.so)
+    (run cp ../target/release/libbatsat_stubs%{ext_lib} .)
+    (run cp ../target/release/libbatsat_stubs%{ext_dll} dllbatsat_stubs%{ext_dll})
     )))
 
 (library
