@@ -26,6 +26,14 @@ impl Solver {
             cur_clause: vec![], assumptions: vec![],
         }
     }
+
+    /// Entirely reset the internal state
+    fn reset(&mut self) {
+        self.vars.clear();
+        self.cur_clause.clear();
+        self.assumptions.clear();
+        self.s = InnerSolver::default();
+    }
 }
 
 impl Solver {
@@ -260,6 +268,14 @@ caml!(ml_batsat_get_proved, |ptr, idx|, <res>, {
         let lit = solver.s.proved_at_lvl_0()[i];
         let lit = lit.var().idx() as isize * if lit.sign() { 1 } else { -1 };
         res = Value::isize(lit);
+    })
+} -> res);
+
+
+caml!(ml_batsat_reset, |unit|, <res>, {
+    with_solver!(solver, unit, {
+        solver.reset();
+        res = value::UNIT;
     })
 } -> res);
 

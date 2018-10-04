@@ -69,9 +69,12 @@ module Raw : sig
   external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
 
   external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
+  external reset : t -> unit = "ml_batsat_reset"
 end
 
 val create : unit -> t
+
+val reset : t -> unit
 
 exception Unsat
 

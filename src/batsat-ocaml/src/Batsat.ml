@@ -49,11 +49,14 @@ module Raw = struct
   external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
 
   external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
+  external reset : t -> unit = "ml_batsat_reset"
 end
 
 let create () =
   let s = Raw.create() in
   s
+
+let reset = Raw.reset
 
 exception Unsat
 
