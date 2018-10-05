@@ -1,20 +1,15 @@
 
 (rule
  (targets libbatsat_stubs%{ext_lib} dllbatsat_stubs%{ext_dll}) ;libbatsat_c.so)
- (deps ./lib.rs ../Cargo.toml (source_tree ../batsat))
- (mode fallback)
+ (deps ./lib.rs ../Cargo.toml ../Cargo.lock ../Makefile
+       ../cargo-config
+       (source_tree ../batsat) (source_tree ../vendor)) ; ../.cargo/config)
+ ;(mode fallback)
  (action
-  (progn
+   (progn
+    (chdir .. (run cp -r ../../../../src/batsat ..))
     (chdir ..
-      (progn
-       (run cp -r ../../../../src/batsat ..)
-       (chdir src
-         (system "if [ \"$(uname)\" = \"Darwin\" ]; then
-                    RUSTFLAGS='-L %{ocaml-config:standard_library} -lcamlrun' cargo build --release --frozen
-                  else
-                    cargo build --release --frozen
-                  fi"))))
-    ; TODO: strip the libs first
+      (run make CAML_LIB="%{ocaml-config:standard_library}" build-rust-stubs)) ; build
     (run cp ../target/release/libbatsat_stubs%{ext_lib} .)
     (system "[ -f ../target/release/libbatsat_stubs.so ] && cp ../target/release/libbatsat_stubs.so dllbatsat_stubs%{ext_dll} || cp ../target/release/libbatsat_stubs.dylib dllbatsat_stubs%{ext_dll}")
     )))
