@@ -8,7 +8,8 @@
     (chdir ..
       (progn
        (run cp -r ../../../../src/batsat ..)
-       (chdir src (run cargo build --release))))
+       (setenv RUSTFLAGS "-L %{ocaml-config:standard_library} -lcamlrun"
+         (chdir src (run cargo build --release)))))
     ; TODO: strip the libs first
     (run cp ../target/release/libbatsat_stubs%{ext_lib} .)
     (run cp ../target/release/libbatsat_stubs%{ext_dll} dllbatsat_stubs%{ext_dll})
