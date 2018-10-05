@@ -2,13 +2,12 @@
 (rule
  (targets libbatsat_stubs%{ext_lib} dllbatsat_stubs%{ext_dll}) ;libbatsat_c.so)
  (deps ./lib.rs ../Cargo.toml (source_tree ../batsat) (source_tree ../vendor) ../.cargo/config)
- (mode fallback)
+ ;(mode fallback)
  (action
   (progn
     (chdir ..
       (progn
        (run cp -r vendor src/)
-       (run cp -r .cargo src/)
        (run cp -r ../../../../src/batsat ..)
        (chdir src
          (system "if [ \"$(uname)\" = \"Darwin\" ]; then
