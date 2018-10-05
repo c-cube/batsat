@@ -10,9 +10,9 @@
        (run cp -r ../../../../src/batsat ..)
        (chdir src
          (system "if [ \"$(uname)\" = \"Darwin\" ]; then
-                    RUSTFLAGS='-L %{ocaml-config:standard_library} -lcamlrun' cargo build --release
+                    RUSTFLAGS='-L %{ocaml-config:standard_library} -lcamlrun' cargo build --release --frozen
                   else
-                    cargo build --release
+                    cargo build --release --frozen
                   fi"))))
     ; TODO: strip the libs first
     (run cp ../target/release/libbatsat_stubs%{ext_lib} .)
