@@ -2,6 +2,8 @@
 
 This is a Rust SAT solver forked from [ratsat](https://github.com/qnighy/ratsat), a reimplementation of MiniSat.
 
+![build](https://travis-ci.org/c-cube/sequence.svg?branch=master])
+
 ## License
 
 MIT licensed.
