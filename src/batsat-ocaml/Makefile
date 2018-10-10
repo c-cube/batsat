@@ -19,10 +19,10 @@ CAML_LIB ?= $(shell ocamlc -where)
 
 build-rust-stubs: cargo-config-file
 	@if [ "$$(uname)" = "Darwin" ]; then \
-		RUSTFLAGS='-L "$(CAML_LIB)" -lcamlrun' cargo build --release --frozen ; \
+		RUSTFLAGS="-L ${CAML_LIB} -lcamlrun" cargo build --release --frozen ; \
 	else \
 		cargo build --release --frozen ; \
-  	fi
+	fi
 
 doc:
 	@dune build @doc
