@@ -2,7 +2,7 @@
 
 This is a Rust SAT solver forked from [ratsat](https://github.com/qnighy/ratsat), a reimplementation of MiniSat.
 
-![build](https://travis-ci.org/c-cube/sequence.svg?branch=master])
+[![build status](https://api.travis-ci.org/c-cube/batsat.svg?branch=master)](https://travis-ci.org/c-cube/batsat)
 
 ## License
 
