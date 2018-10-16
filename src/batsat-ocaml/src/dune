@@ -9,7 +9,7 @@
    (progn
     (chdir .. (run cp -r ../../../../src/batsat ..))
     (chdir ..
-      (run make CAML_LIB="%{ocaml-config:standard_library}" build-rust-stubs)) ; build
+      (run make CAML_LIB=%{ocaml-config:standard_library} build-rust-stubs)) ; build
     (run cp ../target/release/libbatsat_stubs%{ext_lib} .)
     (system "[ -f ../target/release/libbatsat_stubs.so ] && cp ../target/release/libbatsat_stubs.so dllbatsat_stubs%{ext_dll} || cp ../target/release/libbatsat_stubs.dylib dllbatsat_stubs%{ext_dll}")
     )))
