@@ -10,7 +10,13 @@
 
 - parametrize to get SMT like stuff?
 - push/pop
-- finish ipasir interface and test it
+- try http://contain-rs.github.io/bit-vec/bit_vec/ for IntSet (more compact)
+- nice API around the core solver for unsat cores, push/pop, etc.
+  which allocates new literals as needed
+- minimal unsat cores using card constraints
+- optional DRAT output
+- finish ipasir interface
+- ~~Pseudo Boolean~~ cardinality constraints --> minimal unsat cores
 
 http://algo.informatik.uni-tuebingen.de/forschung/sat/SlidesDanielLeBerreWorkshopTuebingen.pdf
 
@@ -29,3 +35,4 @@ http://algo.informatik.uni-tuebingen.de/forschung/sat/SlidesDanielLeBerreWorksho
   * update ipasir interface
 - unsat cores
 - ~~Pseudo Boolean~~ ~~cardinality constraints~~ --> minimal unsat cores
+- rename into "batsat" (done in Austin!)
