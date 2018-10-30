@@ -8,6 +8,8 @@
     with `data[i].offset` and `headers[i].size()` one can reconstruct a slice in `lits`
   * `extra: Vec<u64>` non-empty iff extra data enabled (all or none)
 
+- try using https://crates.io/crates/roaring for watch lists?
+
 - parametrize to get SMT like stuff?
 - push/pop
 - try http://contain-rs.github.io/bit-vec/bit_vec/ for IntSet (more compact)
