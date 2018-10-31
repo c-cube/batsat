@@ -77,6 +77,11 @@ impl<T: Copy> ops::IndexMut<Ref<T>> for RegionAllocator<T> {
 /// The reference is invariant in `T`.
 pub struct Ref<T: Copy>(u32, PhantomData<fn(T) -> T>);
 
+impl<T:Copy> Ref<T> {
+    pub fn to_int(self) -> u32 { self.0 }
+    pub unsafe fn of_int(u: u32) -> Self { Ref(u, PhantomData::default()) }
+}
+
 impl<T: Copy> fmt::Debug for Ref<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Ref").field(&self.0).finish()

@@ -21,8 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use std::fmt;
 use std::iter::DoubleEndedIterator;
-use std::ops;
-use std::u32;
+use std::{u32,ops,slice};
 use smallvec::SmallVec;
 
 use intmap::{AsIndex, IntMap, IntSet, IntMapBool};
@@ -261,17 +260,17 @@ impl ops::BitOrAssign for lbool {
 #[derive(Debug, Clone, Copy)]
 /// A reference to some clause
 pub(crate) struct ClauseRef<'a> {
-    // TODO:  just store clause + manager
     header: ClauseHeader,
-    data: &'a [ClauseData],
-    extra: Option<ClauseData>,
+    data: &'a [u32],
+    extra: Option<u32>,
 }
+
 #[derive(Debug)]
 /// A mutable reference to some clause, with a temporary lifetime
 pub(crate) struct ClauseMut<'a> {
     header: &'a mut ClauseHeader,
-    data: &'a mut [ClauseData],
-    extra: Option<&'a mut ClauseData>,
+    data: &'a mut [u32],
+    extra: Option<&'a mut u32>,
 }
 
 impl<'a, 'b> PartialEq<ClauseRef<'b>> for ClauseRef<'a> {
@@ -300,17 +299,21 @@ impl<'a> ClauseRef<'a> {
     }
     #[inline(always)]
     pub fn size(&self) -> u32 {
-        // FIXME: use header.size() instead (avoids touching the lits array)
-        self.data.len() as u32
+        self.header.size()
     }
     #[inline(always)]
     pub fn activity(&self) -> f32 {
         debug_assert!(self.has_extra());
-        unsafe { self.extra.expect("no extra field").f32 }
+        self.extra.expect("no extra field") as f32
+    }
+    #[inline(always)]
+    pub fn lits(&self) -> &'a [Lit] {
+        debug_assert!(! self.reloced());
+        unsafe { slice::from_raw_parts(self.data.as_ptr() as *const Lit, self.data.len()) }
     }
     #[inline(always)]
     pub fn iter(& self) -> impl DoubleEndedIterator<Item=&'a Lit> {
-        self.data.iter().map(|lit| unsafe { &lit.lit })
+        self.lits().iter()
     }
 }
 
@@ -337,13 +340,13 @@ impl<T: ClauseIterable> display::Print for T {
 }
 
 impl<'a> ClauseIterable for ClauseRef<'a> {
-    type Item = ClauseData;
-    fn items(& self) -> &[Self::Item] { self.data }
+    type Item = Lit;
+    fn items(& self) -> &[Self::Item] { self.lits() }
 }
 
 impl<'a> ClauseIterable for ClauseMut<'a> {
-    type Item = ClauseData;
-    fn items(& self) -> &[Self::Item] { self.data }
+    type Item = Lit;
+    fn items(& self) -> &[Self::Item] { self.lits() }
 }
 
 impl<'a> ClauseIterable for &'a [Lit] {
@@ -386,24 +389,30 @@ impl<'a> ClauseMut<'a> {
     #[inline(always)]
     pub fn activity(&self) -> f32 {
         debug_assert!(self.has_extra());
-        unsafe { self.extra.as_ref().expect("no extra field").f32 }
+        **self.extra.as_ref().expect("no extra field") as f32
     }
     #[inline(always)]
     pub fn set_activity(&mut self, activity: f32) {
         debug_assert!(self.has_extra());
-        self.extra.as_mut().expect("no extra field").f32 = activity;
+        **self.extra.as_mut().expect("no extra field") = activity as u32;
     }
     pub fn relocation(&self) -> CRef {
         debug_assert!(self.reloced());
-        unsafe { self.data[0].cref }
+        unsafe { CRef::of_int(self.data[0]) }
     }
     pub fn relocate(mut self, c: CRef) {
         debug_assert!(!self.reloced());
         self.set_reloced(true);
-        self.data[0].cref = c;
+        self.data[0] = c.to_int();
+    }
+    pub fn lits(&self) -> &[Lit] {
+        unsafe { slice::from_raw_parts(self.data.as_ptr() as *const Lit, self.data.len()) }
+    }
+    pub fn lits_mut(&mut self) -> &mut [Lit] {
+        unsafe { slice::from_raw_parts_mut(self.data.as_ptr() as *mut Lit, self.data.len()) }
     }
     pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
-        self.data.iter().map(|lit| unsafe { &lit.lit })
+        self.lits().iter()
     }
     pub fn shrink(self, new_size: u32) {
         debug_assert!(2 <= new_size);
@@ -411,7 +420,7 @@ impl<'a> ClauseMut<'a> {
         if new_size < self.size() {
             self.header.set_size(new_size);
             if let Some(extra) = self.extra {
-                self.data[new_size as usize] = *extra;
+                self.data[new_size as usize] = *extra as u32;
             }
         }
     }
@@ -427,53 +436,27 @@ impl<'a> ClauseMut<'a> {
 impl<'a> ops::Index<u32> for ClauseRef<'a> {
     type Output = Lit;
     fn index(&self, index: u32) -> &Self::Output {
-        unsafe { &self.data[index as usize].lit }
+        &self.lits()[index as usize]
     }
 }
 impl<'a> ops::Index<u32> for ClauseMut<'a> {
     type Output = Lit;
     fn index(&self, index: u32) -> &Self::Output {
-        unsafe { &self.data[index as usize].lit }
+        &self.lits()[index as usize]
     }
 }
 impl<'a> ops::IndexMut<u32> for ClauseMut<'a> {
     #[inline(always)]
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
-        unsafe { &mut self.data[index as usize].lit }
+        &mut self.lits_mut()[index as usize]
     }
 }
 
 #[derive(Debug)]
 /// Main clause allocator. It stores a set of clauses efficiently.
 pub struct ClauseAllocator {
-    ra: RegionAllocator<ClauseData>,
+    ra: RegionAllocator<u32>,
     extra_clause_field: bool,
-}
-
-#[derive(Clone, Copy)]
-/// Items used in the clause allocator. It should be compact enough that
-/// we do no waste space.
-pub(crate) union ClauseData {
-    u32: u32,
-    f32: f32,
-    cref: CRef,
-    header: ClauseHeader,
-    lit: Lit,
-}
-
-impl Into<Lit> for ClauseData {
-    fn into(self: ClauseData) -> Lit { unsafe { self.lit } }
-}
-
-impl Default for ClauseData {
-    fn default() -> Self {
-        ClauseData { u32: 0 }
-    }
-}
-impl fmt::Debug for ClauseData {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ClauseData({})", unsafe { self.u32 })
-    }
 }
 
 /// Metadata of a clause
@@ -508,6 +491,7 @@ impl ClauseHeader {
                 | ((reloced as u32) << 27) | size,
         )
     }
+    pub(crate) fn into_u32(self) -> u32 { self.0 }
     #[inline(always)]
     pub fn mark(&self) -> u32 {
         self.0 >> 30
@@ -545,6 +529,7 @@ impl ClauseHeader {
         debug_assert!(size < (1 << 27));
         self.0 = (self.0 & !((1 << 27) - 1)) | size;
     }
+    unsafe fn from_u32(u: u32) -> Self { ClauseHeader(u) }
 }
 
 impl ClauseAllocator {
@@ -568,21 +553,21 @@ impl ClauseAllocator {
     pub(crate) fn alloc_with_learnt(&mut self, clause: &[Lit], learnt: bool) -> CRef {
         let use_extra = learnt | self.extra_clause_field;
         let cid = self.ra.alloc(1 + clause.len() as u32 + use_extra as u32);
-        self.ra[cid].header = ClauseHeader::new(0, learnt, use_extra, false, clause.len() as u32);
+        self.ra[cid] = ClauseHeader::new(0, learnt, use_extra, false, clause.len() as u32).into_u32();
         let clause_ptr = cid + 1;
         for (i, &lit) in clause.iter().enumerate() {
-            self.ra[clause_ptr + i as u32].lit = lit;
+            self.ra[clause_ptr + i as u32] = lit.idx();
         }
         if use_extra {
             if learnt {
-                self.ra[clause_ptr + clause.len() as u32].f32 = 0.0;
+                self.ra[clause_ptr + clause.len() as u32] = 0.0f32 as u32;
             } else {
                 // NOTE: not used right now, but can be used to accelerate `lit_redundant`
                 let mut abstraction: u32 = 0;
                 for &lit in clause {
                     abstraction |= 1 << (lit.var().idx() & 31);
                 }
-                self.ra[clause_ptr + clause.len() as u32].u32 = abstraction;
+                self.ra[clause_ptr + clause.len() as u32] = abstraction;
             }
         }
 
@@ -592,14 +577,15 @@ impl ClauseAllocator {
     pub(crate) fn alloc_copy(&mut self, from: ClauseRef) -> CRef {
         let use_extra = from.learnt() | self.extra_clause_field;
         let cid = self.ra.alloc(1 + from.size() + use_extra as u32);
-        self.ra[cid].header = from.header;
+        let mut header = from.header;
         // NOTE: the copied clause may lose the extra field.
-        unsafe { &mut self.ra[cid].header }.set_has_extra(use_extra);
+        header.set_has_extra(use_extra);
+        self.ra[cid] = header.into_u32();
         for (i, &lit) in from.iter().enumerate() {
-            self.ra[cid + 1 + i as u32].lit = lit;
+            self.ra[cid + 1 + i as u32] = lit.idx();
         }
         if use_extra {
-            self.ra[cid + 1 + from.size()] = from.extra.unwrap();
+            self.ra[cid + 1 + from.size()] = from.extra.unwrap() as u32;
         }
         cid
     }
@@ -633,7 +619,7 @@ impl ClauseAllocator {
 
     /// Get a reference on the clause `cr` points to
     pub(crate) fn get_ref<'a>(&'a self, cr: CRef) -> ClauseRef<'a> {
-        let header = unsafe { self.ra[cr].header };
+        let header = unsafe {ClauseHeader::from_u32(self.ra[cr]) };
         let has_extra = header.has_extra();
         let size = header.size();
 
@@ -652,7 +638,7 @@ impl ClauseAllocator {
 
     /// Get a mutable reference on the clause `cr` points to
     pub(crate) fn get_mut(&mut self, cr: CRef) -> ClauseMut {
-        let header = unsafe { self.ra[cr].header };
+        let header = unsafe { ClauseHeader::from_u32(self.ra[cr]) };
         let has_extra = header.has_extra();
         let size = header.size();
         let len = 1 + size + has_extra as u32;
@@ -661,14 +647,14 @@ impl ClauseAllocator {
         let (subslice0, subslice) = subslice.split_at_mut(1);
         let (subslice1, subslice2) = subslice.split_at_mut(size as usize);
         ClauseMut {
-            header: unsafe { &mut subslice0[0].header },
+            header: unsafe { &mut *(subslice0.as_ptr() as *mut u32 as *mut ClauseHeader) },
             data: subslice1,
             extra: subslice2.first_mut(),
         }
     }
 }
 
-pub(crate) type CRef = alloc::Ref<ClauseData>;
+pub(crate) type CRef = alloc::Ref<u32>;
 
 /// Predicate that decides whether a value `V` is deleted or not
 pub trait DeletePred<V> {
@@ -840,8 +826,8 @@ mod test {
     /// test that ClauseData doesn't waste space
     #[test]
     fn test_size_clause_data() {
-        use std::mem;
-        assert_eq!(mem::size_of::<super::ClauseData>(), 4);
+        use std::mem::size_of;
+        assert_eq!(size_of::<super::Lit>(), size_of::<u32>());
     }
 
     #[test]
