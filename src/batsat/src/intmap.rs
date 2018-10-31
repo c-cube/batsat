@@ -126,6 +126,9 @@ impl<K: AsIndex> IntMapBool<K> {
     pub fn new() -> Self {
         Self { map: BitVec::new(), _marker: PhantomData::default(), }
     }
+    pub fn with_capacity(i: usize) -> Self {
+        Self { map: BitVec::with_capacity(i), _marker: PhantomData::default(), }
+    }
     #[inline]
     pub fn has(&self, k: K) -> bool {
         k.as_index() < self.map.len()

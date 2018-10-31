@@ -925,7 +925,7 @@ impl Solver {
                     orig_size - end
                 };
                 // It was not in MiniSAT, but it is needed for correct wasted calculation.
-                ca.free_amount(amount_shaved);
+                ca.free_amount(amount_shaved as usize);
             }
             !satisfied
         });
@@ -1360,8 +1360,8 @@ impl Solver {
         if self.verbosity >= 2 {
             println!(
                 "|  Garbage collection:   {:12} bytes => {:12} bytes             |",
-                self.ca.len() * ClauseAllocator::UNIT_SIZE,
-                to.len() * ClauseAllocator::UNIT_SIZE
+                self.ca.len() * (ClauseAllocator::UNIT_SIZE as usize),
+                to.len() * (ClauseAllocator::UNIT_SIZE as usize)
             );
         }
         self.ca = to;
