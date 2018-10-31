@@ -21,8 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use std::fmt;
 use std::iter::DoubleEndedIterator;
-use std::ops;
-use std::u32;
+use std::{ops,u32,slice};
 use smallvec::SmallVec;
 
 use intmap::{AsIndex, IntMap, IntSet, IntMapBool};
@@ -261,7 +260,6 @@ impl ops::BitOrAssign for lbool {
 #[derive(Debug, Clone, Copy)]
 /// A reference to some clause
 pub(crate) struct ClauseRef<'a> {
-    // TODO:  just store clause + manager
     header: ClauseHeader,
     data: &'a [ClauseData],
     extra: Option<ClauseData>,
@@ -337,13 +335,17 @@ impl<T: ClauseIterable> display::Print for T {
 }
 
 impl<'a> ClauseIterable for ClauseRef<'a> {
-    type Item = ClauseData;
-    fn items(& self) -> &[Self::Item] { self.data }
+    type Item = Lit;
+    fn items(& self) -> &[Self::Item] {
+        unsafe { slice::from_raw_parts(self.data.as_ptr() as *const Lit, self.data.len()) }
+    }
 }
 
 impl<'a> ClauseIterable for ClauseMut<'a> {
-    type Item = ClauseData;
-    fn items(& self) -> &[Self::Item] { self.data }
+    type Item = Lit;
+    fn items(& self) -> &[Self::Item] {
+        unsafe { slice::from_raw_parts(self.data.as_ptr() as *const Lit, self.data.len()) }
+    }
 }
 
 impl<'a> ClauseIterable for &'a [Lit] {
@@ -426,12 +428,14 @@ impl<'a> ClauseMut<'a> {
 
 impl<'a> ops::Index<u32> for ClauseRef<'a> {
     type Output = Lit;
+    #[inline(always)]
     fn index(&self, index: u32) -> &Self::Output {
         unsafe { &self.data[index as usize].lit }
     }
 }
 impl<'a> ops::Index<u32> for ClauseMut<'a> {
     type Output = Lit;
+    #[inline(always)]
     fn index(&self, index: u32) -> &Self::Output {
         unsafe { &self.data[index as usize].lit }
     }
