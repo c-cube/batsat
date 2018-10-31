@@ -268,7 +268,6 @@ pub(crate) struct ClauseRef<'a> {
 /// A mutable reference to some clause, with a temporary lifetime
 pub(crate) struct ClauseMut<'a> {
     cref: CRef,
-    header: ClauseHeader, // fast access
     alloc: &'a mut ClauseAllocator,
 }
 
@@ -369,21 +368,30 @@ impl ClauseIterable for IntSet<Lit> {
 
 impl<'a> ClauseMut<'a> {
     #[inline(always)]
+    pub fn header(&self) -> & ClauseHeader {
+        &self.alloc.headers[self.cref.0 as usize]
+    }
+    #[inline(always)]
+    pub fn header_mut(& mut self) -> & mut ClauseHeader {
+        &mut self.alloc.headers[self.cref.0 as usize]
+    }
+
+    #[inline(always)]
     pub fn reloced(&self) -> bool {
-        self.header.reloced()
+        self.header().reloced()
     }
     #[inline(always)]
     pub fn size(&self) -> u32 {
-        self.header.size()
+        self.header().size()
     }
     #[inline(always)]
     pub fn set_mark(&mut self, mark: u32) {
         debug_assert!(mark < 4);
-        self.header.set_mark(mark);
+        self.header_mut().set_mark(mark);
     }
     #[inline(always)]
     pub fn set_reloced(&mut self, reloced: bool) {
-        self.header.set_reloced(reloced);
+        self.header_mut().set_reloced(reloced);
     }
     #[inline(always)]
     pub fn activity(&self) -> f32 {
@@ -420,11 +428,11 @@ impl<'a> ClauseMut<'a> {
         debug_assert!(2 <= new_size);
         debug_assert!(new_size <= self.size());
         if new_size < self.size() {
-            self.header.set_size(new_size);
+            self.header_mut().set_size(new_size);
         }
     }
     pub fn as_clause_ref(&mut self) -> ClauseRef {
-        ClauseRef { cref: self.cref, header: self.header, alloc: self.alloc, }
+        ClauseRef { cref: self.cref, header: * self.header(), alloc: self.alloc, }
     }
 }
 
@@ -525,7 +533,7 @@ impl AsIndex for CRef {
 }
 
 impl CRef {
-    pub const UNDEF : Self = CRef(0);
+    pub const UNDEF : Self = CRef(!0); // max int
 }
 
 /// Main clause allocator. It stores a set of clauses efficiently.
@@ -586,6 +594,9 @@ impl ClauseAllocator {
     fn alloc_internal(&mut self, clause: &[Lit], h: ClauseHeader) -> CRef {
         debug_assert!(self.invariants());
         let cid = self.headers.len();
+        if cid == CRef::UNDEF.0 as usize {
+            panic!("batsat: too many allocated clauses");
+        }
         let offset = self.lits.len();
 
         self.headers.push(h);
@@ -649,16 +660,16 @@ impl ClauseAllocator {
     }
 
     /// Get a reference on the clause `cref` points to
-    #[inline]
+    #[inline(always)]
     pub(crate) fn get_ref<'a>(&'a self, cref: CRef) -> ClauseRef<'a> {
         let header = self.headers[cref.0 as usize];
         ClauseRef { alloc: self, cref, header, }
     }
 
     /// Get a mutable reference on the clause `cref` points to
+    #[inline(always)]
     pub(crate) fn get_mut(&mut self, cref: CRef) -> ClauseMut {
-        let header = self.headers[cref.0 as usize];
-        ClauseMut { alloc: self, cref, header, }
+        ClauseMut { alloc: self, cref, }
     }
 }
 
