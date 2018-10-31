@@ -261,6 +261,7 @@ impl ops::BitOrAssign for lbool {
 #[derive(Debug, Clone, Copy)]
 /// A reference to some clause
 pub(crate) struct ClauseRef<'a> {
+    // TODO:  just store clause + manager
     header: ClauseHeader,
     data: &'a [ClauseData],
     extra: Option<ClauseData>,
@@ -280,7 +281,6 @@ impl<'a, 'b> PartialEq<ClauseRef<'b>> for ClauseRef<'a> {
 }
 impl<'a> Eq for ClauseRef<'a> {}
 
-#[allow(dead_code)]
 impl<'a> ClauseRef<'a> {
     #[inline(always)]
     pub fn mark(&self) -> u32 {
@@ -307,16 +307,6 @@ impl<'a> ClauseRef<'a> {
     pub fn activity(&self) -> f32 {
         debug_assert!(self.has_extra());
         unsafe { self.extra.expect("no extra field").f32 }
-    }
-    #[inline(always)]
-    pub fn abstraction(&self) -> u32 {
-        debug_assert!(self.has_extra());
-        unsafe { self.extra.expect("no extra field").u32 }
-    }
-    #[inline(always)]
-    pub fn relocation(&self) -> CRef {
-        debug_assert!(self.reloced());
-        unsafe { self.data[0].cref }
     }
     #[inline(always)]
     pub fn iter(& self) -> impl DoubleEndedIterator<Item=&'a Lit> {
@@ -371,16 +361,7 @@ impl ClauseIterable for IntSet<Lit> {
     fn items(&self) -> &[Self::Item] { self.as_slice() }
 }
 
-#[allow(dead_code)]
 impl<'a> ClauseMut<'a> {
-    #[inline(always)]
-    pub fn mark(&self) -> u32 {
-        self.header.mark()
-    }
-    #[inline(always)]
-    pub fn learnt(&self) -> bool {
-        self.header.learnt()
-    }
     #[inline(always)]
     pub fn has_extra(&self) -> bool {
         self.header.has_extra()
@@ -399,14 +380,6 @@ impl<'a> ClauseMut<'a> {
         self.header.set_mark(mark);
     }
     #[inline(always)]
-    pub fn set_learnt(&mut self, learnt: bool) {
-        self.header.set_learnt(learnt);
-    }
-    #[inline(always)]
-    pub fn set_has_extra(&mut self, has_extra: bool) {
-        self.header.set_has_extra(has_extra);
-    }
-    #[inline(always)]
     pub fn set_reloced(&mut self, reloced: bool) {
         self.header.set_reloced(reloced);
     }
@@ -420,16 +393,6 @@ impl<'a> ClauseMut<'a> {
         debug_assert!(self.has_extra());
         self.extra.as_mut().expect("no extra field").f32 = activity;
     }
-    #[inline(always)]
-    pub fn abstraction(&self) -> u32 {
-        debug_assert!(self.has_extra());
-        unsafe { self.extra.as_ref().expect("no extra field").u32 }
-    }
-    #[inline(always)]
-    pub fn set_abstraction(&mut self, abstraction: u32) {
-        debug_assert!(self.has_extra());
-        self.extra.as_mut().expect("no extra field").u32 = abstraction;
-    }
     pub fn relocation(&self) -> CRef {
         debug_assert!(self.reloced());
         unsafe { self.data[0].cref }
@@ -441,9 +404,6 @@ impl<'a> ClauseMut<'a> {
     }
     pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
         self.data.iter().map(|lit| unsafe { &lit.lit })
-    }
-    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item=&mut Lit> {
-        self.data.iter_mut().map(|lit| unsafe { &mut lit.lit })
     }
     pub fn shrink(self, new_size: u32) {
         debug_assert!(2 <= new_size);
