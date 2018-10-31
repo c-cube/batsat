@@ -29,7 +29,7 @@ pub trait AsIndex: Copy {
     fn from_index(index: usize) -> Self;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IntMap<K: AsIndex, V> {
     map: Vec<V>,
     _marker: PhantomData<fn(K)>, // contravariance
@@ -37,44 +37,23 @@ pub struct IntMap<K: AsIndex, V> {
 
 impl<K: AsIndex, V> Default for IntMap<K, V> {
     fn default() -> Self {
-        Self {
-            map: vec![],
-            _marker: PhantomData,
-        }
-    }
-}
-impl<K: AsIndex, V> Clone for IntMap<K, V>
-where
-    V: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            map: self.map.clone(),
-            _marker: PhantomData,
-        }
+        Self { map: Vec::new(), _marker: PhantomData, }
     }
 }
 
 impl<K: AsIndex, V> IntMap<K, V> {
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
+    #[inline]
     pub fn has(&self, k: K) -> bool {
         k.as_index() < self.map.len()
     }
-    pub fn reserve(&mut self, key: K, pad: V)
-    where
-        V: Clone,
-    {
+    pub fn reserve(&mut self, key: K, pad: V) where V: Clone {
         let index = key.as_index();
         if index >= self.map.len() {
             self.map.resize(index + 1, pad);
         }
     }
-    pub fn reserve_default(&mut self, key: K)
-    where
-        V: Default,
-    {
+    pub fn reserve_default(&mut self, key: K) where V: Default {
         let index = key.as_index();
         if index >= self.map.len() {
             // self.map.resize_default(index + 1);
@@ -82,17 +61,12 @@ impl<K: AsIndex, V> IntMap<K, V> {
             self.map.extend((0..len).map(|_| V::default()));
         }
     }
-    pub fn insert(&mut self, key: K, val: V, pad: V)
-    where
-        V: Clone,
-    {
+    #[inline]
+    pub fn insert(&mut self, key: K, val: V, pad: V) where V: Clone {
         self.reserve(key, pad);
         self[key] = val;
     }
-    pub fn insert_default(&mut self, key: K, val: V)
-    where
-        V: Default,
-    {
+    pub fn insert_default(&mut self, key: K, val: V) where V: Default {
         self.reserve_default(key);
         self[key] = val;
     }
@@ -185,10 +159,7 @@ pub struct HeapData<K: AsIndex> {
 
 impl<K: AsIndex> Default for HeapData<K> {
     fn default() -> Self {
-        Self {
-            heap: vec![],
-            indices: IntMap::new(),
-        }
+        Self { heap: Vec::new(), indices: IntMap::new(), }
     }
 }
 
@@ -207,10 +178,7 @@ impl<K: AsIndex> HeapData<K> {
     }
 
     pub fn promote<Comp: Comparator<K>>(&mut self, comp: Comp) -> Heap<K, Comp> {
-        Heap {
-            data: self,
-            comp: comp,
-        }
+        Heap { data: self, comp: comp, }
     }
 }
 
@@ -223,25 +191,11 @@ impl<K: AsIndex> ops::Index<usize> for HeapData<K> {
 
 pub trait Comparator<T: ?Sized>: PartialComparator<T> {
     fn cmp(&self, lhs: &T, rhs: &T) -> cmp::Ordering;
-    fn max(&self, lhs: T, rhs: T) -> T
-    where
-        T: Sized,
-    {
-        if self.ge(&rhs, &lhs) {
-            rhs
-        } else {
-            lhs
-        }
+    fn max(&self, lhs: T, rhs: T) -> T where T: Sized {
+        if self.ge(&rhs, &lhs) { rhs } else { lhs }
     }
-    fn min(&self, lhs: T, rhs: T) -> T
-    where
-        T: Sized,
-    {
-        if self.le(&lhs, &rhs) {
-            lhs
-        } else {
-            rhs
-        }
+    fn min(&self, lhs: T, rhs: T) -> T where T: Sized {
+        if self.le(&lhs, &rhs) { lhs } else { rhs }
     }
 }
 pub trait PartialComparator<Rhs: ?Sized, Lhs: ?Sized = Rhs> {
