@@ -545,6 +545,7 @@ pub struct ClauseAllocator {
     activity: Vec<f32>,
     extra: HashMap<CRef, u32>,
     extra_clause_field: bool,
+    size: usize,
     wasted: usize,
 }
 
@@ -570,7 +571,7 @@ impl ClauseAllocator {
             activity: Vec::with_capacity(n),
             extra: HashMap::new(),
             extra_clause_field: false,
-            wasted: 0,
+            size:0, wasted: 0,
         }
     }
     fn invariants(&self) -> bool {
@@ -585,7 +586,7 @@ impl ClauseAllocator {
     }
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.lits.len()
+        self.size
     }
     pub fn wasted(&self) -> usize {
         self.wasted
@@ -605,6 +606,8 @@ impl ClauseAllocator {
         self.lits.extend_from_slice(clause);
 
         let cref = CRef(cid as u32);
+
+        self.size += 1 + clause.len() + (h.learnt() as usize);
 
         if h.has_extra() {
             // NOTE: not used right now, but can be used to accelerate `lit_redundant`
