@@ -25,7 +25,7 @@ use std::ops;
 use std::u32;
 use smallvec::SmallVec;
 
-use intmap::{AsIndex, IntMap, IntSet};
+use intmap::{AsIndex, IntMap, IntSet, IntMapBool};
 use alloc::{self, RegionAllocator};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -300,6 +300,7 @@ impl<'a> ClauseRef<'a> {
     }
     #[inline(always)]
     pub fn size(&self) -> u32 {
+        // FIXME: use header.size() instead (avoids touching the lits array)
         self.data.len() as u32
     }
     #[inline(always)]
@@ -721,7 +722,7 @@ pub type OccVec<V> = SmallVec<[V;4]>;
 /// of type `V` (e.g. clauses)
 pub struct OccListsData<K: AsIndex, V> {
     occs: IntMap<K, OccVec<V>>,
-    dirty: IntMap<K, bool>,
+    dirty: IntMapBool<K>,
     dirties: Vec<K>, // to know what keys to examine in `clean_all_pred`
 }
 
@@ -729,7 +730,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
     pub fn new() -> Self {
         Self {
             occs: IntMap::new(),
-            dirty: IntMap::new(),
+            dirty: IntMapBool::new(),
             dirties: Vec::new(),
         }
     }
@@ -738,7 +739,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
     pub fn init(&mut self, idx: K) {
         self.occs.reserve_default(idx);
         self.occs[idx].clear();
-        self.dirty.reserve(idx, false);
+        self.dirty.reserve(idx);
     }
 
     /// Obtain a fully usable occurrence list using the given predicate
@@ -762,7 +763,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
             // Dirties may contain duplicates so check here if a variable is already cleaned:
             if self.dirty[x] {
                 self.occs[x].retain(|x| !pred.deleted(x));
-                self.dirty[x] = false;
+                self.dirty.set(x, false);
             }
         }
         self.dirties.clear();
@@ -771,13 +772,13 @@ impl<K: AsIndex, V> OccListsData<K, V> {
     /// Cleanup entry at `idx`
     pub fn clean_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) {
         self.occs[idx].retain(|x| !pred.deleted(x));
-        self.dirty[idx] = false;
+        self.dirty.set(idx, false);
     }
 
     /// Mark index `K` as dirty, so it can be cleaned up later
     pub fn smudge(&mut self, idx: K) {
         if !self.dirty[idx] {
-            self.dirty[idx] = true;
+            self.dirty.insert(idx);
             self.dirties.push(idx);
         }
     }

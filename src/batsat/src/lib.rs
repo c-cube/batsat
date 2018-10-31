@@ -39,6 +39,7 @@ pub(crate) mod log {
 pub extern crate log;
 
 extern crate smallvec;
+extern crate bit_vec;
 
 //======== PUBLIC INTERFACE ============
 

@@ -23,6 +23,7 @@ use std::cmp;
 use std::iter;
 use std::ops;
 use std::marker::PhantomData;
+use bit_vec::BitVec;
 
 pub trait AsIndex: Copy {
     fn as_index(self) -> usize;
@@ -104,14 +105,64 @@ impl<K: AsIndex, V> ops::IndexMut<K> for IntMap<K, V> {
 }
 
 #[derive(Debug,Clone)]
+pub struct IntMapBool<K : AsIndex> {
+    map: BitVec,
+    _marker: PhantomData<fn(K)>, // contravariance
+}
+
+impl<K: AsIndex> Default for IntMapBool<K> {
+    fn default() -> Self { IntMapBool::new() }
+}
+
+impl<K: AsIndex> ops::Index<K> for IntMapBool<K> {
+    type Output = bool;
+    #[inline]
+    fn index(&self, index: K) -> &Self::Output {
+        &self.map[index.as_index()]
+    }
+}
+
+impl<K: AsIndex> IntMapBool<K> {
+    pub fn new() -> Self {
+        Self { map: BitVec::new(), _marker: PhantomData::default(), }
+    }
+    #[inline]
+    pub fn has(&self, k: K) -> bool {
+        k.as_index() < self.map.len()
+    }
+    #[inline]
+    pub fn set(&mut self, k: K, b: bool) {
+        self.map.set(k.as_index(), b);
+    }
+    pub fn reserve(&mut self, key: K) {
+        let index = key.as_index();
+        let len = self.map.len();
+        if index >= len {
+            self.map.grow(index - len + 1, false);
+        }
+        debug_assert!(self.map.capacity() > index);
+    }
+    pub fn clear(&mut self) { self.map.clear(); }
+    pub fn free(&mut self) {
+        self.map.clear();
+        self.map.shrink_to_fit();
+    }
+    #[inline]
+    pub fn insert(&mut self, key: K) {
+        self.reserve(key);
+        self.map.set(key.as_index(), true);
+    }
+}
+
+#[derive(Debug,Clone)]
 pub struct IntSet<K: AsIndex> {
-    in_set: IntMap<K, bool>,
+    in_set: IntMapBool<K>,
     xs: Vec<K>,
 }
 impl<K: AsIndex> Default for IntSet<K> {
     fn default() -> Self {
         Self {
-            in_set: IntMap::default(),
+            in_set: IntMapBool::default(),
             xs: vec![],
         }
     }
@@ -125,18 +176,16 @@ impl<K: AsIndex> IntSet<K> {
         self.xs.len()
     }
     pub fn clear(&mut self) {
-        for x in &mut self.in_set.map {
-            *x = false;
-        }
+        self.in_set.clear();
         self.xs.clear()
     }
     pub fn as_slice(&self) -> &[K] {
         &self.xs
     }
     pub fn insert(&mut self, k: K) {
-        self.in_set.reserve(k, false);
+        self.in_set.reserve(k);
         if !self.in_set[k] {
-            self.in_set[k] = true;
+            self.in_set.set(k, true);
             self.xs.push(k);
         }
     }
