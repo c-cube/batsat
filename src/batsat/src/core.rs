@@ -27,7 +27,7 @@ use std::sync::atomic::{Ordering,AtomicBool};
 use std::fmt;
 use std::fmt::Write;
 use {lbool, Lit, Var};
-use intmap::{Comparator, Heap, HeapData, PartialComparator};
+use intmap::{Comparator, Heap, HeapData};
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
     VMap, ClauseIterable};
 use interface::*;
@@ -1676,11 +1676,6 @@ struct VarOrder<'a> {
     activity: &'a VMap<f64>,
 }
 
-impl<'a> PartialComparator<Var> for VarOrder<'a> {
-    fn partial_cmp(&self, lhs: &Var, rhs: &Var) -> Option<cmp::Ordering> {
-        Some(self.cmp(lhs, rhs))
-    }
-}
 impl<'a> Comparator<Var> for VarOrder<'a> {
     fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
         PartialOrd::partial_cmp(&self.activity[*rhs], &self.activity[*lhs]).expect("NaN activity")

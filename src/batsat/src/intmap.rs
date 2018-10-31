@@ -189,7 +189,7 @@ impl<K: AsIndex> ops::Index<usize> for HeapData<K> {
     }
 }
 
-pub trait Comparator<T: ?Sized>: PartialComparator<T> {
+pub trait Comparator<T: ?Sized> {
     fn cmp(&self, lhs: &T, rhs: &T) -> cmp::Ordering;
     fn max(&self, lhs: T, rhs: T) -> T where T: Sized {
         if self.ge(&rhs, &lhs) { rhs } else { lhs }
@@ -197,33 +197,22 @@ pub trait Comparator<T: ?Sized>: PartialComparator<T> {
     fn min(&self, lhs: T, rhs: T) -> T where T: Sized {
         if self.le(&lhs, &rhs) { lhs } else { rhs }
     }
-}
-pub trait PartialComparator<Rhs: ?Sized, Lhs: ?Sized = Rhs> {
-    fn partial_cmp(&self, lhs: &Lhs, rhs: &Rhs) -> Option<cmp::Ordering>;
-    fn lt(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
-        match self.partial_cmp(lhs, rhs) {
-            Some(cmp::Ordering::Less) => true,
+    fn le(&self, lhs: &T, rhs: &T) -> bool {
+        match self.cmp(lhs, rhs) {
+            cmp::Ordering::Less | cmp::Ordering::Equal => true,
             _ => false,
         }
     }
-    fn le(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
-        match self.partial_cmp(lhs, rhs) {
-            Some(cmp::Ordering::Less) | Some(cmp::Ordering::Equal) => true,
+    fn lt(&self, lhs: &T, rhs: &T) -> bool {
+        match self.cmp(lhs, rhs) {
+            cmp::Ordering::Less => true,
             _ => false,
         }
     }
-    fn gt(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
-        match self.partial_cmp(lhs, rhs) {
-            Some(cmp::Ordering::Greater) => true,
-            _ => false,
-        }
-    }
-    fn ge(&self, lhs: &Lhs, rhs: &Rhs) -> bool {
-        match self.partial_cmp(lhs, rhs) {
-            Some(cmp::Ordering::Greater) | Some(cmp::Ordering::Equal) => true,
-            _ => false,
-        }
-    }
+    #[inline]
+    fn gt(&self, lhs: &T, rhs: &T) -> bool { self.lt(rhs, lhs) }
+    #[inline]
+    fn ge(&self, lhs: &T, rhs: &T) -> bool { self.le(rhs, lhs) }
 }
 
 #[derive(Debug)]
