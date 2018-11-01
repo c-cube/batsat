@@ -298,8 +298,7 @@ impl<'a> ClauseRef<'a> {
     }
     #[inline(always)]
     pub fn size(&self) -> u32 {
-        // FIXME: use header.size() instead (avoids touching the lits array)
-        self.data.len() as u32
+        self.header.size()
     }
     #[inline(always)]
     pub fn activity(&self) -> f32 {
