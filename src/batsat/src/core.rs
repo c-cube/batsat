@@ -490,7 +490,7 @@ impl Solver {
             simp_db_assigns: -1,
             simp_db_props: 0,
             progress_estimate: 0.0,
-            remove_satisfied: false, // FIXME: before enabling, check ICNF regression test
+            remove_satisfied: true,
             next_var: Var::from_idx(0),
 
             ca: ClauseAllocator::new(),
@@ -630,7 +630,6 @@ impl Solver {
 
         self.remove_satisfied(ClauseSet::Learnt); // Remove satisfied learnt clauses
         if self.remove_satisfied {
-            // FIXME: seems very wrong in incremental context (see incremental regression test1)
             self.remove_satisfied(ClauseSet::Original); // remove satisfied normal clauses
         }
         self.check_garbage();
