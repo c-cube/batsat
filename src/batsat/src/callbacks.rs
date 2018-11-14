@@ -6,22 +6,22 @@ use super::clause::{lbool};
 /// Typically intended for printing/statistics
 pub trait Callbacks {
     /// Called before starting to solve
-    fn on_start(&mut self);
+    fn on_start(&mut self) {}
 
     /// Called whenever the solver simplifies its set of clauses
-    fn on_simplify(&mut self);
+    fn on_simplify(&mut self) {}
 
     /// Called after a clause GC
-    fn on_gc(&mut self, old_size: usize, new_size: usize);
+    fn on_gc(&mut self, _old_size: usize, _new_size: usize) {}
 
     /// called regularly to indicate progress
-    fn on_progress(&mut self, f: &ProgressStatus);
+    fn on_progress(&mut self, _f: &ProgressStatus) {}
 
     /// Called when a result is computed
-    fn on_result(&mut self, s: lbool);
+    fn on_result(&mut self, _s: lbool) {}
 
     /// Should we stop? called regularly for asynchronous interrupts and such
-    fn stop(&mut self) -> bool;
+    fn stop(&mut self) -> bool { false }
 }
 
 /// Progress indicator from the SAT solver.
@@ -47,11 +47,6 @@ pub struct Basic {
 }
 
 impl Callbacks for Basic {
-    fn on_start(&mut self) {}
-    fn on_result(&mut self, _:lbool) {}
-    fn on_simplify(&mut self) {}
-    fn on_gc(&mut self, _:usize, _:usize) {}
-    fn on_progress(&mut self, _:&ProgressStatus) {}
     fn stop(&mut self) -> bool {
         match self.stop {
             None => false,
