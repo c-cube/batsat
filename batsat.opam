@@ -10,7 +10,7 @@ build: [
 ]
 # TODO: add dependency on cargo?
 depends: [
-  "dune" {build}
+  "dune" {build & >= "1.3.0" }
   "odoc" {with-doc}
 ]
 tags: [ "minisat" "solver" "SAT" ]
