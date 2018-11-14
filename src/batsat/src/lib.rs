@@ -49,7 +49,13 @@ pub mod clause;
 pub mod dimacs;
 pub mod core;
 pub mod interface;
+pub mod callbacks;
 
-pub use interface::SolverInterface;
+// TODO: also Theory and TheoryArgument
+pub use interface::{SolverInterface};
+pub use callbacks::{Callbacks,Basic as BasicCallbacks,ProgressStatus};
 pub use core::{Solver, SolverOpts};
 pub use clause::{lbool, Lit, Var, LMap, LSet, VMap, display::Print};
+
+/// Basic solver
+pub type BasicSolver = Solver<BasicCallbacks>;

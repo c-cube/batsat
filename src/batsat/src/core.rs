@@ -30,10 +30,17 @@ use {lbool, Lit, Var};
 use intmap::{Comparator, Heap, HeapData};
 use clause::{CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
     VMap, ClauseIterable};
+use callbacks::{Callbacks,ProgressStatus};
 use interface::*;
 
+/// The main solver structure
+///
+/// A `Solver` object contains the whole state of the SAT solver, including
+/// a clause allocator, literals, clauses, and statistics.
+///
+/// It is parametrized by `Callbacks`
 #[derive(Debug)]
-pub struct Solver {
+pub struct Solver<Cb : Callbacks> {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
     model: Vec<lbool>,
@@ -41,8 +48,9 @@ pub struct Solver {
     /// this vector represent the final conflict clause expressed in the assumptions.
     conflict: LSet,
 
+    cb: Cb, // the callbacks
+
     // Mode of operation:
-    verbosity: i32,
     var_decay: f64,
     clause_decay: f64,
     random_var_freq: f64,
@@ -181,19 +189,19 @@ struct SolverV {
     learnts_literals: u64,
 }
 
-impl Default for Solver {
+impl<Cb:Callbacks+Default> Default for Solver<Cb> {
     fn default() -> Self {
-        Self::new(SolverOpts::default())
+        Self::new(SolverOpts::default(), Default::default())
     }
 }
 
 /// Print the model/proof as DIMACS
-pub struct SolverPrintDimacs<'a> {
-    s: &'a Solver,
+pub struct SolverPrintDimacs<'a, Cb:Callbacks+'a> {
+    s: &'a Solver<Cb>,
     model: bool, // model or proof
 }
 
-impl<'a> fmt::Display for SolverPrintDimacs<'a> {
+impl<'a, Cb:Callbacks> fmt::Display for SolverPrintDimacs<'a, Cb> {
     fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
         if self.model {
             write!(out, "v ")?;
@@ -273,13 +281,7 @@ impl fmt::Debug for StopPredicate {
     }
 }
 
-impl SolverInterface for Solver {
-    fn set_verbosity(&mut self, verbosity: i32) {
-        debug_assert!(0 <= verbosity && verbosity <= 2);
-        self.verbosity = verbosity;
-    }
-    fn verbosity(&self) -> i32 { self.verbosity }
-
+impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
     fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
         let v = self.free_vars.pop().unwrap_or_else(|| {
             let v = self.next_var;
@@ -421,15 +423,15 @@ impl SolverInterface for Solver {
     }
 }
 
-impl Solver {
+impl<Cb:Callbacks> Solver<Cb> {
     /// Create a new solver with the given options
-    pub fn new(opts: SolverOpts) -> Self {
+    pub fn new(opts: SolverOpts, cb: Cb) -> Self {
         assert!(opts.check());
         Self {
             // Parameters (user settable):
             model: vec![],
             conflict: LSet::new(),
-            verbosity: 0,
+            cb,
             var_decay: opts.var_decay,
             clause_decay: opts.clause_decay,
             random_var_freq: opts.random_var_freq,
@@ -613,6 +615,7 @@ impl Solver {
         //     self.v.trail_lim.len(),
         //     self.v.trail_lim.len() + 1
         // );
+        // TODO: push theory level
         self.v.trail_lim.push(self.v.trail.len() as i32);
     }
 
@@ -693,24 +696,23 @@ impl Solver {
                     self.learntsize_adjust_cnt = self.learntsize_adjust_confl as i32;
                     self.max_learnts *= self.learntsize_inc;
 
-                    if self.verbosity >= 1 {
-                        let trail_lim_head = self.v
-                            .trail_lim
-                            .first()
-                            .cloned()
-                            .unwrap_or(self.v.trail.len() as i32);
-                        println!(
-                            "c | {:9} | {:7} {:8} {:8} | {:8} {:8} {:6.0} | {:6.3} % |",
-                            self.conflicts as i32,
-                            self.dec_vars as i32 - trail_lim_head,
-                            self.num_clauses(),
-                            self.v.clauses_literals as i32,
-                            self.max_learnts as i32,
-                            self.num_learnts(),
+                    let trail_lim_head = self.v
+                        .trail_lim
+                        .first()
+                        .cloned()
+                        .unwrap_or(self.v.trail.len() as i32);
+                    let p = ProgressStatus {
+                        conflicts: self.conflicts as i32,
+                        dec_vars: self.dec_vars as i32 - trail_lim_head,
+                        n_clauses: self.num_clauses(),
+                        n_clause_lits: self.v.clauses_literals as i32,
+                        max_learnt: self.max_learnts as i32,
+                        n_learnt: self.num_learnts(),
+                        n_learnt_lits:
                             self.v.learnts_literals as f64 / self.num_learnts() as f64,
-                            self.progress_estimate() * 100.0
-                        );
-                    }
+                            progress_estimate: self.progress_estimate() * 100.0,
+                    };
+                    self.cb.on_progress(&p);
                 }
             } else {
                 // NO CONFLICT
@@ -790,12 +792,7 @@ impl Solver {
         self.learntsize_adjust_cnt = self.learntsize_adjust_confl as i32;
         let mut status = lbool::UNDEF;
 
-        if self.verbosity >= 1 {
-            println!( "c ============================[ Search Statistics ]==============================");
-            println!( "c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |");
-            println!( "c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |");
-            println!( "c ===============================================================================");
-        }
+        self.cb.on_start();
 
         // Search:
         let mut curr_restarts: i32 = 0;
@@ -813,11 +810,7 @@ impl Solver {
             curr_restarts += 1;
         }
 
-        if self.verbosity >= 1 {
-            println!(
-                "c ==============================================================================="
-            );
-        }
+        self.cb.on_result(status);
 
         if status == lbool::TRUE {
             // Extend & copy model:
@@ -974,14 +967,22 @@ impl Solver {
             self.v.trail.resize(trail_lim_level, Lit::UNDEF);
             // eprintln!("decision_level {} -> {}", self.v.trail_lim.len(), level);
             self.v.trail_lim.resize(level as usize, 0);
+
+            // TODO: call theory
         }
     }
 
-    pub fn dimacs_model(& self) -> SolverPrintDimacs {
+    /// Temporary access to the callbacks
+    pub fn cb_mut(&mut self) -> &mut Cb { &mut self.cb }
+
+    /// Temporary access to the callbacks
+    pub fn cb(&self) -> &Cb { &self.cb }
+
+    pub fn dimacs_model(& self) -> SolverPrintDimacs<Cb> {
         SolverPrintDimacs {s: self, model: true}
     }
 
-    pub fn dimacs_proof(& self) -> SolverPrintDimacs {
+    pub fn dimacs_proof(& self) -> SolverPrintDimacs<Cb> {
         SolverPrintDimacs {s: self, model: false}
     }
 
@@ -1356,13 +1357,9 @@ impl Solver {
         let mut to = ClauseAllocator::with_start_cap(self.ca.len() - self.ca.wasted());
 
         self.reloc_all(&mut to);
-        if self.verbosity >= 2 {
-            println!(
-                "|  Garbage collection:   {:12} bytes => {:12} bytes             |",
-                self.ca.len() * ClauseAllocator::UNIT_SIZE,
-                to.len() * ClauseAllocator::UNIT_SIZE
-            );
-        }
+
+        self.cb.on_gc((self.ca.len() * ClauseAllocator::UNIT_SIZE) as usize,
+                      (to.len() * ClauseAllocator::UNIT_SIZE) as usize);
         self.ca = to;
     }
 

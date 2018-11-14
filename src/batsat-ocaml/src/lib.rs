@@ -10,7 +10,7 @@ use std::ptr;
 use std::mem;
 use std::ops;
 
-use batsat::{Solver as InnerSolver,Var,Lit,lbool,SolverInterface};
+use batsat::{Var,Lit,lbool,SolverInterface,BasicSolver as InnerSolver};
 
 pub struct Solver {
     s: InnerSolver,
@@ -215,14 +215,6 @@ caml!(ml_batsat_unsat_core, |ptr|, <res>, {
             .map(|&lit| int_of_lit(lit))
             .collect::<Vec<_>>();
         res = core.to_value();
-    })
-} -> res);
-
-caml!(ml_batsat_set_verbose, |ptr, level|, <res>, {
-    with_solver!(solver, ptr, {
-        let level = level.isize_val() as i32;
-        solver.s.set_verbosity(level);
-        res = value::UNIT;
     })
 } -> res);
 

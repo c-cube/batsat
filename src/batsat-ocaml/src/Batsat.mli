@@ -67,8 +67,6 @@ module Raw : sig
   external n_proved: t -> int = "ml_batsat_n_proved"
   external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
   external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
-
-  external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
 end
 
 val create : unit -> t
@@ -124,5 +122,3 @@ val value : t -> Lit.t -> value
 val value_lvl_0 : t -> Lit.t -> value
 (** [value_lvl_0 solver lit] returns the value of [lit] if it has this
     value at level 0 (proved), or [V_undef] otherwise *)
-
-val set_verbose: t -> int -> unit

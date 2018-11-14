@@ -47,8 +47,6 @@ module Raw = struct
   external n_proved: t -> int = "ml_batsat_n_proved"
   external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
   external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
-
-  external set_verbose: t -> int -> unit = "ml_batsat_set_verbose"
 end
 
 let create () =
@@ -114,5 +112,3 @@ let mk_val = function
 
 let value s lit = mk_val @@ Raw.value s lit
 let value_lvl_0 s lit = mk_val @@ Raw.value_lvl_0 s lit
-
-let set_verbose = Raw.set_verbose

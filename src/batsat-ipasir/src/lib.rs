@@ -6,7 +6,7 @@
 
 extern crate batsat;
 
-use batsat::{Solver,Var,Lit,lbool,SolverInterface};
+use batsat::{Solver,Var,Lit,lbool,SolverInterface,BasicSolver};
 use std::mem;
 use std::boxed::Box;
 use std::os::raw::{c_char,c_void,c_int};
@@ -15,7 +15,7 @@ static NAME : &'static str = "batsat-0.2\0";
 
 /// The wrapper around a solver. It contains partial clauses, assumptions, etc.
 struct IpasirSolver {
-    solver: Solver,
+    solver: BasicSolver,
     vars: Vec<Var>, // int->var
     cur: Vec<Lit>, // current clause
     assumptions: Vec<Lit>,
@@ -30,7 +30,7 @@ impl IpasirSolver {
             assumptions: Vec::new() }
     }
 
-    fn decompose(&mut self) -> (&mut Solver, &mut Vec<Lit>, &mut Vec<Lit>) {
+    fn decompose(&mut self) -> (&mut BasicSolver, &mut Vec<Lit>, &mut Vec<Lit>) {
         (&mut self.solver, &mut self.cur, &mut self.assumptions)
     }
 
@@ -169,12 +169,12 @@ pub extern "C" fn ipasir_set_terminate(
 ) {
     let mut s = get_solver(ptr);
 
-    // set handler using the given handler
+    // set handler using the given C function
     let f = move || {
         let should_stop = terminate(state) != 0;
         should_stop
     };
-    s.solver.set_stop_pred(f);
+    s.solver.cb_mut().set_stop(f);
 
     mem::forget(s)
 }

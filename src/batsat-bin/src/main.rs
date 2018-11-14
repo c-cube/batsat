@@ -51,7 +51,7 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use batsat::{lbool, Solver, SolverOpts, SolverInterface};
+use batsat::{lbool, Solver, SolverOpts, SolverInterface, Callbacks, ProgressStatus};
 
 mod system;
 
@@ -63,6 +63,66 @@ fn main() {
     });
     exit(exitcode);
 }
+
+/// Printing callbacks
+struct CB {
+    pub verbosity: i32,
+    pub lim: Option<(system::ResourceMeasure, f64)>,
+}
+
+impl CB {
+    fn new() -> Self { CB {verbosity:0, lim: None} }
+}
+
+impl Callbacks for CB {
+    fn on_start(&mut self) {
+        if self.verbosity >= 1 {
+            println!( "c ============================[ Search Statistics ]==============================");
+            println!( "c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |");
+            println!( "c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |");
+            println!( "c ===============================================================================");
+        }
+    }
+
+    fn on_simplify(&mut self) {}
+
+    fn on_result(&mut self, _:lbool) {
+        if self.verbosity >= 1 {
+            println!(
+                "c ==============================================================================="
+            );
+        }
+    }
+
+    fn on_progress(&mut self, p: &ProgressStatus) {
+        if self.verbosity >= 1 {
+            println!(
+                "c | {:9} | {:7} {:8} {:8} | {:8} {:8} {:6.0} | {:6.3} % |",
+                p.conflicts,
+                p.dec_vars, p.n_clauses, p.n_clause_lits, p.max_learnt,
+                p.n_learnt, p.n_learnt_lits, p.progress_estimate
+            );
+        }
+    }
+
+    fn on_gc(&mut self, old: usize, new: usize) {
+        if self.verbosity >= 2 {
+            println!(
+                "|  Garbage collection:   {:12} bytes => {:12} bytes             |",
+                old, new
+            );
+        }
+    }
+
+    fn stop(&mut self) -> bool {
+        match self.lim {
+            None => false,
+            Some((ref r, max_cpu)) => r.cpu_time() > max_cpu
+        }
+    }
+}
+
+type MSolver = Solver<CB>; // specialized solver
 
 fn main2() -> io::Result<i32> {
     let resource = system::ResourceMeasure::new();
@@ -210,25 +270,24 @@ fn main2() -> io::Result<i32> {
         .and_then(|s| s.parse().ok())
         .filter(|x| *x>0.);
 
-    let mut solver = Solver::new(solver_opts);
-    solver.set_verbosity(verbosity);
+    // allocate callbacks
+    let mut cb = CB::new();
+    cb.verbosity = verbosity;
 
-    // setup timeout handler, if any
     if let Some(max_cpu) = cpu_lim {
         assert!(max_cpu > 0.);
         let r = system::ResourceMeasure::new();
-        let f = move || {
-            r.cpu_time() > max_cpu
-        };
-        solver.set_stop_pred(f);
+        cb.lim = Some((r, max_cpu));
     }
+
+    let mut solver = Solver::new(solver_opts, cb);
 
     let initial_time = Instant::now();
 
     let mut incremental = false;
     if let Some(input_file) = input_file {
         incremental = input_file.ends_with(".icnf");
-        if incremental { solver.set_verbosity(0) }
+        if incremental { solver.cb_mut().verbosity = 0; }
         debug!("solve file {} (incremental: {})", input_file, incremental);
         let file = BufReader::new(File::open(input_file)?);
         read_input_autogz(file, &mut solver, is_strict, incremental)?;
@@ -244,7 +303,7 @@ fn main2() -> io::Result<i32> {
         None
     };
 
-    if solver.verbosity() > 0 {
+    if solver.cb().verbosity > 0 {
         println!(
             "c |  Number of variables:  {:12}                                         |",
             solver.num_vars()
@@ -256,7 +315,7 @@ fn main2() -> io::Result<i32> {
     }
 
     let parsed_time = Instant::now();
-    if solver.verbosity() > 0 {
+    if solver.cb().verbosity > 0 {
         let duration = parsed_time - initial_time;
         println!(
             "c |  Parse time:           {:9}.{:02} s                                       |",
@@ -273,7 +332,7 @@ fn main2() -> io::Result<i32> {
             resfile.flush()?;
         }
         mem::drop(resfile);
-        if solver.verbosity() > 0 {
+        if solver.cb().verbosity > 0 {
             println!(
                 "c ==============================================================================="
             );
@@ -286,7 +345,7 @@ fn main2() -> io::Result<i32> {
     }
 
     let ret = solver.solve_limited(&[]);
-    if solver.verbosity() > 0 {
+    if solver.cb().verbosity > 0 {
         solver.print_stats();
         println!("c CPU time              : {:.3}s", resource.cpu_time());
     }
@@ -343,7 +402,7 @@ fn main2() -> io::Result<i32> {
 
 fn read_input_autogz<R: BufRead>(
     mut input: R,
-    solver: &mut Solver,
+    solver: &mut MSolver,
     is_strict: bool,
     incremental: bool,
 ) -> io::Result<()> {
@@ -356,9 +415,9 @@ fn read_input_autogz<R: BufRead>(
 }
 
 fn read_input<R: BufRead>(
-    mut input: R, solver: &mut Solver, is_strict: bool, incremental: bool
+    mut input: R, solver: &mut MSolver, is_strict: bool, incremental: bool
 ) -> io::Result<()> {
-    if solver.verbosity() > 0 {
+    if solver.cb().verbosity > 0 {
         println!("c ============================[ Problem Statistics ]=============================");
         println!("c |                                                                             |");
     }
