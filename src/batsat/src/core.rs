@@ -556,6 +556,7 @@ impl<Cb:Callbacks> Solver<Cb> {
         }
     }
 
+    /// Set whether `v` is a decision variable or not
     fn set_decision_var(&mut self, v: Var, b: bool) {
         if b && !self.decision[v] {
             self.dec_vars += 1;

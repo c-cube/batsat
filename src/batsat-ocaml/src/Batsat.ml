@@ -5,22 +5,8 @@ type t
 
 type 'a printer = Format.formatter -> 'a -> unit
 
-(* use normal convention of positive/negative ints *)
-module Lit = struct
-  type t = int
-  let make n = assert (n>0); n
-  let neg n = -n
-  let abs = abs
-  let sign n = n > 0
-  let to_int n = n
-  let to_string x = (if sign x then "" else "-") ^ string_of_int (abs @@ to_int x)
-  let pp out x = Format.pp_print_string out (to_string x)
-  let equal : t -> t -> bool = Pervasives.(=)
-  let compare : t -> t -> int = Pervasives.compare
-  let hash : t -> int = Hashtbl.hash
-end
-
-type assumptions = Lit.t array
+type lit = int
+type assumptions = lit array
 
 module Raw = struct
   type lbool = int (* 0,1,2 *)
@@ -32,21 +18,37 @@ module Raw = struct
 
   external simplify : t -> bool = "ml_batsat_simplify"
 
-  external add_lit : t -> Lit.t -> bool = "ml_batsat_addlit"
-  external assume : t -> Lit.t -> unit = "ml_batsat_assume"
+  external add_lit : t -> lit -> bool = "ml_batsat_addlit"
+  external assume : t -> lit -> unit = "ml_batsat_assume"
   external solve : t -> bool = "ml_batsat_solve"
 
   external nvars : t -> int = "ml_batsat_nvars"
   external nclauses : t -> int = "ml_batsat_nclauses"
   external nconflicts : t -> int = "ml_batsat_nconflicts"
 
-  external value : t -> Lit.t -> lbool = "ml_batsat_value"
-  external check_assumption: t -> Lit.t -> bool = "ml_batsat_check_assumption"
-  external unsat_core: t -> Lit.t array = "ml_batsat_unsat_core"
+  external value : t -> lit -> lbool = "ml_batsat_value"
+  external check_assumption: t -> lit -> bool = "ml_batsat_check_assumption"
+  external unsat_core: t -> lit array = "ml_batsat_unsat_core"
 
   external n_proved: t -> int = "ml_batsat_n_proved"
-  external get_proved: t -> int -> Lit.t = "ml_batsat_get_proved"
-  external value_lvl_0 : t -> Lit.t -> lbool = "ml_batsat_value_lvl_0"
+  external get_proved: t -> int -> lit = "ml_batsat_get_proved"
+  external value_lvl_0 : t -> lit -> lbool = "ml_batsat_value_lvl_0"
+end
+
+(* use normal convention of positive/negative ints *)
+module Lit = struct
+  type t = int
+  let make n = assert (n>0); n
+  let set_decision = Raw.set_decision
+  let neg n = -n
+  let abs = abs
+  let sign n = n > 0
+  let to_int n = n
+  let to_string x = (if sign x then "" else "-") ^ string_of_int (abs @@ to_int x)
+  let pp out x = Format.pp_print_string out (to_string x)
+  let equal : t -> t -> bool = Pervasives.(=)
+  let compare : t -> t -> int = Pervasives.compare
+  let hash : t -> int = Hashtbl.hash
 end
 
 let create () =
