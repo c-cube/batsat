@@ -1,6 +1,6 @@
 
 (rule
- (targets libbatsat_stubs%{ext_lib} dllbatsat_stubs%{ext_dll}) ;libbatsat_c.so)
+ (targets libbatsat_stubs%{ext_lib}) ;libbatsat_c.so)
  (deps ./lib.rs ../Cargo.toml ../Cargo.lock ../Makefile
        ../cargo-config
        (source_tree ../batsat) (source_tree ../vendor)) ; ../.cargo/config)
@@ -10,8 +10,9 @@
     (chdir .. (run cp -r ../../../../src/batsat ..))
     (chdir ..
       (run make CAML_LIB=%{ocaml-config:standard_library} build-rust-stubs)) ; build
+    ;(run strip ../target/release/libbatsat_stubs%{ext_lib} .)
     (run cp ../target/release/libbatsat_stubs%{ext_lib} .)
-    (system "[ -f ../target/release/libbatsat_stubs.so ] && cp ../target/release/libbatsat_stubs.so dllbatsat_stubs%{ext_dll} || cp ../target/release/libbatsat_stubs.dylib dllbatsat_stubs%{ext_dll}")
+    ;(system "[ -f ../target/release/libbatsat_stubs.so ] && cp ../target/release/libbatsat_stubs.so dllbatsat_stubs%{ext_dll} || cp ../target/release/libbatsat_stubs.dylib dllbatsat_stubs%{ext_dll}")
     )))
 
 (library
@@ -26,4 +27,5 @@
   (self_build_stubs_archive (batsat)) ; custom!
   ;(c_names batsat_stubs)
   (c_flags -fPIC -std=c99)
+  (no_dynlink)
   )
