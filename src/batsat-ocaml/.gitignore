@@ -1,6 +1,0 @@
-target
-_build
-*.install
-*.a
-*.so
-.merlin

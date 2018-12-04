@@ -1,8 +1,0 @@
-
-= Batsat
-
-OCaml Bindings for [Batsat](https://github.com/c-cube/batsat)
-
-== Docs
-
-See https://c-cube.github.io/batsat
