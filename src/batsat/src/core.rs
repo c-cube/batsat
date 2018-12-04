@@ -164,7 +164,6 @@ pub struct Solver<Cb : Callbacks> {
     conflict_budget: i64,
     propagation_budget: i64,
     asynch_interrupt: AtomicBool,
-    stop_pred: StopPredicate,
 
     v: SolverV,
 }
@@ -253,31 +252,6 @@ impl Proof {
         for lit in c.items() { self.push_lit((*lit).into()); }
         self.0.push(0);
         debug!("proof.delete_clause [{}]", c.pp_dimacs());
-    }
-}
-
-/// Predicate to know whether to interrupt the search
-struct StopPredicate(Option<Box<dyn Fn() -> bool>>);
-
-impl StopPredicate {
-    pub fn new<F:Fn()->bool + 'static>(f: F) -> StopPredicate {
-        StopPredicate(Some(Box::new(f)))
-    }
-    pub fn none() -> StopPredicate { StopPredicate(None) }
-    pub fn stop(&self) -> bool {
-        match self.0 {
-            None => false,
-            Some(ref f) => f()
-        }
-    }
-}
-
-impl fmt::Debug for StopPredicate {
-    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
-            None => Ok(()),
-            Some(_) => out.write_str("<stop-predicate>")
-        }
     }
 }
 
@@ -509,7 +483,6 @@ impl<Cb:Callbacks> Solver<Cb> {
             conflict_budget: -1,
             propagation_budget: -1,
             asynch_interrupt: AtomicBool::new(false),
-            stop_pred: StopPredicate::none(),
 
             v: SolverV {
                 activity: VMap::new(),
@@ -1384,12 +1357,6 @@ impl<Cb:Callbacks> Solver<Cb> {
         progress / self.num_vars() as f64
     }
 
-    /// Set a predicate that will be called regularly to check whether
-    /// to interrupt search
-    pub fn set_stop_pred<F: Fn() -> bool + 'static>(&mut self, f: F) {
-        self.stop_pred = StopPredicate::new(f)
-    }
-
     /// Interrupt search asynchronously
     pub fn interrupt_async(&self) {
         self.asynch_interrupt.store(true, Ordering::Relaxed);
@@ -1403,7 +1370,7 @@ impl<Cb:Callbacks> Solver<Cb> {
         ! self.has_been_interrupted()
             && (self.conflict_budget < 0 || self.conflicts < self.conflict_budget as u64)
             && (self.propagation_budget < 0 || self.propagations < self.propagation_budget as u64)
-            && (! self.stop_pred.stop())
+            && ! self.cb.stop()
     }
 
     /// Move to the given clause allocator, where clause indices might differ

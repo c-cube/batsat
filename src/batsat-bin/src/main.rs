@@ -114,7 +114,7 @@ impl Callbacks for CB {
         }
     }
 
-    fn stop(&mut self) -> bool {
+    fn stop(&self) -> bool {
         match self.lim {
             None => false,
             Some((ref r, max_cpu)) => r.cpu_time() > max_cpu

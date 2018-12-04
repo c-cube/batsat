@@ -21,7 +21,7 @@ pub trait Callbacks {
     fn on_result(&mut self, _s: lbool) {}
 
     /// Should we stop? called regularly for asynchronous interrupts and such
-    fn stop(&mut self) -> bool { false }
+    fn stop(&self) -> bool { false }
 }
 
 /// Progress indicator from the SAT solver.
@@ -47,7 +47,7 @@ pub struct Basic {
 }
 
 impl Callbacks for Basic {
-    fn stop(&mut self) -> bool {
+    fn stop(&self) -> bool {
         match self.stop {
             None => false,
             Some(ref f) => f(),
