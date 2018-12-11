@@ -50,12 +50,13 @@ pub mod dimacs;
 pub mod core;
 pub mod interface;
 pub mod callbacks;
+pub mod theory;
 
-// TODO: also Theory and TheoryArgument
-pub use interface::{SolverInterface};
+pub use theory::{TheoryArgument,Theory,EmptyTheory};
+pub use interface::SolverInterface;
 pub use callbacks::{Callbacks,Basic as BasicCallbacks,ProgressStatus};
 pub use core::{Solver, SolverOpts};
 pub use clause::{lbool, Lit, Var, LMap, LSet, VMap, display::Print};
 
-/// Basic solver
-pub type BasicSolver = Solver<BasicCallbacks>;
+/// Basic solver, with basic callbacks and no theory
+pub type BasicSolver = Solver<BasicCallbacks, EmptyTheory>;

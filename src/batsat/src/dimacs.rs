@@ -27,7 +27,7 @@ use {Lit, Var, lbool};
 ///
 /// param `is_strict` if true, will fail if number of clauses/vars does not match the declared header
 /// param `incremental` if true, accept the [.icnf format](http://www.siert.nl/icnf/)
-pub fn parse<S: SolverInterface, R: BufRead>(
+pub fn parse<Th, S: SolverInterface<Th>, R: BufRead>(
     input: &mut R,
     solver: &mut S,
     is_strict: bool,
@@ -84,7 +84,7 @@ pub fn parse<S: SolverInterface, R: BufRead>(
     Ok(())
 }
 
-fn read_clause<S: SolverInterface, R: BufRead>(
+fn read_clause<Th, S: SolverInterface<Th>, R: BufRead>(
     input: &mut R,
     solver: &mut S,
     lits: &mut Vec<Lit>,
