@@ -21,8 +21,3 @@ lto = true # helps a lot with inlining
 
 [profile.dev]
 opt-level = 1
-
-[features]
-
-default=[]
-logging = [ "batsat/logging", "batsat-bin/logging" ]

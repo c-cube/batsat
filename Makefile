@@ -2,11 +2,12 @@
 FLAGS ?=
 
 build:
-	@cargo build --release ${FLAGS} --no-default-features
+	@cargo build --release ${FLAGS}
 	@ln -sf target/release/batsat-bin
 
+# NOTE: doesn't work yet, see https://github.com/rust-lang/cargo/issues/5015
 build-log:
-	@cargo build --release ${FLAGS} --features "logging"
+	@cargo build --release ${FLAGS} --features "batsat/logging batsat-bin/logging"
 	@ln -sf target/release/batsat-bin
 
 build-debug:
