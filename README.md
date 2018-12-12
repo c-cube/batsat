@@ -19,5 +19,5 @@ to extend batsat further and to provide the following features:
   * [ ] testing this interface
 - [x] debug framework using `log` (optional)
 - [x] OCaml bindings
-- [ ] templated API to write SMT solvers
+- [x] templated API to write SMT solvers
 - [ ] simplification techniques from Minisat+ (as an optional internal structure)
