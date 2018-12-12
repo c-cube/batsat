@@ -91,6 +91,25 @@ impl Lit {
     pub fn var(&self) -> Var {
         Var(self.0 >> 1)
     }
+
+    /// `lit.apply_sign(b)` keeps the same sign if `b==true`, flips sign otherwise
+    ///
+    /// ```
+    /// use batsat::*;
+    /// let mut sat = BasicSolver::default();
+    /// let lit1 = Lit::new(sat.new_var_default(), true);
+    /// assert_eq!(lit1, lit1.apply_sign(true));
+    /// assert_eq!(!lit1, lit1.apply_sign(false));
+    /// let lit2 = Lit::new(sat.new_var_default(), false);
+    /// assert_ne!(lit1.var(), lit2.var());
+    /// assert_eq!(lit2, lit2.apply_sign(true));
+    /// assert_eq!(!lit2, lit2.apply_sign(false));
+    /// ```
+    #[inline(always)]
+    pub fn apply_sign(&self, sign: bool) -> Lit {
+        if sign { *self } else { ! *self }
+    }
+
 }
 
 impl fmt::Debug for Lit {
