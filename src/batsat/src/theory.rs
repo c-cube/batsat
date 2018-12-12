@@ -35,15 +35,16 @@ pub trait Theory {
 
     /// Check partial model (best effort).
     ///
-    /// The slice to check is `acts.model()[old_offset..]`.
+    /// The whole partial model so far is `acts.model()`,
+    /// but the theory may remember the length of the previous slice and use
+    /// `acts.model()[prev_len..]` to get only the new literals.
     ///
     /// This can return `Done` even if the partial model is invalid,
     /// if the theory deems it too costly to verify.
     /// The model will be checked again in `final_check`.
     ///
     /// The default implementation just returns `Done` without doing anything.
-    fn partial_check<S>(&mut self, _acts: &mut S, _old_offset: usize)
-        -> CheckRes<S::Conflict>
+    fn partial_check<S>(&mut self, _acts: &mut S) -> CheckRes<S::Conflict>
         where S: TheoryArgument
     { CheckRes::Done }
 }

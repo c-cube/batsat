@@ -387,7 +387,7 @@ impl<Cb:Callbacks,Th:Theory + Default> Solver<Cb,Th> {
     }
 }
 
-enum TheoryCall { Partial(usize), Final }
+enum TheoryCall { Partial, Final }
 
 impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     /// Create a new solver with the given options and given theory `th`
@@ -455,8 +455,6 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         self.v.starts += 1;
 
         'outer: loop {
-            let cur_offset = self.v.vars.trail.len(); // slice of trail
-
             let confl = self.v.propagate();
             if confl != CRef::UNDEF {
                 // CONFLICT
@@ -564,7 +562,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                         } else {
                             // proper decision
                             self.v.decisions += 1;
-                            self.call_theory(TheoryCall::Partial(cur_offset))
+                            self.call_theory(TheoryCall::Partial)
                         }
                     };
 
@@ -593,8 +591,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     /// Returns `UNDEF` if the theory propagated something
     fn call_theory(&mut self, k: TheoryCall) -> lbool {
         let r = match k {
-            TheoryCall::Partial(old_offset) =>
-                self.th.partial_check(&mut self.v, old_offset),
+            TheoryCall::Partial => self.th.partial_check(&mut self.v),
             TheoryCall::Final => self.th.final_check(&mut self.v),
         };
         match r {
