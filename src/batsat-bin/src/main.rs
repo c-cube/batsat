@@ -94,8 +94,9 @@ impl Callbacks for CB {
         }
     }
 
-    fn on_progress(&mut self, p: &ProgressStatus) {
+    fn on_progress<F>(&mut self, p: F) where F: FnOnce() -> ProgressStatus {
         if self.verbosity >= 1 {
+            let p = p();
             println!(
                 "c | {:9} | {:7} {:8} {:8} | {:8} {:8} {:6.0} | {:6.3} % |",
                 p.conflicts,

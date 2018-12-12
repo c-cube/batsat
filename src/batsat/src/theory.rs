@@ -23,7 +23,9 @@ pub trait Theory {
     /// If the partial model isn't satisfiable in the theory then
     /// this *must* return `CheckRes::Conflict` and push a conflict
     /// clause.
-    fn final_check<S>(&mut self, acts: &mut S) -> CheckRes<S::Conflict> where S : TheoryArgument;
+    fn final_check<S>(&mut self, acts: &mut S)
+        -> CheckRes<S::Conflict>
+        where S: TheoryArgument;
 
     /// Push a new backtracking level
     fn create_level(&mut self);
@@ -31,7 +33,19 @@ pub trait Theory {
     /// Pop `n` levels from the stack
     fn pop_levels(&mut self, n: usize);
 
-    // TODO: incremental API (like final check, but with a slice of model)
+    /// Check partial model (best effort).
+    ///
+    /// The slice to check is `acts.model()[old_offset..]`.
+    ///
+    /// This can return `Done` even if the partial model is invalid,
+    /// if the theory deems it too costly to verify.
+    /// The model will be checked again in `final_check`.
+    ///
+    /// The default implementation just returns `Done` without doing anything.
+    fn partial_check<S>(&mut self, _acts: &mut S, _old_offset: usize)
+        -> CheckRes<S::Conflict>
+        where S: TheoryArgument
+    { CheckRes::Done }
 }
 
 /// Interface provided to the theory.

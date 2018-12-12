@@ -15,7 +15,7 @@ pub trait Callbacks {
     fn on_gc(&mut self, _old_size: usize, _new_size: usize) {}
 
     /// called regularly to indicate progress
-    fn on_progress(&mut self, _f: &ProgressStatus) {}
+    fn on_progress<F>(&mut self, _f: F) where F: FnOnce() -> ProgressStatus {}
 
     /// Called when a result is computed
     fn on_result(&mut self, _s: lbool) {}

@@ -326,8 +326,8 @@ impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
     fn is_ok(&self) -> bool { self.v.ok }
 
     fn num_vars(&self) -> u32 { self.v.num_vars() }
-    fn num_clauses(&self) -> u32 { self.v.num_clauses as u32 }
-    fn num_conflicts(&self) -> u32 { self.v.conflicts as u32 }
+    fn num_clauses(&self) -> u32 { self.v.num_clauses() }
+    fn num_conflicts(&self) -> u32 { self.v.num_conflicts() }
 
     fn value_lvl_0(&self, lit: Lit) -> lbool {
         let mut res = self.v.value_lit(lit);
@@ -387,6 +387,8 @@ impl<Cb:Callbacks,Th:Theory + Default> Solver<Cb,Th> {
     }
 }
 
+enum TheoryCall { Partial(usize), Final }
+
 impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     /// Create a new solver with the given options and given theory `th`
     pub fn new_with(opts: SolverOpts, cb: Cb, th: Th) -> Self {
@@ -404,19 +406,10 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         }
     }
 
-    pub fn num_learnts(&self) -> u32 {
-        self.v.num_learnts as u32
-    }
-
     /// Begins a new decision level.
     fn new_decision_level(&mut self) {
-        // eprintln!(
-        //     "decision_level {} -> {}",
-        //     self.v.trail_lim.len(),
-        //     self.v.trail_lim.len() + 1
-        // );
-        // TODO: push theory level
         self.v.vars.new_decision_level();
+        self.th.create_level();
     }
 
     fn simplify_internal(&mut self) -> bool {
@@ -446,7 +439,8 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 
     /// Search for a model the specified number of conflicts.
-    /// NOTE! Use negative value for `nof_conflicts` indicate infinity.
+    ///
+    /// Use negative value for `nof_conflicts` indicate infinity.
     ///
     /// # Output:
     ///
@@ -461,6 +455,8 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         self.v.starts += 1;
 
         'outer: loop {
+            let cur_offset = self.v.vars.trail.len(); // slice of trail
+
             let confl = self.v.propagate();
             if confl != CRef::UNDEF {
                 // CONFLICT
@@ -502,24 +498,26 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                         .first()
                         .cloned()
                         .unwrap_or(self.v.vars.trail.len() as i32);
-                    let p = ProgressStatus {
-                        conflicts: self.v.conflicts as i32,
-                        dec_vars: self.v.dec_vars as i32 - trail_lim_head,
-                        n_clauses: self.num_clauses(),
-                        n_clause_lits: self.v.clauses_literals as i32,
-                        max_learnt: self.v.max_learnts as i32,
-                        n_learnt: self.num_learnts(),
-                        n_learnt_lits:
-                            self.v.learnts_literals as f64 / self.num_learnts() as f64,
-                            progress_estimate: self.progress_estimate() * 100.0,
-                    };
-                    self.cb.on_progress(&p);
+                    let v = &self.v;
+                    self.cb.on_progress(|| {
+                        ProgressStatus {
+                            conflicts: v.conflicts as i32,
+                            dec_vars: v.dec_vars as i32 - trail_lim_head,
+                            n_clauses: v.num_clauses(),
+                            n_clause_lits: v.clauses_literals as i32,
+                            max_learnt: v.max_learnts as i32,
+                            n_learnt: v.num_learnts(),
+                            n_learnt_lits:
+                                v.learnts_literals as f64 / v.num_learnts as f64,
+                                progress_estimate: v.progress_estimate() * 100.0,
+                        }
+                    });
                 }
             } else {
                 // NO CONFLICT
                 if (nof_conflicts >= 0 && conflict_c >= nof_conflicts) || !self.within_budget() {
                     // Reached bound on number of conflicts:
-                    self.v.progress_estimate = self.progress_estimate();
+                    self.v.progress_estimate = self.v.progress_estimate();
                     self.cancel_until(0);
                     return lbool::UNDEF;
                 }
@@ -557,47 +555,74 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                     // New variable decision:
                     next = self.v.pick_branch_lit();
 
-                    if next == Lit::UNDEF {
-                        // Call theory's "final check"
-                        match self.th.final_check(&mut self.v) {
-                            theory::CheckRes::Done => {
-                                if self.v.th_lemmas.len() == 0 {
-                                    // Model found and validated
-                                    return lbool::TRUE;
-                                } else {
-                                    let mut lemmas = Vec::new();
-                                    mem::swap(&mut lemmas, &mut self.v.th_lemmas);
-                                    // empty `lemmas` and add the clauses
-                                    for mut cs in lemmas.drain(..) {
-                                        debug!("add theory lemma {:?}", self.pp_dimacs(c));
-                                        self.add_clause_reuse(&mut cs);
-                                    }
-                                    // clear, but reuse internal buffer
-                                    lemmas.clear();
-                                    mem::swap(&mut lemmas, &mut self.v.th_lemmas);
-                                    continue 'outer;
-                                }
-                            },
-                            theory::CheckRes::Conflict(mut c) => {
-                                debug!("theory conflict {:?}", self.pp_dimacs(c));
-                                self.v.th_lemmas.clear(); // discard lemmas
-                                self.add_clause_reuse(&mut c);
-                                // recycle `c` for next theory conflict
-                                let _v = mem::swap(&mut self.v.th_tmp_clause, &mut c);
-                                continue 'outer;
-                            }
+                    let complete_sat_model = next == Lit::UNDEF;
+
+                    let th_res = {
+                        if complete_sat_model {
+                            // final check
+                            self.call_theory(TheoryCall::Final)
+                        } else {
+                            // proper decision
+                            self.v.decisions += 1;
+                            self.call_theory(TheoryCall::Partial(cur_offset))
                         }
-                    } else {
-                        // proper decision
-                        self.v.decisions += 1;
+                    };
+
+                    if complete_sat_model && th_res == lbool::TRUE {
+                        // Model found and validated
+                        return lbool::TRUE;
+                    } else if th_res == lbool::UNDEF || th_res == lbool::FALSE {
+                        // some SAT propagations or conflict
+                        continue 'outer;
                     }
                 }
+
+                debug_assert_ne!(next, Lit::UNDEF);
 
                 // Increase decision level and enqueue `next`
                 // with no justification since it's a decision
                 self.new_decision_level();
                 debug!("pick-next {:?}", next);
                 self.v.vars.unchecked_enqueue(next, CRef::UNDEF);
+            }
+        }
+    }
+
+    /// Call theory to check the current (possibly partial) model
+    ///
+    /// Returns `UNDEF` if the theory propagated something
+    fn call_theory(&mut self, k: TheoryCall) -> lbool {
+        let r = match k {
+            TheoryCall::Partial(old_offset) =>
+                self.th.partial_check(&mut self.v, old_offset),
+            TheoryCall::Final => self.th.final_check(&mut self.v),
+        };
+        match r {
+            theory::CheckRes::Done => {
+                if self.v.th_lemmas.len() == 0 {
+                    // Model validated
+                    lbool::TRUE
+                } else {
+                    let mut lemmas = Vec::new();
+                    mem::swap(&mut lemmas, &mut self.v.th_lemmas);
+                    // empty `lemmas` and add the clauses
+                    for mut cs in lemmas.drain(..) {
+                        debug!("add theory lemma {:?}", self.pp_dimacs(c));
+                        self.add_clause_reuse(&mut cs);
+                    }
+                    // clear, but reuse internal buffer
+                    lemmas.clear();
+                    mem::swap(&mut lemmas, &mut self.v.th_lemmas);
+                    lbool::UNDEF
+                }
+            },
+            theory::CheckRes::Conflict(mut c) => {
+                debug!("theory conflict {:?}", self.pp_dimacs(c));
+                self.v.th_lemmas.clear(); // discard lemmas
+                self.add_clause_reuse(&mut c);
+                // recycle `c` for next theory conflict
+                let _v = mem::swap(&mut self.v.th_tmp_clause, &mut c);
+                lbool::FALSE
             }
         }
     }
@@ -751,10 +776,14 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         });
     }
 
-    /// Revert to the state at given level (keeping all assignment at 'level' but not beyond).
+    /// Revert to the state at given level (keeping all assignment at `level` but not beyond).
     fn cancel_until(&mut self, level: u32) {
-        self.v.cancel_until(level);
-        // TODO: call theory
+        let dl = self.v.decision_level();
+        if dl > level {
+            self.v.cancel_until(level);
+            // backtrack theory
+            self.th.pop_levels((dl - level) as usize);
+        }
     }
 
     /// Garbage collect the clause allocator by moving alive clauses into
@@ -793,27 +822,6 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         SolverPrintDimacs {s: self, model: false}
     }
 
-    fn progress_estimate(&self) -> f64 {
-        let mut progress = 0.0;
-        let f = 1.0 / self.num_vars() as f64;
-
-        for i in 0..self.v.decision_level() + 1 {
-            let beg: i32 = if i == 0 {
-                0
-            } else {
-                self.v.vars.trail_lim[i as usize - 1]
-            };
-            let end: i32 = if i == self.v.decision_level() {
-                self.v.vars.trail.len() as i32
-            } else {
-                self.v.vars.trail_lim[i as usize]
-            };
-            progress += f64::powi(f, i as i32) * (end - beg) as f64;
-        }
-
-        progress / self.num_vars() as f64
-    }
-
     /// Interrupt search asynchronously
     pub fn interrupt_async(&self) {
         self.asynch_interrupt.store(true, Ordering::Relaxed);
@@ -837,6 +845,9 @@ impl SolverV {
 
     #[inline(always)]
     fn num_vars(&self) -> u32 { self.next_var.idx() }
+    fn num_clauses(&self) -> u32 { self.num_clauses as u32 }
+    fn num_conflicts(&self) -> u32 { self.conflicts as u32 }
+    fn num_learnts(&self) -> u32 { self.num_learnts as u32 }
 
     #[inline(always)]
     pub fn level(&self, x: Var) -> i32 { self.vars.level(x) }
@@ -1220,7 +1231,7 @@ impl SolverV {
     }
 
     /// Propagates all enqueued facts. If a conflict arises, the conflicting clause is returned,
-    /// otherwise CRef_Undef.
+    /// otherwise `CRef::UNDEF`.
     ///
     /// # Post-conditions:
     ///
@@ -1417,22 +1428,21 @@ impl SolverV {
 
     /// Revert to the state at given level (keeping all assignment at `level` but not beyond).
     fn cancel_until(&mut self, level: u32) {
-        if self.decision_level() > level {
-            let trail_lim_last = *self.vars.trail_lim.last().expect("trail_lim is empty") as usize;
-            let trail_lim_level = self.vars.trail_lim[level as usize] as usize;
-            for c in (trail_lim_level..self.vars.trail.len()).rev() {
-                let x = self.vars.trail[c].var();
-                self.vars.ass[x] = lbool::UNDEF;
-                if self.phase_saving > 1 || (self.phase_saving == 1 && c > trail_lim_last) {
-                    self.polarity[x] = self.vars.trail[c].sign();
-                }
-                self.insert_var_order(x);
+        debug_assert!(self.decision_level() > level);
+        let trail_lim_last = *self.vars.trail_lim.last().expect("trail_lim is empty") as usize;
+        let trail_lim_level = self.vars.trail_lim[level as usize] as usize;
+        for c in (trail_lim_level..self.vars.trail.len()).rev() {
+            let x = self.vars.trail[c].var();
+            self.vars.ass[x] = lbool::UNDEF;
+            if self.phase_saving > 1 || (self.phase_saving == 1 && c > trail_lim_last) {
+                self.polarity[x] = self.vars.trail[c].sign();
             }
-            self.qhead = trail_lim_level as i32;
-            self.vars.trail.resize(trail_lim_level, Lit::UNDEF);
-            // eprintln!("decision_level {} -> {}", self.trail_lim.len(), level);
-            self.vars.trail_lim.resize(level as usize, 0);
+            self.insert_var_order(x);
         }
+        self.qhead = trail_lim_level as i32;
+        self.vars.trail.resize(trail_lim_level, Lit::UNDEF);
+        // eprintln!("decision_level {} -> {}", self.trail_lim.len(), level);
+        self.vars.trail_lim.resize(level as usize, 0);
     }
 
     /// Detach a clause from watcher lists.
@@ -1509,6 +1519,27 @@ impl SolverV {
     }
     // inline bool     Solver::locked          (const Clause& c) const { return value(c[0]) == l_True && reason(var(c[0])) != CRef_Undef && ca.lea(reason(var(c[0]))) == &c; }
 
+
+    fn progress_estimate(&self) -> f64 {
+        let mut progress = 0.0;
+        let f = 1.0 / self.num_vars() as f64;
+
+        for i in 0..self.decision_level() + 1 {
+            let beg: i32 = if i == 0 {
+                0
+            } else {
+                self.vars.trail_lim[i as usize - 1]
+            };
+            let end: i32 = if i == self.decision_level() {
+                self.vars.trail.len() as i32
+            } else {
+                self.vars.trail_lim[i as usize]
+            };
+            progress += f64::powi(f, i as i32) * (end - beg) as f64;
+        }
+
+        progress / self.num_vars() as f64
+    }
     fn new(opts: &SolverOpts) -> Self {
         Self {
             vars: VarState::new(opts),
