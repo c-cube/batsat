@@ -261,6 +261,7 @@ impl Proof {
     }
 }
 
+// public API
 impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
     fn theory(&self) -> &Th { &self.th }
     fn theory_mut(&mut self) -> &mut Th { &mut self.th }
@@ -275,7 +276,7 @@ impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
 
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         // eprintln!("add_clause({:?})", clause);
-        debug_assert_eq!(self.v.decision_level(), 0);
+        debug_assert_eq!(self.v.decision_level(), 0, "add clause at non-zero decision level");
         debug!("add clause {:?}", clause);
         if !self.v.ok {
             return false;
@@ -389,6 +390,7 @@ impl<Cb:Callbacks,Th:Theory + Default> Solver<Cb,Th> {
 
 enum TheoryCall { Partial, Final }
 
+// main algorithm
 impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     /// Create a new solver with the given options and given theory `th`
     pub fn new_with(opts: SolverOpts, cb: Cb, th: Th) -> Self {

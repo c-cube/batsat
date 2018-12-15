@@ -119,7 +119,7 @@ impl fmt::Debug for Lit {
         } else if self.0 == !1 {
             write!(f, "UNDEF")
         } else {
-            write!(f, "{}{}", if self.sign() {""} else {"-"}, self.0 / 2 + 1)
+            write!(f, "{}{:?}", if self.sign() {""} else {"-"}, self.var())
         }
     }
 }
