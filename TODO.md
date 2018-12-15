@@ -1,4 +1,13 @@
 
+- theory:
+  * remove `add theory lemma` (until we can add clauses during search)
+  * add `add theory conflict` that would shortpath into `analyze`
+    (start with an initial clause that is `&[Lit]`, no allocation, no theory lemma,
+     just the learnt clause)
+  * use this `add theory conflict` in batsmt
+  * generalize conflict analysis so every resolution step can use `{CRef,&[Lit],Propagation}`
+    (then enable propagations in batsmt)
+
 - use bitset for more compact `IntMap<K,bool>`
 - redo allocator, ECS style
   * `headers: Vec<ClauseHeader>` (also use it for `size`), touched the most often
