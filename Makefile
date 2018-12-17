@@ -20,10 +20,13 @@ build-ipasir:
 	@cargo build --release -p batsat-ipasir
 
 check: prebuild
-	@cargo check ${FLAGS}
+	@cargo check ${FLAGS} --all-features
 
 clean:
 	@cargo clean
+
+doc:
+	@cargo doc
 
 test-benchs: build
 	@make -C benchs
