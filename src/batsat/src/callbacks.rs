@@ -11,6 +11,9 @@ pub trait Callbacks {
     /// Called whenever the solver simplifies its set of clauses
     fn on_simplify(&mut self) {}
 
+    /// Called whenever the SAT solver restarts
+    fn on_restart(&mut self) {}
+
     /// Called after a clause GC
     fn on_gc(&mut self, _old_size: usize, _new_size: usize) {}
 
@@ -31,10 +34,10 @@ pub trait Callbacks {
 pub struct ProgressStatus {
     pub conflicts: i32,
     pub dec_vars: i32,
-    pub n_clauses: u32,
+    pub n_clauses: u64,
     pub n_clause_lits: i32,
     pub max_learnt: i32,
-    pub n_learnt: u32,
+    pub n_learnt: u64,
     pub n_learnt_lits: f64,
     pub progress_estimate: f64
 }

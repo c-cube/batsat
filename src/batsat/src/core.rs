@@ -386,8 +386,10 @@ impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
     fn is_ok(&self) -> bool { self.v.ok }
 
     fn num_vars(&self) -> u32 { self.v.num_vars() }
-    fn num_clauses(&self) -> u32 { self.v.num_clauses() }
-    fn num_conflicts(&self) -> u32 { self.v.num_conflicts() }
+    fn num_clauses(&self) -> u64 { self.v.num_clauses() }
+    fn num_conflicts(&self) -> u64 { self.v.num_conflicts() }
+    fn num_propagations(&self) -> u64 { self.v.num_props() }
+    fn num_decisions(&self) -> u64 { self.v.decisions }
 
     fn value_lvl_0(&self, lit: Lit) -> lbool {
         let mut res = self.v.value_lit(lit);
@@ -526,6 +528,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                 // CONFLICT
                 self.v.conflicts += 1;
                 conflict_c += 1;
+                self.v.conflicts += 1;
                 if self.v.decision_level() == 0 {
                     return lbool::FALSE;
                 }
@@ -748,6 +751,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         self.v.learntsize_adjust_cnt = self.v.learntsize_adjust_confl as i32;
         let mut status = lbool::UNDEF;
 
+        info!("search.start");
         self.cb.on_start();
 
         // Search:
@@ -763,7 +767,9 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
             if !self.within_budget() {
                 break;
             }
+            info!("search.restart ({}-th)", curr_restarts);
             curr_restarts += 1;
+            self.cb.on_restart();
         }
 
         self.cb.on_result(status);
@@ -792,7 +798,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     fn reduce_db(&mut self) {
         let extra_lim = self.v.cla_inc / self.learnts.len() as f64; // Remove any clause below this activity
 
-        info!("reduce_db.start");
+        debug!("reduce_db.start");
 
         {
             let ca = &self.v.ca;
@@ -1043,9 +1049,10 @@ impl SolverV {
 
     #[inline(always)]
     fn num_vars(&self) -> u32 { self.next_var.idx() }
-    fn num_clauses(&self) -> u32 { self.num_clauses as u32 }
-    fn num_conflicts(&self) -> u32 { self.conflicts as u32 }
-    fn num_learnts(&self) -> u32 { self.num_learnts as u32 }
+    fn num_clauses(&self) -> u64 { self.num_clauses }
+    fn num_conflicts(&self) -> u64 { self.conflicts }
+    fn num_props(&self) -> u64 { self.propagations }
+    fn num_learnts(&self) -> u64 { self.num_learnts }
 
     #[inline(always)]
     pub fn level(&self, x: Var) -> i32 { self.vars.level(x) }

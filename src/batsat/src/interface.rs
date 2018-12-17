@@ -9,8 +9,10 @@ use crate::clause::{Var,Lit,lbool};
 /// The parameter `Th` is typically a theory that implements `Theory`.
 pub trait SolverInterface<Th> {
     fn num_vars(&self) -> u32;
-    fn num_clauses(&self) -> u32;
-    fn num_conflicts(&self) -> u32;
+    fn num_clauses(&self) -> u64;
+    fn num_conflicts(&self) -> u64;
+    fn num_propagations(&self) -> u64;
+    fn num_decisions(&self) -> u64;
 
     fn is_ok(&self) -> bool;
 
