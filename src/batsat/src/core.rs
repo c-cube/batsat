@@ -528,7 +528,6 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                 // CONFLICT
                 self.v.conflicts += 1;
                 conflict_c += 1;
-                self.v.conflicts += 1;
                 if self.v.decision_level() == 0 {
                     return lbool::FALSE;
                 }
@@ -614,8 +613,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                             // final check
                             self.call_theory(TheoryCall::Final, tmp_learnt)
                         } else {
-                            // proper decision
-                            self.v.decisions += 1;
+                            // partial check
                             self.call_theory(TheoryCall::Partial, tmp_learnt)
                         }
                     };
@@ -623,9 +621,17 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                     if complete_sat_model && th_res == lbool::TRUE {
                         // Model found and validated
                         return lbool::TRUE;
-                    } else if th_res == lbool::UNDEF || th_res == lbool::FALSE {
-                        // some SAT propagations or conflict
+                    } else if th_res == lbool::UNDEF {
+                        // some theory propagations
+                        continue 'outer
+                    } else if th_res == lbool::FALSE {
+                        // conflict, we backtracked and propagated a SAT literal
+                        self.v.conflicts += 1;
+                        conflict_c += 1;
                         continue 'outer;
+                    } else {
+                        // proper decision
+                        self.v.decisions += 1;
                     }
                 }
 
@@ -767,7 +773,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
             if !self.within_budget() {
                 break;
             }
-            info!("search.restart ({}-th)", curr_restarts);
+            info!("search.restart({})", curr_restarts);
             curr_restarts += 1;
             self.cb.on_restart();
         }
