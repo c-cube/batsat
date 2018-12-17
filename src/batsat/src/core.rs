@@ -466,22 +466,21 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                     return lbool::FALSE;
                 }
 
-                learnt_clause.clear();
-                let backtrack_level = self.v.analyze(confl, &self.learnts, &mut learnt_clause);
-                if self.v.produce_proof { self.v.proof.create_clause(&learnt_clause); } // emit proof
-                self.cancel_until(backtrack_level as u32);
+                let learnt = self.v.analyze(confl, &self.learnts, &mut learnt_clause);
+                if self.v.produce_proof { self.v.proof.create_clause(&learnt.clause); } // emit proof
+                self.cancel_until(learnt.backtrack_lvl as u32);
 
                 // propagate the only lit of `learnt_clause` that isn't false
-                if learnt_clause.len() == 1 {
+                if learnt.clause.len() == 1 {
                     // directly propagate the unit clause at level 0
-                    self.v.vars.unchecked_enqueue(learnt_clause[0], CRef::UNDEF);
+                    self.v.vars.unchecked_enqueue(learnt.clause[0], CRef::UNDEF);
                 } else {
                     // propagate the lit, justified by `cr`
-                    let cr = self.v.ca.alloc_with_learnt(&learnt_clause, true);
+                    let cr = self.v.ca.alloc_with_learnt(&learnt.clause, true);
                     self.learnts.push(cr);
                     self.v.attach_clause(cr);
                     self.v.cla_bump_activity(&self.learnts, cr);
-                    self.v.vars.unchecked_enqueue(learnt_clause[0], cr);
+                    self.v.vars.unchecked_enqueue(learnt.clause[0], cr);
                 }
 
                 self.v.vars.var_decay_activity();
@@ -838,6 +837,12 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 }
 
+/// Temporary representation of a learnt clause, produced in `analyze`.
+struct LearntClause<'a> {
+    clause: &'a [Lit], // the clause
+    backtrack_lvl: i32, // where to backtrack?
+}
+
 impl SolverV {
     #[inline(always)]
     pub fn num_assigns(&self) -> u32 { self.vars.num_assigns() }
@@ -983,9 +988,12 @@ impl SolverV {
     /// - `out_learnt[0]` is the asserting literal at level `btlevel`.
     /// - If out_learnt.size() > 1 then `out_learnt[1]` has the greatest decision level of the
     ///   rest of literals. There may be others from the same level though.
-    fn analyze(&mut self, mut confl: CRef, learnts: &[CRef], out_learnt: &mut Vec<Lit>) -> i32 {
+    fn analyze<'a>(&mut self, orig: CRef, learnts: &[CRef], out_learnt: &'a mut Vec<Lit>) -> LearntClause<'a> {
         let mut path_c = 0;
         let mut p = Lit::UNDEF;
+        let mut confl = orig;
+
+        out_learnt.clear();
 
         debug!("analyze.start [{}]", self.ca.get_ref(confl).pp_dimacs());
 
@@ -1115,7 +1123,11 @@ impl SolverV {
             self.seen[lit.var()] = Seen::UNDEF; // (`seen[]` is now cleared)
         }
         debug_assert!(out_learnt.iter().all(|&l| self.value_lit(l) == lbool::FALSE));
-        btlevel
+        LearntClause {
+            // TODO: add original lits if it comes from theory
+            backtrack_lvl: btlevel,
+            clause: out_learnt,
+        }
     }
 
     // COULD THIS BE IMPLEMENTED BY THE ORDINARY "analyze" BY SOME REASONABLE GENERALIZATION?
