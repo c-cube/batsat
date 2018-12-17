@@ -9,6 +9,7 @@ readme = "../../README.md"
 keywords = ["sat", "minisat"]
 categories = ["algorithms"]
 license = "MIT"
+edition = "2018"
 
 [dependencies]
 

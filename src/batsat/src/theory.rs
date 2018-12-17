@@ -1,6 +1,6 @@
 
 use std::default::Default;
-use clause::{Var,Lit,lbool};
+use crate::clause::{Var,Lit,lbool};
 
 /// Result returned by the `final_check` call.
 ///
@@ -23,7 +23,7 @@ pub trait Theory {
     /// If the partial model isn't satisfiable in the theory then
     /// this *must* return `CheckRes::Conflict` and push a conflict
     /// clause.
-    fn final_check<S>(&mut self, acts: &mut S)
+    fn final_check<'a, S>(&mut self, acts: &mut S)
         -> CheckRes<S::Conflict>
         where S: TheoryArgument;
 
@@ -32,6 +32,9 @@ pub trait Theory {
 
     /// Pop `n` levels from the stack
     fn pop_levels(&mut self, n: usize);
+
+    /// Number of levels
+    fn n_levels(&self) -> usize;
 
     /// Check partial model (best effort).
     ///
@@ -62,13 +65,26 @@ pub trait TheoryArgument {
     /// Allocate a new literal
     fn mk_new_lit(&mut self) -> Lit;
 
-    /// Push a theory lemma into the solver
-    fn add_theory_lemma(&mut self, &[Lit]);
+    /// Push a theory lemma into the solver.
+    ///
+    /// This is useful for lemma-on-demand or theory splitting.
+    fn add_theory_lemma(&mut self, c: &[Lit]);
+
+    /// Propagate the implication `guard => p`, in a cheap way.
+    ///
+    /// This will add `p` on the trail, with justification `guard`,
+    /// and use this information during conflict resolution.
+    fn propagate(&mut self, p: Lit, guard: &[Lit]);
 
     /// Make a conflict clause.
     ///
-    /// This should be used in the theory to returns `FinalCheckRes::Conflict`
-    fn mk_conflict(&mut self, &[Lit]) -> Self::Conflict;
+    /// This should be used in the theory to returns `FinalCheckRes::Conflict`.
+    ///
+    /// ## Params
+    /// - `costly` if true, indicates that the conflict `c` was costly to produce.
+    ///     This is a hint for the SAT solver to keep the theory lemma that corresponds
+    ///     to `c` along with the actual learnt clause.
+    fn mk_conflict(&mut self, lits: &[Lit], costly: bool) -> Self::Conflict;
 
     /// Value of given var in current model
     #[inline(always)]
@@ -77,17 +93,13 @@ pub trait TheoryArgument {
     /// Value of given literal in current model
     #[inline(always)]
     fn value_lit(&self, lit: Lit) -> lbool;
-
-    // TODO: API to propagate a literal given a set (smallvec?) of other literals.
-    // Would be converted into a clause on the fly iff used in a conflict,
-    // otherwise backtracked as usual.
 }
 
 /// Trivial theory that does nothing
-pub struct EmptyTheory;
+pub struct EmptyTheory(usize);
 
 impl EmptyTheory {
-    fn new() -> Self { EmptyTheory }
+    fn new() -> Self { EmptyTheory(0) }
 }
 
 impl Default for EmptyTheory {
@@ -97,6 +109,10 @@ impl Default for EmptyTheory {
 impl Theory for EmptyTheory {
     fn final_check<S>(&mut self, _: &mut S)
         -> CheckRes<S::Conflict> where S: TheoryArgument { CheckRes::Done }
-    fn create_level(&mut self) {}
-    fn pop_levels(&mut self, _: usize) {}
+    fn create_level(&mut self) { self.0 += 1 }
+    fn pop_levels(&mut self, n: usize) {
+        debug_assert!(self.0 >= n);
+        self.0 -= n
+    }
+    fn n_levels(&self) -> usize { self.0 }
 }

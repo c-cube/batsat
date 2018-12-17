@@ -19,13 +19,14 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-use std::fmt;
-use std::iter::DoubleEndedIterator;
-use std::{ops,u32,slice};
-use smallvec::SmallVec;
-
-use intmap::{AsIndex, IntMap, IntSet, IntMapBool};
-use alloc::{self, RegionAllocator};
+use {
+    std::{fmt, iter::DoubleEndedIterator, ops,u32,slice},
+    smallvec::SmallVec,
+    crate::{
+        intmap::{AsIndex, IntMap, IntSet, IntMapBool},
+        alloc::{self, RegionAllocator},
+    },
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Var(u32);
@@ -325,8 +326,13 @@ impl<'a> ClauseRef<'a> {
         unsafe { self.extra.expect("no extra field").f32 }
     }
     #[inline(always)]
+    pub fn lits(& self) -> &'a [Lit] {
+        let ptr = self.data.as_ptr() as *const ClauseData as *const Lit;
+        unsafe { slice::from_raw_parts(ptr, self.data.len()) }
+    }
+    #[inline(always)]
     pub fn iter(& self) -> impl DoubleEndedIterator<Item=&'a Lit> {
-        self.data.iter().map(|lit| unsafe { &lit.lit })
+        self.lits().iter()
     }
 }
 
@@ -422,8 +428,10 @@ impl<'a> ClauseMut<'a> {
         self.set_reloced(true);
         self.data[0].cref = c;
     }
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item=&Lit> {
-        self.data.iter().map(|lit| unsafe { &lit.lit })
+    #[inline(always)]
+    pub fn lits(& self) -> &'a [Lit] {
+        let ptr = self.data.as_ptr() as *const ClauseData as *const Lit;
+        unsafe { slice::from_raw_parts(ptr, self.data.len()) }
     }
     pub fn shrink(self, new_size: u32) {
         debug_assert!(2 <= new_size);
@@ -472,6 +480,7 @@ pub struct ClauseAllocator {
     extra_clause_field: bool,
 }
 
+#[repr(C)]
 #[derive(Clone, Copy)]
 /// Items used in the clause allocator. It should be compact enough that
 /// we do no waste space.
@@ -694,7 +703,7 @@ pub(crate) type CRef = alloc::Ref<ClauseData>;
 
 /// Predicate that decides whether a value `V` is deleted or not
 pub trait DeletePred<V> {
-    fn deleted(&self, &V) -> bool;
+    fn deleted(&self, v: &V) -> bool;
 }
 
 pub type OccVec<V> = SmallVec<[V;4]>;

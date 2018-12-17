@@ -19,9 +19,10 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-use std::io::{self, BufRead};
-use interface::SolverInterface;
-use {Lit, Var, lbool};
+use {
+    std::io::{self, BufRead},
+    crate::{interface::SolverInterface, {Lit, Var, lbool}},
+};
 
 /// `parse(input, solver)` adds the content of `input` to the solver
 ///

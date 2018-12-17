@@ -1,7 +1,7 @@
 
 /* Main Interface */
 
-use clause::{Var,Lit,lbool};
+use crate::clause::{Var,Lit,lbool};
 
 /// Main interface for a solver: it makes it possible to add clauses,
 /// allocate variables, and check for satisfiability
@@ -32,7 +32,7 @@ pub trait SolverInterface<Th> {
     /// thing done here is the removal of satisfied clauses, but more things can be put here.
     fn simplify(&mut self) -> bool;
 
-    /// Search for a model that respects a given set of assumptions (With resource constraints).
+    /// Search for a model that respects a given set of assumptions (with resource constraints).
     fn solve_limited(&mut self, assumps: &[Lit]) -> lbool;
 
     /// Obtain the slice of literals that are proved at level 0.
@@ -48,13 +48,13 @@ pub trait SolverInterface<Th> {
     /// Query model for var
     ///
     /// Precondition: last result was `Sat` (ie `lbool::TRUE`)
-    fn value_var(&self, Var) -> lbool;
+    fn value_var(&self, v: Var) -> lbool;
 
     /// Query model for lit
-    fn value_lit(&self, Lit) -> lbool;
+    fn value_lit(&self, lit: Lit) -> lbool;
 
     /// Value of this literal if it's assigned at level 0, or `UNDEF` otherwise
-    fn value_lvl_0(&self, Lit) -> lbool;
+    fn value_lvl_0(&self, lit: Lit) -> lbool;
 
     /// Return unsat core (as a subset of assumptions).
     ///
