@@ -755,14 +755,14 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
 
         self.v.learntsize_adjust_confl = self.v.learntsize_adjust_start_confl as f64;
         self.v.learntsize_adjust_cnt = self.v.learntsize_adjust_confl as i32;
-        let mut status = lbool::UNDEF;
+        let mut status;
 
         info!("search.start");
         self.cb.on_start();
 
         // Search:
         let mut curr_restarts: i32 = 0;
-        while status == lbool::UNDEF {
+        loop {
             let rest_base = if self.v.luby_restart {
                 utils::luby(self.v.restart_inc, curr_restarts)
             } else {
@@ -773,9 +773,14 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
             if !self.within_budget() {
                 break;
             }
-            info!("search.restart({})", curr_restarts);
-            curr_restarts += 1;
-            self.cb.on_restart();
+
+            if status != lbool::UNDEF {
+                break;
+            } else {
+                info!("search.restart({})", curr_restarts);
+                curr_restarts += 1;
+                self.cb.on_restart();
+            }
         }
 
         self.cb.on_result(status);
