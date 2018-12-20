@@ -364,7 +364,7 @@ impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         debug!("add toplevel clause {:?}", clause);
         debug_assert_eq!(self.v.decision_level(), 0, "add clause at non-zero decision level");
-        clause.sort();
+        clause.sort_unstable();
         self.add_clause_(clause)
     }
 
