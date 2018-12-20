@@ -1027,6 +1027,9 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         if !self.v.ok {
             return false;
         }
+        if clause.len() == 1 {
+            self.cancel_until(0); // only at level 0
+        }
 
         self.sort_clause_lits(clause);
         self.add_clause_(clause)
