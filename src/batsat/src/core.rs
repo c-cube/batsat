@@ -997,7 +997,6 @@ enum ResolveWith<'a> {
         lits: &'a [Lit],
         add: bool,
     },
-    // TODO: case for propagation
 }
 
 impl SolverV {
@@ -1231,7 +1230,6 @@ impl SolverV {
                     }
                     lits
                 },
-                // TODO: case for propagation
             };
             trace!("analyze.resolve-with {:?} (p: {:?}, path_c: {})", lits, p, path_c);
 
@@ -1256,7 +1254,7 @@ impl SolverV {
             }
             p = self.vars.trail[index - 1];
             index -= 1;
-            cur_clause = ResolveWith::Ref(self.vars.reason(p.var())); // TODO: handle propagation case
+            cur_clause = ResolveWith::Ref(self.vars.reason(p.var()));
             self.seen[p.var()] = Seen::UNDEF;
             path_c -= 1;
 
@@ -2000,15 +1998,6 @@ struct VarData {
     reason: CRef,
     level: i32,
 }
-/* TODO: use sign of `level` to indicate if it's a clause or a propagation (<0).
- * If clause, reason.cref points to the clause
- * If propagation, reason.idx points to a local vec[lit]+vec[offset] of propagations,
- *   which would be backtracked properly
-#[derive(Debug, Clone, Copy)]
-union VarReason {
-    cref: CRef,
-    }
-*/
 
 #[derive(Debug, Clone, Copy)]
 struct Watcher {
