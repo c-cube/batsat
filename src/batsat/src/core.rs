@@ -470,7 +470,9 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                     return lbool::FALSE;
                 }
 
-                let learnt = self.v.analyze(ResolveWith::Ref(confl), &self.learnts, tmp_learnt);
+                let learnt =
+                    self.v.analyze(ResolveWith::Ref(confl), &self.learnts,
+                    tmp_learnt, &mut self.th);
                 self.add_learnt_and_backtrack(learnt, clause::Kind::Learnt);
 
                 self.v.vars.var_decay_activity();
@@ -670,7 +672,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                 self.sort_clause_lits(&mut local_confl_cl); // as if it were a normal clause
                 let learnt = {
                     let r = ResolveWith::Lemma {lits: &mut local_confl_cl, add: confl.costly};
-                    self.v.analyze(r, &self.learnts, tmp_learnt)
+                    self.v.analyze(r, &self.learnts, tmp_learnt, &mut self.th)
                 };
                 self.add_learnt_and_backtrack(learnt, clause::Kind::Theory);
                 mem::swap(&mut local_confl_cl, &mut self.tmp_c_th); // re-use lits
@@ -1147,11 +1149,12 @@ impl SolverV {
     /// - `out_learnt[0]` is the asserting literal at level `btlevel`.
     /// - if `out_learnt.size() > 1` then `out_learnt[1]` has the greatest decision level of the
     ///   rest of literals. There may be others from the same level though.
-    fn analyze<'a>(
+    fn analyze<'a, Th:Theory>(
         &mut self,
         orig: ResolveWith<'a>,
         learnts: &[CRef],
-        out_learnt: &'a mut Vec<Lit>
+        out_learnt: &'a mut Vec<Lit>,
+        th: &mut Th,
     ) -> LearntClause<'a> {
         let mut path_c = 0;
         let mut p = Lit::UNDEF; // the literal to propagate, ie the UIP decision
@@ -1201,9 +1204,10 @@ impl SolverV {
             let lits = match cur_clause {
                 ResolveWith::Lemma{lits,..} => lits,
                 ResolveWith::Ref(cr) if cr == CRef::SPECIAL => {
-                    // theory propagation
-                    // FIXME: ask theory to justify this
-                    unimplemented!("conflict resolution with theory propagation {:?}", p)
+                    // theory propagation, ask the theory to justify `p`
+                    assert_ne!(p, Lit::UNDEF); // can't be the top lit
+                    let lits = th.explain_propagation(p);
+                    lits
                 },
                 ResolveWith::Ref(cr) => {
                     debug_assert_ne!(cr, CRef::UNDEF); // (otherwise should be UIP)
