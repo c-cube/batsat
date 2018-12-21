@@ -277,6 +277,14 @@ impl ops::BitOrAssign for lbool {
     }
 }
 
+/// The source of a clause
+#[derive(Debug,Clone,Copy)]
+pub enum Kind {
+    Axiom,
+    Learnt,
+    Theory,
+}
+
 #[derive(Debug, Clone, Copy)]
 /// A reference to some clause
 pub(crate) struct ClauseRef<'a> {
@@ -867,6 +875,7 @@ pub mod display {
 
 #[cfg(test)]
 mod test {
+    use super::*;
 
     /// test that ClauseData doesn't waste space
     #[test]
@@ -894,7 +903,6 @@ mod test {
 
     #[test]
     fn test_not() {
-        use super::lbool;
         assert_eq!(- lbool::TRUE, lbool::FALSE);
         assert_eq!(- lbool::FALSE, lbool::TRUE);
         assert_eq!(- lbool::UNDEF, lbool::UNDEF);
@@ -902,7 +910,6 @@ mod test {
 
     #[test]
     fn test_bitxor() {
-        use super::lbool;
         assert_eq!(lbool::TRUE ^ true, lbool::FALSE);
         assert_eq!(lbool::TRUE ^ false, lbool::TRUE);
         assert_eq!(lbool::FALSE ^ true, lbool::TRUE);
@@ -913,7 +920,6 @@ mod test {
 
     #[test]
     fn test_bitand() {
-        use super::lbool;
         assert_eq!(lbool::TRUE & lbool::TRUE, lbool::TRUE);
         assert_eq!(lbool::TRUE & lbool::FALSE, lbool::FALSE);
         assert_eq!(lbool::FALSE & lbool::TRUE, lbool::FALSE);
@@ -935,6 +941,11 @@ mod test {
         assert_eq!(lbool::FALSE | lbool::UNDEF, lbool::UNDEF);
         assert_eq!(lbool::UNDEF | lbool::TRUE, lbool::TRUE);
         assert_eq!(lbool::TRUE | lbool::UNDEF, lbool::TRUE);
+    }
+
+    #[test]
+    fn test_cref_undef_special() {
+        assert_eq!(CRef::UNDEF, CRef::SPECIAL + 1);
     }
 }
 

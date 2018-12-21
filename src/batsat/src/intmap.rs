@@ -200,6 +200,11 @@ impl<K: AsIndex> ops::Index<usize> for IntSet<K> {
     }
 }
 
+impl<K: AsIndex> ops::Deref for IntSet<K> {
+    type Target = [K];
+    fn deref(&self) -> &Self::Target { &self.xs }
+}
+
 #[derive(Debug, Clone)]
 pub struct HeapData<K: AsIndex> {
     heap: Vec<K>,

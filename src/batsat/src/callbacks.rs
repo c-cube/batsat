@@ -1,10 +1,10 @@
 
-use super::clause::{lbool};
+use super::clause::{self,lbool,Lit};
 
 /// Basic callbacks to the solver
 ///
 /// Typically intended for printing/statistics
-pub trait Callbacks {
+pub trait Callbacks : Sized {
     /// Called before starting to solve
     fn on_start(&mut self) {}
 
@@ -16,6 +16,16 @@ pub trait Callbacks {
 
     /// Called after a clause GC
     fn on_gc(&mut self, _old_size: usize, _new_size: usize) {}
+
+    /// Called whenever a new clause is learnt.
+    ///
+    /// ## Params
+    /// - c: list of literals of the clause
+    /// - src: specifies where the clause comes from
+    fn on_new_clause(&mut self, _c: &[Lit], _src: clause::Kind) {}
+
+    /// Called when a clause is deleted.
+    fn on_delete_clause(&mut self, _c: &[Lit]) {}
 
     /// called regularly to indicate progress
     fn on_progress<F>(&mut self, _f: F) where F: FnOnce() -> ProgressStatus {}

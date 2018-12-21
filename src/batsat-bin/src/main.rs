@@ -51,7 +51,7 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use batsat::{lbool, Solver, SolverOpts, SolverInterface, Callbacks, ProgressStatus, EmptyTheory};
+use batsat::{lbool, Lit, Solver, SolverOpts, SolverInterface, Callbacks, ProgressStatus, EmptyTheory, drat, ClauseKind};
 
 mod system;
 
@@ -68,10 +68,21 @@ fn main() {
 struct CB {
     pub verbosity: i32,
     pub lim: Option<(system::ResourceMeasure, f64)>,
+    pub proof: Option<drat::Proof>,
 }
 
 impl CB {
-    fn new() -> Self { CB {verbosity:0, lim: None} }
+    fn new() -> Self { CB {verbosity:0, lim: None, proof: None, } }
+    fn enable_proof(&mut self) {
+        if self.proof.is_none() {
+            self.proof = Some(drat::Proof::new())
+        }
+    }
+    fn take_proof(&mut self) -> Option<drat::Proof> {
+        let mut o = None;
+        std::mem::swap(&mut o, &mut self.proof);
+        o
+    }
 }
 
 impl Callbacks for CB {
@@ -103,6 +114,22 @@ impl Callbacks for CB {
                 p.dec_vars, p.n_clauses, p.n_clause_lits, p.max_learnt,
                 p.n_learnt, p.n_learnt_lits, p.progress_estimate
             );
+        }
+    }
+
+    fn on_new_clause(&mut self, c: &[Lit], k: ClauseKind) {
+        match (k, &mut self.proof) {
+            (_, None) => (),
+            (ClauseKind::Axiom, _) => (),
+            (_, Some(p)) => {
+                p.create_clause(&c)
+            }
+        }
+    }
+
+    fn on_delete_clause(&mut self, c: &[Lit]) {
+        if let Some(p) = &mut self.proof {
+            p.delete_clause(&c)
         }
     }
 
@@ -244,7 +271,6 @@ fn main2() -> io::Result<i32> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(solver_opts.min_learnts_lim);
     let produce_proof = matches.is_present("proof");
-    solver_opts.produce_proof = produce_proof;
 
     if !solver_opts.check() {
         eprintln!("Invalid option value");
@@ -274,6 +300,9 @@ fn main2() -> io::Result<i32> {
     // allocate callbacks
     let mut cb = CB::new();
     cb.verbosity = verbosity;
+    if produce_proof {
+        cb.enable_proof();
+    }
 
     if let Some(max_cpu) = cpu_lim {
         assert!(max_cpu > 0.);
@@ -329,7 +358,9 @@ fn main2() -> io::Result<i32> {
     if !solver.simplify() {
         if let Some(resfile) = resfile.as_mut() {
             writeln!(resfile, "s UNSAT")?;
-            writeln!(resfile, "{}", solver.dimacs_proof())?;
+            if let Some(p) = &solver.cb().proof {
+                writeln!(resfile, "{}", p)?;
+            }
             resfile.flush()?;
         }
         mem::drop(resfile);
@@ -338,7 +369,9 @@ fn main2() -> io::Result<i32> {
                 "c ==============================================================================="
             );
             println!("c Solved by unit propagation");
-            println!("{}", solver.dimacs_proof());
+            if let Some(p) = &solver.cb().proof {
+                println!("{}", p);
+            }
             solver.print_stats();
         }
         println!("s UNSATISFIABLE");
@@ -364,7 +397,7 @@ fn main2() -> io::Result<i32> {
         println!("s UNSATISFIABLE");
 
         if produce_proof && resfile.is_none() {
-            println!("{}", solver.dimacs_proof());
+            println!("{}", &solver.cb_mut().take_proof().unwrap());
         }
     } else {
         println!("s INDETERMINATE");
@@ -376,7 +409,7 @@ fn main2() -> io::Result<i32> {
         } else if ret == lbool::FALSE {
             writeln!(resfile, "s UNSAT")?;
             if produce_proof {
-                writeln!(resfile, "{}", solver.dimacs_proof())?;
+                writeln!(resfile, "{}", &solver.cb_mut().take_proof().unwrap())?;
             }
         } else {
             writeln!(resfile, "s INDET")?;

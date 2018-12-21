@@ -51,13 +51,17 @@ pub mod core;
 pub mod interface;
 pub mod callbacks;
 pub mod theory;
+pub mod drat;
 
 pub use crate::{
     theory::{TheoryArgument,Theory,EmptyTheory},
     interface::SolverInterface,
     callbacks::{Callbacks,Basic as BasicCallbacks,ProgressStatus},
     core::{Solver, SolverOpts},
-    clause::{lbool, Lit, Var, LMap, LSet, VMap, display::Print},
+    clause::{
+        lbool, Lit, Var, LMap, LSet, VMap, display::Print,
+        Kind as ClauseKind,
+    },
 };
 
 /// Basic solver, with basic callbacks and no theory

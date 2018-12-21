@@ -26,8 +26,8 @@ use {
     },
     crate::intmap::{Comparator, Heap, HeapData},
     crate::clause::{
-        CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
-        VMap, ClauseIterable, lbool, Lit, Var},
+        self, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
+        VMap, lbool, Lit, Var},
     crate::callbacks::{Callbacks,ProgressStatus},
     crate::theory::{Theory,TheoryArgument,self},
     crate::interface::SolverInterface,
@@ -91,8 +91,6 @@ struct SolverV {
     learntsize_adjust_confl: f64,
     learntsize_adjust_cnt: i32,
 
-    produce_proof: bool,
-    proof: Proof, // DRAT proof
     remove_satisfied: bool,
 
     // Statistics: (read-only member variable)
@@ -199,53 +197,45 @@ struct SolverV {
     th_st: TheoryState,
 }
 
-/// State used to store theory lemmas, conflicts, etc.
+/// State used to store theory lemmas, propagations, etc.
 struct TheoryState {
-    lits: Vec<Lit>,
-    offsets: Vec<(usize, usize, TheoryClauseKind)>, // slices in `th_lits`
-}
-
-/// A theory object: lemma or propagation
-#[repr(u8)]
-#[derive(Copy,Clone)]
-enum TheoryClauseKind { Lemma, Propagation }
-
-/// A clause added by the theory
-enum TheoryClause<'a> {
-    Lemma(&'a [Lit]), // valid tautology for case splitting
-    Propagation(Lit, &'a [Lit]),  // guard => lit
+    prop_lits: Vec<Lit>,
+    lemma_lits: Vec<Lit>,
+    lemma_offsets: Vec<(usize, usize)>, // slices in `lemma_lits`
 }
 
 impl TheoryState {
     // new state
     fn new() -> Self {
         TheoryState {
-            lits: Vec::new(),
-            offsets: Vec::new(),
+            prop_lits: vec!(),
+            lemma_lits: vec!(),
+            lemma_offsets: vec!(),
         }
     }
 
     fn clear(&mut self) {
-        self.lits.clear();
-        self.offsets.clear();
+        self.prop_lits.clear();
+        self.lemma_lits.clear();
+        self.lemma_offsets.clear();
     }
 
     fn push_lemma(&mut self, lits: &[Lit]) {
-        let idx = self.lits.len();
-        self.offsets.push((idx,lits.len(),TheoryClauseKind::Lemma));
-        self.lits.extend_from_slice(lits);
+        let idx = self.lemma_lits.len();
+        self.lemma_offsets.push((idx,lits.len()));
+        self.lemma_lits.extend_from_slice(lits);
     }
 
-    fn push_propagate(&mut self, p: Lit, guard: &[Lit]) {
-        let idx = self.lits.len();
-        self.offsets.push((idx,guard.len(),TheoryClauseKind::Propagation));
-        self.lits.push(p);
-        self.lits.extend_from_slice(guard);
+    #[inline(always)]
+    fn push_propagate(&mut self, p: Lit) {
+        self.prop_lits.push(p);
     }
+
+    fn props(&self) -> &[Lit] { &self.prop_lits }
 
     /// Iterate over the clauses contained in this theory state
-    fn iter<'a>(&'a mut self) -> impl Iterator<Item=TheoryClause<'a>> + 'a {
-        theory_st::Iter(self, 0)
+    fn iter_lemmas<'a>(&'a mut self) -> impl Iterator<Item=&'a [Lit]> + 'a {
+        theory_st::LIter(self, 0)
     }
 }
 
@@ -253,26 +243,17 @@ mod theory_st {
     use super::*;
 
     // state + offset
-    pub(super) struct Iter<'a>(pub &'a TheoryState, pub usize);
+    pub(super) struct LIter<'a>(pub &'a TheoryState, pub usize);
 
-    impl<'a> Iterator for Iter<'a> {
-        type Item=TheoryClause<'a>;
+    impl<'a> Iterator for LIter<'a> {
+        type Item=&'a [Lit];
         fn next(&mut self) -> Option<Self::Item> {
-            if self.1 >= self.0.offsets.len() {
+            if self.1 >= self.0.lemma_offsets.len() {
                 None
             } else {
-                let (offset,len,kind) = self.0.offsets[self.1];
+                let (offset,len) = self.0.lemma_offsets[self.1];
                 self.1 += 1;
-                let c = match kind {
-                    TheoryClauseKind::Lemma => {
-                        TheoryClause::Lemma(&self.0.lits[offset .. offset + len])
-                    },
-                    TheoryClauseKind::Propagation => {
-                        TheoryClause::Propagation(
-                            self.0.lits[offset],
-                            & self.0.lits[offset+1 .. offset + 1 + len])
-                    }
-                };
+                let c = &self.0.lemma_lits[offset .. offset + len];
                 Some(c)
             }
         }
@@ -298,51 +279,8 @@ mod dimacs {
                 }
                 writeln!(out, "0")
             } else {
-                write!(out, "{}", self.s.v.proof)?;
-                writeln!(out, "0")
+                Ok(())
             }
-        }
-    }
-}
-
-#[derive(Debug,Clone)]
-struct Proof(Vec<i32>);
-
-mod proof {
-    use {super::*, std::fmt::Write};
-
-    impl fmt::Display for Proof {
-        fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-            for &i in &self.0 {
-                if i == i32::MAX { out.write_char('d')? }
-                else if i == 0 { out.write_str(" 0\n")? }
-                else { write!(out, " {}", i)? }
-            }
-            Ok(())
-        }
-    }
-
-    impl Proof {
-        /// New proof recording structure.
-        pub(super) fn new() -> Self { Proof(Vec::new()) }
-
-        fn push_lit(&mut self, lit: Lit) {
-            let i: i32 = (if lit.sign() {1} else {-1}) * ((lit.var().idx()+1) as i32);
-            self.0.push(i)
-        }
-
-        /// register clause creation
-        pub(super) fn create_clause<C>(& mut self, c: & C) where C : ClauseIterable {
-            for lit in c.items() { self.push_lit((*lit).into()); }
-            self.0.push(0);
-        }
-
-        /// register clause deletion
-        pub(super) fn delete_clause<C>(&mut self, c: &C) where C : ClauseIterable {
-            // display deletion of clause if proof production is enabled
-            self.0.push(i32::MAX);
-            for lit in c.items() { self.push_lit((*lit).into()); }
-            self.0.push(0);
         }
     }
 }
@@ -533,7 +471,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                 }
 
                 let learnt = self.v.analyze(ResolveWith::Ref(confl), &self.learnts, tmp_learnt);
-                self.add_learnt_and_backtrack(learnt);
+                self.add_learnt_and_backtrack(learnt, clause::Kind::Learnt);
 
                 self.v.vars.var_decay_activity();
                 self.v.cla_decay_activity();
@@ -594,6 +532,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                         // conflict at level 0 because of `p`, unsat
                         let mut conflict = mem::replace(&mut self.conflict, LSet::new());
                         self.v.analyze_final(!p, &mut conflict);
+                        self.cb.on_new_clause(&conflict, clause::Kind::Learnt);
                         self.conflict = conflict;
                         return lbool::FALSE;
                     } else {
@@ -647,8 +586,8 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 
     /// Add a learnt clause and backtrack/propagate as necessary
-    fn add_learnt_and_backtrack(&mut self, learnt: LearntClause) {
-        if self.v.produce_proof { self.v.proof.create_clause(&learnt.clause); } // emit proof
+    fn add_learnt_and_backtrack(&mut self, learnt: LearntClause, k: clause::Kind) {
+        self.cb.on_new_clause(&learnt.clause, k);
         self.cancel_until(learnt.backtrack_lvl as u32);
 
         // propagate the only lit of `learnt_clause` that isn't false
@@ -687,7 +626,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         let confl_cl = &mut self.tmp_c_th;
         let r = {
             let v = &mut self.v;
-            confl_cl .clear();
+            confl_cl.clear();
             let mut th_arg = TheoryArg(v, confl_cl);
             match k {
                 TheoryCall::Partial => self.th.partial_check(&mut th_arg),
@@ -697,20 +636,25 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         match r {
             theory::CheckRes::Done => {
                 let mut has_propagated = false;
-                for c in self.v.th_st.iter() {
-                    has_propagated = true;
-                    match c {
-                        TheoryClause::Lemma(_c) => {
-                            //  TODO: self.add_clause_internal(c);
-                            // TODO: debug!("add theory lemma {:?}", _c.pp_dimacs());
-                            unimplemented!("lemma on demand"); // FIXME
-                        },
-                        TheoryClause::Propagation(_p,_guard) => {
-                            debug!("add theory propagation");
-                            unimplemented!("propagation"); // FIXME: allocate a slot to store this propagation, use it to enqueue `p`
-                        }
-                    }
 
+                for &p in self.v.th_st.props().iter() {
+                    debug!("add theory propagation");
+                    if self.v.vars.value_lit(p) == lbool::UNDEF {
+                        has_propagated = true;
+                        let cr = CRef::SPECIAL; // indicates a theory propagation
+                        self.v.vars.unchecked_enqueue(p, cr);
+                    }
+                }
+
+                let mut lemmas = vec!();
+                for c in self.v.th_st.iter_lemmas() {
+                    has_propagated = true;
+                    trace!("add theory lemma {}", c.pp_dimacs());
+                    lemmas.push(c.into());
+                }
+                // now add lemmas
+                for mut c in lemmas {
+                    self.add_clause_during_search(&mut c);
                 }
 
                 if has_propagated {
@@ -728,7 +672,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
                     let r = ResolveWith::Lemma {lits: &mut local_confl_cl, add: confl.costly};
                     self.v.analyze(r, &self.learnts, tmp_learnt)
                 };
-                self.add_learnt_and_backtrack(learnt);
+                self.add_learnt_and_backtrack(learnt, clause::Kind::Theory);
                 mem::swap(&mut local_confl_cl, &mut self.tmp_c_th); // re-use lits
                 self.v.th_st.clear(); // discard lemmas/propagations
                 lbool::FALSE
@@ -800,7 +744,8 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
         }
 
         self.cancel_until(0);
-        debug!("res: {:?}; proved at lvl 0: {:?}", status, self.v.vars.iter_trail().collect::<Vec<_>>());
+        debug!("res: {:?}", status);
+        trace!("proved at lvl 0: {:?}", self.v.vars.iter_trail().collect::<Vec<_>>());
         status
     }
 
@@ -835,7 +780,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
             };
             if cond {
                 self.v.remove_clause(cr);
-                if self.v.produce_proof { self.v.proof.delete_clause(&self.v.ca.get_ref(cr)); }
+                self.cb.on_delete_clause(self.v.ca.get_ref(cr).lits());
             } else {
                 self.learnts[j] = cr;
                 j += 1;
@@ -935,10 +880,6 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
 
     pub fn dimacs_model(& self) -> SolverPrintDimacs<Cb, Th> {
         SolverPrintDimacs {s: self, model: true}
-    }
-
-    pub fn dimacs_proof(& self) -> SolverPrintDimacs<Cb, Th> {
-        SolverPrintDimacs {s: self, model: false}
     }
 
     /// Interrupt search asynchronously
@@ -1259,6 +1200,11 @@ impl SolverV {
             // obtain literals to resolve with
             let lits = match cur_clause {
                 ResolveWith::Lemma{lits,..} => lits,
+                ResolveWith::Ref(cr) if cr == CRef::SPECIAL => {
+                    // theory propagation
+                    // FIXME: ask theory to justify this
+                    unimplemented!("conflict resolution with theory propagation {:?}", p)
+                },
                 ResolveWith::Ref(cr) => {
                     debug_assert_ne!(cr, CRef::UNDEF); // (otherwise should be UIP)
 
@@ -1421,7 +1367,6 @@ impl SolverV {
         debug!("analyze_final lit={:?}", p);
 
         if self.decision_level() == 0 {
-            if self.produce_proof { self.proof.create_clause(out_conflict); }
             return;
         }
 
@@ -1448,7 +1393,6 @@ impl SolverV {
 
         self.seen[p.var()] = Seen::UNDEF;
         debug_assert!(self.seen.iter().all(|(_,&s)| s==Seen::UNDEF));
-        if self.produce_proof { self.proof.create_clause(out_conflict); }
     }
 
     // Check if `p` can be removed from a conflict clause. It can be removed
@@ -1840,7 +1784,6 @@ impl SolverV {
             clauses_literals: 0,
             learnts_literals: 0,
 
-            produce_proof: opts.produce_proof,
             clause_decay: opts.clause_decay,
             random_var_freq: opts.random_var_freq,
             random_seed: opts.random_seed,
@@ -1896,7 +1839,6 @@ impl SolverV {
             ca: ClauseAllocator::new(),
             free_vars: vec![],
             assumptions: vec![],
-            proof: Proof::new(), // DRAT proof
 
             seen: VMap::new(),
             analyze_stack: vec![],
@@ -2028,13 +1970,12 @@ impl<'a> TheoryArgument for TheoryArg<'a> {
     }
 
     fn add_theory_lemma(&mut self, c: &[Lit]) {
-        // TODO: if c is unit, will need to backtrack
-        // TODO: if c is unsatisfied, turn this into a conflict
         self.0.th_st.push_lemma(c)
     }
 
-    fn propagate(&mut self, p: Lit, guard: &[Lit]) {
-        self.0.th_st.push_propagate(p, guard);
+    #[inline(always)]
+    fn propagate(&mut self, p: Lit) {
+        self.0.th_st.push_propagate(p);
     }
 
     fn mk_conflict(&mut self, lits: &[Lit], costly: bool) -> Self::Conflict {
@@ -2215,7 +2156,6 @@ pub struct SolverOpts {
     pub restart_inc: f64,
     pub garbage_frac: f64,
     pub min_learnts_lim: i32,
-    pub produce_proof: bool,
 }
 
 impl Default for SolverOpts {
@@ -2233,7 +2173,6 @@ impl Default for SolverOpts {
             restart_inc: 2.0,
             garbage_frac: 0.20,
             min_learnts_lim: 0,
-            produce_proof: false,
         }
     }
 }

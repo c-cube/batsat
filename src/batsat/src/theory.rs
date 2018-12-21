@@ -50,6 +50,14 @@ pub trait Theory {
     fn partial_check<S>(&mut self, _acts: &mut S) -> CheckRes<S::Conflict>
         where S: TheoryArgument
     { CheckRes::Done }
+
+
+    /// If the theory uses `TheoryArgument::propagate`, it must implement
+    /// this function to explain the propagations.
+    ///
+    /// `p` is the literal that has been propagated by the theory in a prefix
+    /// of the current trail.
+    fn explain_propagation(&mut self, _p: Lit) -> &[Lit];
 }
 
 /// Interface provided to the theory.
@@ -67,14 +75,16 @@ pub trait TheoryArgument {
 
     /// Push a theory lemma into the solver.
     ///
-    /// This is useful for lemma-on-demand or theory splitting.
+    /// This is useful for lemma-on-demand or theory splitting, but can
+    /// be relatively costly.
     fn add_theory_lemma(&mut self, c: &[Lit]);
 
-    /// Propagate the implication `guard => p`, in a cheap way.
+    /// Propagate the literal `p`, which is theory-implied by the current trail.
     ///
-    /// This will add `p` on the trail, with justification `guard`,
-    /// and use this information during conflict resolution.
-    fn propagate(&mut self, p: Lit, guard: &[Lit]);
+    /// This will add `p` on the trail. The theory must be ready to
+    /// provide an explanation via `Theory::explain_prop(p)` if asked to
+    /// during conflict resolution.
+    fn propagate(&mut self, p: Lit);
 
     /// Make a conflict clause.
     ///
@@ -115,4 +125,5 @@ impl Theory for EmptyTheory {
         self.0 -= n
     }
     fn n_levels(&self) -> usize { self.0 }
+    fn explain_propagation(&mut self, _p: Lit) -> &[Lit] { unreachable!() }
 }

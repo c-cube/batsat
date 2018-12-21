@@ -45,6 +45,9 @@ impl<T: Copy + Default> RegionAllocator<T> {
     pub fn alloc(&mut self, size: u32) -> Ref<T> {
         debug_assert!(size > 0);
         let r = Ref(self.vec.len() as u32, PhantomData);
+        if r >= Ref::SPECIAL {
+            panic!("allocator: max capacity reached");
+        }
         self.vec.extend((0..size).map(|_| T::default()));
         r
     }
@@ -108,6 +111,7 @@ impl<T: Copy> Default for Ref<T> {
 
 impl<T: Copy> Ref<T> {
     pub const UNDEF: Self = Ref(!0, PhantomData);
+    pub const SPECIAL: Self = Ref((!0)-1, PhantomData);
 }
 
 impl<T: Copy> ops::Add<u32> for Ref<T> {
