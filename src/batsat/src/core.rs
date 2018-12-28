@@ -21,7 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use {
     std::{
-        cmp, i32, f64, mem, fmt, marker::PhantomData,
+        cmp, i32, f64, mem, fmt,
         sync::atomic::{Ordering,AtomicBool},
     },
     crate::intmap::{Comparator, Heap, HeapData},
@@ -42,7 +42,7 @@ use crate::clause::display::Print;
 /// a clause allocator, literals, clauses, and statistics.
 ///
 /// It is parametrized by `Callbacks`
-pub struct Solver<Cb : Callbacks, Th : Theory = theory::EmptyTheory> {
+pub struct Solver<Cb : Callbacks> {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
     model: Vec<lbool>,
@@ -51,7 +51,6 @@ pub struct Solver<Cb : Callbacks, Th : Theory = theory::EmptyTheory> {
     conflict: LSet,
 
     cb: Cb, // the callbacks
-    m_th: PhantomData<Th>,
     asynch_interrupt: AtomicBool,
 
     /// List of problem clauses.
@@ -261,15 +260,15 @@ mod theory_st {
 }
 ///
 /// Print the model/proof as DIMACS
-pub struct SolverPrintDimacs<'a, Cb:Callbacks+'a, Th:Theory+'a> {
-    s: &'a Solver<Cb, Th>,
+pub struct SolverPrintDimacs<'a, Cb:Callbacks+'a> {
+    s: &'a Solver<Cb>,
     model: bool, // model or proof
 }
 
 mod dimacs {
     use super::*;
 
-    impl<'a, Cb:Callbacks, Th: Theory> fmt::Display for SolverPrintDimacs<'a, Cb, Th> {
+    impl<'a, Cb:Callbacks> fmt::Display for SolverPrintDimacs<'a, Cb> {
         fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
             if self.model {
                 write!(out, "v ")?;
@@ -286,7 +285,7 @@ mod dimacs {
 }
 
 // public API
-impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
+impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
     fn new_var(&mut self, upol: lbool, dvar: bool) -> Var {
         self.v.new_var(upol, dvar)
     }
@@ -303,7 +302,7 @@ impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
         self.add_clause_(clause)
     }
 
-    fn solve_limited_th(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
+    fn solve_limited_th<Th:Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
         self.asynch_interrupt.store(false, Ordering::SeqCst);
         self.v.assumptions.clear();
         self.v.assumptions.extend_from_slice(assumps);
@@ -311,7 +310,7 @@ impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
     }
 
     #[inline(always)]
-    fn simplify_th(&mut self, th: &mut Th) -> bool { self.simplify_internal(th) }
+    fn simplify_th<Th:Theory>(&mut self, th: &mut Th) -> bool { self.simplify_internal(th) }
 
     fn value_var(&self, v: Var) -> lbool {
         self.model.get(v.idx() as usize).map_or(lbool::UNDEF, |&v| v)
@@ -371,13 +370,13 @@ impl<Cb:Callbacks,Th:Theory> SolverInterface<Th> for Solver<Cb, Th> {
     fn proved_at_lvl_0(&self) -> &[Lit] { self.v.vars.proved_at_lvl_0() }
 }
 
-impl<Cb:Callbacks+Default,Th:Theory> Default for Solver<Cb,Th> {
+impl<Cb:Callbacks+Default> Default for Solver<Cb> {
     fn default() -> Self {
         Solver::new(SolverOpts::default(), Default::default())
     }
 }
 
-impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
+impl<Cb:Callbacks> Solver<Cb> {
     /// Create a new solver with the given options and default theory
     pub fn new(opts: SolverOpts, cb: Cb) -> Self {
         Solver::new_with(opts, cb)
@@ -388,7 +387,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
 enum TheoryCall { Partial, Final }
 
 // main algorithm
-impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
+impl<Cb:Callbacks> Solver<Cb> {
     /// Create a new solver with the given options and callbacks.
     pub fn new_with(opts: SolverOpts, cb: Cb) -> Self {
         assert!(opts.check());
@@ -397,7 +396,6 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
             model: vec![],
             conflict: LSet::new(),
             cb,
-            m_th: PhantomData,
             clauses: vec![],
             learnts: vec![],
             asynch_interrupt: AtomicBool::new(false),
@@ -408,7 +406,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 
     /// Begins a new decision level.
-    fn new_decision_level(&mut self, th: &mut Th) {
+    fn new_decision_level<Th:Theory>(&mut self, th: &mut Th) {
         trace!("new decision level {}", 1+self.v.decision_level());
         self.v.vars.new_decision_level();
         th.create_level();
@@ -416,7 +414,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
             "same number of levels for theory and trail");
     }
 
-    fn simplify_internal(&mut self, _: &mut Th) -> bool {
+    fn simplify_internal<Th>(&mut self, _: &mut Th) -> bool {
         debug_assert_eq!(self.v.decision_level(), 0);
 
         if !self.v.ok || self.v.propagate() != CRef::UNDEF {
@@ -452,7 +450,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     ///    all variables are decision variables, this means that the clause set is satisfiable.
     /// - `lbool::FALSE` if the clause set is unsatisfiable.
     /// - 'lbool::UNDEF` if the bound on number of conflicts is reached.
-    fn search(&mut self, th: &mut Th, nof_conflicts: i32, tmp_learnt: &mut Vec<Lit>) -> lbool {
+    fn search<Th:Theory>(&mut self, th: &mut Th, nof_conflicts: i32, tmp_learnt: &mut Vec<Lit>) -> lbool {
         debug_assert!(self.v.ok);
         let mut conflict_c = 0;
         self.v.starts += 1;
@@ -585,7 +583,9 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 
     /// Add a learnt clause and backtrack/propagate as necessary
-    fn add_learnt_and_backtrack(&mut self, th: &mut Th, learnt: LearntClause, k: clause::Kind) {
+    fn add_learnt_and_backtrack<Th:Theory>(
+        &mut self, th: &mut Th, learnt: LearntClause, k: clause::Kind
+    ) {
         self.cb.on_new_clause(&learnt.clause, k);
         self.cancel_until(th, learnt.backtrack_lvl as u32);
 
@@ -621,7 +621,9 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     /// Returns `UNDEF` if the theory propagated something, `TRUE` if
     /// the theory accepted the model without propagations, and `FALSE` if
     /// the theory rejected the model.
-    fn call_theory(&mut self, th: &mut Th, k: TheoryCall, tmp_learnt: &mut Vec<Lit>) -> lbool {
+    fn call_theory<Th:Theory>(
+        &mut self, th: &mut Th, k: TheoryCall, tmp_learnt: &mut Vec<Lit>
+    ) -> lbool {
         let confl_cl = &mut self.tmp_c_th;
         let r = {
             let v = &mut self.v;
@@ -680,7 +682,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 
     /// Main solve method (assumptions given in `self.assumptions`).
-    fn solve_internal(&mut self, th: &mut Th) -> lbool {
+    fn solve_internal<Th:Theory>(&mut self, th: &mut Th) -> lbool {
         assert!(self.v.decision_level()==0);
         self.model.clear();
         self.conflict.clear();
@@ -839,7 +841,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 
     /// Revert to the state at given level (keeping all assignment at `level` but not beyond).
-    fn cancel_until(&mut self, th: &mut Th, level: u32) {
+    fn cancel_until<Th:Theory>(&mut self, th: &mut Th, level: u32) {
         let dl = self.v.decision_level();
         if dl > level {
             let n_th_levels = (dl - level) as usize;
@@ -877,7 +879,7 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     /// Temporary access to the callbacks
     pub fn cb(&self) -> &Cb { &self.cb }
 
-    pub fn dimacs_model(& self) -> SolverPrintDimacs<Cb, Th> {
+    pub fn dimacs_model(& self) -> SolverPrintDimacs<Cb> {
         SolverPrintDimacs {s: self, model: true}
     }
 
@@ -962,7 +964,9 @@ impl<Cb:Callbacks,Th:Theory> Solver<Cb,Th> {
     }
 
     /// Add clause during search
-    fn add_clause_during_search(&mut self, th: &mut Th, clause: &mut Vec<Lit>) -> bool {
+    fn add_clause_during_search<Th:Theory>(
+        &mut self, th: &mut Th, clause: &mut Vec<Lit>
+    ) -> bool {
         debug!("add internal clause {:?}", clause);
         if !self.v.ok {
             return false;

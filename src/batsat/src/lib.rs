@@ -65,4 +65,4 @@ pub use crate::{
 };
 
 /// Basic solver, with basic callbacks and no theory
-pub type BasicSolver = Solver<BasicCallbacks, EmptyTheory>;
+pub type BasicSolver = Solver<BasicCallbacks>;

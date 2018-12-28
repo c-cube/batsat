@@ -21,7 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use {
     std::io::{self, BufRead},
-    crate::{interface::SolverInterface, theory::Theory, {Lit, Var, lbool}},
+    crate::{interface::SolverInterface, {Lit, Var, lbool}},
 };
 
 /// `parse(input, solver)` adds the content of `input` to the solver
@@ -31,7 +31,7 @@ use {
 /// - `incremental` if true, accept the [.icnf format](http://www.siert.nl/icnf/)
 /// - `solver` is used to process incremental calls (`a` lines in icnf)
 /// - `th` is given to `solver` to solve.
-pub fn parse<Th:Theory+Default, S: SolverInterface<Th>, R: BufRead>(
+pub fn parse<S: SolverInterface, R: BufRead>(
     input: &mut R,
     solver: &mut S,
     is_strict: bool,
@@ -88,7 +88,7 @@ pub fn parse<Th:Theory+Default, S: SolverInterface<Th>, R: BufRead>(
     Ok(())
 }
 
-fn read_clause<Th: Theory, S: SolverInterface<Th>, R: BufRead>(
+fn read_clause<S: SolverInterface, R: BufRead>(
     input: &mut R,
     solver: &mut S,
     lits: &mut Vec<Lit>,

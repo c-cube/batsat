@@ -10,7 +10,7 @@ use crate::{
 /// allocate variables, and check for satisfiability
 ///
 /// Some functions take a parameter `Th:Theory`, for SMT solving.
-pub trait SolverInterface<Th: Theory = theory::EmptyTheory> {
+pub trait SolverInterface {
     fn num_vars(&self) -> u32;
     fn num_clauses(&self) -> u64;
     fn num_conflicts(&self) -> u64;
@@ -36,28 +36,24 @@ pub trait SolverInterface<Th: Theory = theory::EmptyTheory> {
     /// Simplify the clause database according to the current top-level assigment. Currently, the only
     /// thing done here is the removal of satisfied clauses, but more things can be put here.
     #[inline(always)]
-    fn simplify(&mut self) -> bool
-        where Th : Default
-    {
-        self.simplify_th(&mut Default::default())
+    fn simplify(&mut self) -> bool {
+        self.simplify_th(&mut theory::EmptyTheory::new())
     }
 
     /// Simplify using the given theory.
-    fn simplify_th(&mut self, th: &mut Th) -> bool;
+    fn simplify_th<Th:Theory>(&mut self, th: &mut Th) -> bool;
 
     /// Search for a model that respects a given set of assumptions (with resource constraints).
     ///
     /// - `assumps` is the list of assumptions to use (the literals that can be part of the unsat core)
-    fn solve_limited(&mut self, assumps: &[Lit]) -> lbool
-        where Th : Default
-    {
-        self.solve_limited_th(&mut Default::default(), assumps)
+    fn solve_limited(&mut self, assumps: &[Lit]) -> lbool {
+        self.solve_limited_th(&mut theory::EmptyTheory::new(), assumps)
     }
 
     /// Solve using the given theory.
     ///
     /// - `th` is the theory.
-    fn solve_limited_th(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
+    fn solve_limited_th<Th:Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
 
     /// Obtain the slice of literals that are proved at level 0.
     ///

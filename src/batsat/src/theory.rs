@@ -109,7 +109,8 @@ pub trait TheoryArgument {
 pub struct EmptyTheory(usize);
 
 impl EmptyTheory {
-    fn new() -> Self { EmptyTheory(0) }
+    /// New empty theory.
+    pub fn new() -> Self { EmptyTheory(0) }
 }
 
 impl Default for EmptyTheory {
