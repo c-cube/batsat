@@ -15,7 +15,7 @@ pub enum CheckRes<C> {
     Conflict(C),
 }
 
-/// Theory that parametrizes the solver and can react on events
+/// Theory that parametrizes the solver and can react on events.
 pub trait Theory {
     /// Check the model candidate `model` thoroughly.
     ///
@@ -116,6 +116,7 @@ impl Default for EmptyTheory {
     fn default() -> Self { EmptyTheory::new() }
 }
 
+// theory for any context.
 impl Theory for EmptyTheory {
     fn final_check<S>(&mut self, _: &mut S)
         -> CheckRes<S::Conflict> where S: TheoryArgument { CheckRes::Done }

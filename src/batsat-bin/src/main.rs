@@ -51,7 +51,7 @@ use std::process::exit;
 use std::time::Instant;
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
-use batsat::{lbool, Lit, Solver, SolverOpts, SolverInterface, Callbacks, ProgressStatus, EmptyTheory, drat, ClauseKind};
+use batsat::{lbool, Lit, Solver, SolverOpts, SolverInterface, Callbacks, ProgressStatus, drat, ClauseKind};
 
 mod system;
 
@@ -150,7 +150,7 @@ impl Callbacks for CB {
     }
 }
 
-type MSolver = Solver<CB, EmptyTheory>; // specialized solver
+type MSolver = Solver<CB>; // specialized solver
 
 fn main2() -> io::Result<i32> {
     let resource = system::ResourceMeasure::new();

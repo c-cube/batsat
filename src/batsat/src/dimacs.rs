@@ -21,14 +21,17 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use {
     std::io::{self, BufRead},
-    crate::{interface::SolverInterface, {Lit, Var, lbool}},
+    crate::{interface::SolverInterface, theory::Theory, {Lit, Var, lbool}},
 };
 
 /// `parse(input, solver)` adds the content of `input` to the solver
 ///
-/// param `is_strict` if true, will fail if number of clauses/vars does not match the declared header
-/// param `incremental` if true, accept the [.icnf format](http://www.siert.nl/icnf/)
-pub fn parse<Th, S: SolverInterface<Th>, R: BufRead>(
+/// ## Params
+/// - `is_strict` if true, will fail if number of clauses/vars does not match the declared header
+/// - `incremental` if true, accept the [.icnf format](http://www.siert.nl/icnf/)
+/// - `solver` is used to process incremental calls (`a` lines in icnf)
+/// - `th` is given to `solver` to solve.
+pub fn parse<Th:Theory+Default, S: SolverInterface<Th>, R: BufRead>(
     input: &mut R,
     solver: &mut S,
     is_strict: bool,
@@ -85,7 +88,7 @@ pub fn parse<Th, S: SolverInterface<Th>, R: BufRead>(
     Ok(())
 }
 
-fn read_clause<Th, S: SolverInterface<Th>, R: BufRead>(
+fn read_clause<Th: Theory, S: SolverInterface<Th>, R: BufRead>(
     input: &mut R,
     solver: &mut S,
     lits: &mut Vec<Lit>,

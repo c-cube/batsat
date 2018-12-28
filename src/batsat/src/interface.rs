@@ -1,13 +1,16 @@
 
 /* Main Interface */
 
-use crate::clause::{Var,Lit,lbool};
+use crate::{
+    theory::{self, Theory},
+    clause::{Var, Lit, lbool},
+};
 
 /// Main interface for a solver: it makes it possible to add clauses,
 /// allocate variables, and check for satisfiability
 ///
-/// The parameter `Th` is typically a theory that implements `Theory`.
-pub trait SolverInterface<Th> {
+/// Some functions take a parameter `Th:Theory`, for SMT solving.
+pub trait SolverInterface<Th: Theory = theory::EmptyTheory> {
     fn num_vars(&self) -> u32;
     fn num_clauses(&self) -> u64;
     fn num_conflicts(&self) -> u64;
@@ -32,10 +35,29 @@ pub trait SolverInterface<Th> {
 
     /// Simplify the clause database according to the current top-level assigment. Currently, the only
     /// thing done here is the removal of satisfied clauses, but more things can be put here.
-    fn simplify(&mut self) -> bool;
+    #[inline(always)]
+    fn simplify(&mut self) -> bool
+        where Th : Default
+    {
+        self.simplify_th(&mut Default::default())
+    }
+
+    /// Simplify using the given theory.
+    fn simplify_th(&mut self, th: &mut Th) -> bool;
 
     /// Search for a model that respects a given set of assumptions (with resource constraints).
-    fn solve_limited(&mut self, assumps: &[Lit]) -> lbool;
+    ///
+    /// - `assumps` is the list of assumptions to use (the literals that can be part of the unsat core)
+    fn solve_limited(&mut self, assumps: &[Lit]) -> lbool
+        where Th : Default
+    {
+        self.solve_limited_th(&mut Default::default(), assumps)
+    }
+
+    /// Solve using the given theory.
+    ///
+    /// - `th` is the theory.
+    fn solve_limited_th(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
 
     /// Obtain the slice of literals that are proved at level 0.
     ///
@@ -72,11 +94,5 @@ pub trait SolverInterface<Th> {
     ///
     /// Precondition: last result was `Unsat`
     fn unsat_core_contains_var(&self, v: Var) -> bool;
-
-    /// Access the underlying theory
-    fn theory(&self) -> &Th;
-
-    /// Mutable access to the underlying theory
-    fn theory_mut(&mut self) -> &mut Th;
 }
 
