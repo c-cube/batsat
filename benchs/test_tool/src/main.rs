@@ -343,7 +343,7 @@ fn main() -> Result<()> {
     let dres = process_task(
         &DirTask {path: Path::new(&dir).to_owned(), timeout, jobs, checker})?;
 
-    println!("{:?}", dres.stats);
+    println!("{:#?}", dres.stats);
     if dres.failures.len() != 0 {
         println!("{} ({})", Red.bold().paint("FAILURE"), dres.failures.len());
         for f in dres.failures.iter() {
