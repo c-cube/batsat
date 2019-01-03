@@ -155,10 +155,10 @@ type MSolver = Solver<CB>; // specialized solver
 fn main2() -> io::Result<i32> {
     let resource = system::ResourceMeasure::new();
 
-    let matches = App::new("RatSat")
+    let matches = App::new("batsain")
         .version("0.0.2")
-        .author("Masaki Hara <ackie.h.gmai@gmail.com>")
-        .about("MiniSat reimplemented in Rust")
+        .author("Simon Cruanes")
+        .about("Adaptation of MiniSat/RatSat in Rust")
         .arg(Arg::with_name("input-file"))
         .arg(Arg::with_name("result-output-file"))
         .arg(Arg::with_name("proof").long("proof").help("produce proof in (D)RAT on stdout"))
