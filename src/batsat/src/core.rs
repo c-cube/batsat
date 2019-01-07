@@ -639,7 +639,7 @@ impl<Cb:Callbacks> Solver<Cb> {
                 let mut has_propagated = false;
 
                 for &p in self.v.th_st.props().iter() {
-                    debug!("add theory propagation");
+                    trace!("add theory propagation {:?}", p);
                     if self.v.vars.value_lit(p) == lbool::UNDEF {
                         has_propagated = true;
                         let cr = CRef::SPECIAL; // indicates a theory propagation
