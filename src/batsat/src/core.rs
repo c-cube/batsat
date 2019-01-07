@@ -377,7 +377,7 @@ impl<Cb:Callbacks+Default> Default for Solver<Cb> {
 }
 
 impl<Cb:Callbacks> Solver<Cb> {
-    /// Create a new solver with the given options and default theory
+    /// Create a new solver with the given options and default callbacks
     pub fn new(opts: SolverOpts, cb: Cb) -> Self {
         Solver::new_with(opts, cb)
     }

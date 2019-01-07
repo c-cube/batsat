@@ -56,7 +56,7 @@ pub mod drat;
 pub use crate::{
     theory::{TheoryArgument,Theory,EmptyTheory},
     interface::SolverInterface,
-    callbacks::{Callbacks,Basic as BasicCallbacks,ProgressStatus},
+    callbacks::{Callbacks,Basic as BasicCallbacks,Stats as StatsCallbacks, ProgressStatus},
     core::{Solver, SolverOpts},
     clause::{
         lbool, Lit, Var, LMap, LSet, VMap, display::Print,

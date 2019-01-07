@@ -1,5 +1,5 @@
 
-use super::clause::{self,lbool,Lit};
+use {std::fmt, super::clause::{self, lbool, Lit}, super::ClauseKind};
 
 /// Basic callbacks to the solver
 ///
@@ -79,5 +79,61 @@ impl Basic {
 }
 
 impl Default for Basic {
-    fn default() -> Self { Basic::new() }
+    fn default() -> Self { Self::new() }
+}
+
+/// Basic set of callbacks, maintaining some statistics and a "stop" predicate.
+pub struct Stats {
+    basic: Basic,
+    pub n_restarts: usize,
+    pub n_clauses: usize,
+    pub n_theory: usize,
+    pub n_learnt: usize,
+    pub n_gc: usize,
+}
+
+impl Callbacks for Stats {
+    #[inline]
+    fn stop(&self) -> bool { self.basic.stop() }
+
+    fn on_restart(&mut self) { self.n_restarts += 1 }
+    fn on_gc(&mut self, _: usize, _: usize) { self.n_gc += 1 }
+    fn on_new_clause(&mut self, _: &[Lit], k: ClauseKind) {
+        self.n_clauses += 1;
+        match k {
+            ClauseKind::Learnt => self.n_learnt += 1,
+            ClauseKind::Theory => self.n_theory += 1,
+            ClauseKind::Axiom => (),
+        }
+    }
+}
+
+impl Stats {
+    /// Allocate a new set of callbacks.
+    pub fn new() -> Self {
+        Self {
+            basic: Basic::new(), 
+            n_restarts: 0,
+            n_clauses: 0,
+            n_theory: 0,
+            n_learnt: 0,
+            n_gc: 0,
+        }
+    }
+
+    /// Cast the statistics CB into a basic CB.
+    #[inline(always)]
+    pub fn basic_mut(&mut self) -> &mut Basic { &mut self.basic }
+}
+
+impl fmt::Display for Stats {
+    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
+        write!(out, "restarts: {}, clauses: {} (th: {}, learnt: {}), gc: {}",
+               self.n_restarts, self.n_clauses,
+               self.n_theory, self.n_learnt, self.n_gc)
+    }
+}
+
+impl Default for Stats {
+    fn default() -> Self { Self::new() }
 }
