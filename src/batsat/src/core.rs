@@ -450,15 +450,22 @@ impl<Cb:Callbacks> Solver<Cb> {
     ///    all variables are decision variables, this means that the clause set is satisfiable.
     /// - `lbool::FALSE` if the clause set is unsatisfiable.
     /// - 'lbool::UNDEF` if the bound on number of conflicts is reached.
-    fn search<Th:Theory>(&mut self, th: &mut Th, nof_conflicts: i32, tmp_learnt: &mut Vec<Lit>) -> lbool {
+    fn search<Th:Theory>(
+        &mut self,
+        th: &mut Th,
+        nof_conflicts: i32,
+        tmp_learnt: &mut Vec<Lit>
+    ) -> lbool {
         debug_assert!(self.v.ok);
         let mut conflict_c = 0;
         self.v.starts += 1;
 
-        'outer: loop {
+        'main: loop {
+            // boolean propagation
             let confl = self.v.propagate();
+
             if confl != CRef::UNDEF {
-                // CONFLICT
+                // conflict analysis
                 self.v.conflicts += 1;
                 conflict_c += 1;
                 if self.v.decision_level() == 0 {
@@ -500,7 +507,7 @@ impl<Cb:Callbacks> Solver<Cb> {
                     });
                 }
             } else {
-                // NO CONFLICT
+                // no boolean conflict
                 if (nof_conflicts >= 0 && conflict_c >= nof_conflicts) || !self.within_budget() {
                     // Reached bound on number of conflicts:
                     self.v.progress_estimate = self.v.progress_estimate();
@@ -518,6 +525,22 @@ impl<Cb:Callbacks> Solver<Cb> {
                     self.reduce_db();
                 }
 
+                // do a partial theory check
+                {
+                    let th_res = self.call_theory(th, TheoryCall::Partial, tmp_learnt);
+
+                    if th_res == lbool::UNDEF {
+                        // some theory propagations, do not decide yet
+                        continue 'main
+                    } else if th_res == lbool::FALSE {
+                        // conflict, we backtracked and propagated a SAT literal
+                        self.v.conflicts += 1;
+                        conflict_c += 1;
+                        continue 'main;
+                    }
+                }
+
+                // select the next decision (using assumptions, or variable heap)
                 let mut next = Lit::UNDEF;
                 while (self.v.decision_level() as usize) < self.v.assumptions.len() {
                     // Perform user provided assumption:
@@ -539,34 +562,28 @@ impl<Cb:Callbacks> Solver<Cb> {
                 }
 
                 if next == Lit::UNDEF {
-                    // New variable decision:
+                    // new variable decision:
                     next = self.v.pick_branch_lit();
 
-                    let complete_sat_model = next == Lit::UNDEF;
+                    if next == Lit::UNDEF {
+                        // no decision? time for a theory final-check
+                        let th_res = self.call_theory(th, TheoryCall::Final, tmp_learnt);
 
-                    let th_res = {
-                        if complete_sat_model {
-                            // final check
-                            self.call_theory(th, TheoryCall::Final, tmp_learnt)
+                        if th_res == lbool::TRUE {
+                            // Model found and validated by the theory
+                            return lbool::TRUE;
+                        } else if th_res == lbool::UNDEF {
+                            // some propagations in final-check
+                            continue 'main
                         } else {
-                            // partial check
-                            self.call_theory(th, TheoryCall::Partial, tmp_learnt)
+                            assert_eq!(th_res, lbool::FALSE);
+                            // conflict, we backtracked and propagated a SAT literal
+                            self.v.conflicts += 1;
+                            conflict_c += 1;
+                            continue 'main;
                         }
-                    };
-
-                    if complete_sat_model && th_res == lbool::TRUE {
-                        // Model found and validated
-                        return lbool::TRUE;
-                    } else if th_res == lbool::UNDEF {
-                        // some theory propagations
-                        continue 'outer
-                    } else if th_res == lbool::FALSE {
-                        // conflict, we backtracked and propagated a SAT literal
-                        self.v.conflicts += 1;
-                        conflict_c += 1;
-                        continue 'outer;
                     } else {
-                        // proper decision
+                        // proper decision, keep `next`
                         self.v.decisions += 1;
                     }
                 }
@@ -1336,6 +1353,8 @@ impl SolverV {
                 let mut retain = true;
                 if reason == CRef::UNDEF {
                     retain = true;
+                } else if reason == CRef::SPECIAL {
+                    retain = self.level(x) > 0; // only keep non-level-0 propagations
                 } else {
                     let c = self.ca.get_ref(reason);
                     for k in 1..c.size() {
@@ -1411,7 +1430,20 @@ impl SolverV {
 
         let mut i: u32 = 1;
         loop {
-            let c = self.ca.get_mut(cr);
+            // theory propagation
+            if cr == CRef::SPECIAL {
+                if self.vars.level(p.var()) == 0 {
+                    continue; // level 0, just continue
+                } else {
+                    // we just bail out here, even though the theory propagation
+                    // could be caused by propagations that ultimately
+                    // come from level 0
+                    // TODO: actually perform resolution here
+                    return false;
+                }
+            }
+
+            let c = self.ca.get_ref(cr);
             if i < c.size() {
                 // Checking `p`-parents `l`:
                 let l: Lit = c[i];
