@@ -53,6 +53,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "batsat-sudoku"
+version = "0.1.0"
+dependencies = [
+ "batsat 0.2.0",
+ "env_logger 0.5.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "bit-vec"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
