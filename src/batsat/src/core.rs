@@ -1303,10 +1303,8 @@ impl SolverV {
                 }
             }
             // Swap-in this literal at index 1:
-            let p = out_learnt[max_i];
-            out_learnt[max_i] = out_learnt[1];
-            out_learnt[1] = p;
-            self.level_lit(p)
+            out_learnt.swap(max_i, 1);
+            self.level_lit(out_learnt[1])
         };
 
         for &lit in &self.analyze_toclear {
@@ -2055,6 +2053,7 @@ struct ShrinkStackElem {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 enum Seen {
     UNDEF,
     SOURCE,
