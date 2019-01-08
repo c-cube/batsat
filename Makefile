@@ -20,13 +20,15 @@ build-ipasir:
 	@cargo build --release -p batsat-ipasir
 
 check: prebuild
-	@cargo check ${FLAGS} --all-features
+	@cargo check ${FLAGS} --all --all-features
 
 clean:
 	@cargo clean
 
 doc:
 	@cargo doc
+
+test: test-rust test-benchs test-sudoku-fast
 
 test-benchs: build
 	@make -C benchs
@@ -37,7 +39,18 @@ test-benchs-debug: build-debug
 test-rust: prebuild
 	@cargo test --release --all-features
 
-test: test-rust test-benchs
+check-build-sudoku:
+	@cargo check -p batsat-sudoku
+
+
+SUDOKU_BENCHS_FAST= ./benchs/sudoku/sudoku.txt
+SUDOKU_BENCHS_SLOW= $(SUDOKU_BENCHS_FAST) ./benchs/sudoku/top1465.txt
+
+test-sudoku-fast: check-build-sudoku
+	@for file in $(SUDOKU_BENCHS_FAST) ; do ./sudoku.sh $$file > /dev/null ; done
+
+test-sudoku-slow: check-build-sudoku test-sudoku-fast
+	@for file in $(SUDOKU_BENCHS_SLOW) ; do ./sudoku.sh $$file > /dev/null ; done
 
 .PHONY: prebuild check release clean
 
