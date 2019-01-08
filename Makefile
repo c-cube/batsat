@@ -5,13 +5,16 @@ build:
 	@cargo build --release ${FLAGS}
 	@ln -sf target/release/batsat-bin
 
-# NOTE: doesn't work yet, see https://github.com/rust-lang/cargo/issues/5015
 build-log:
-	@cargo build --release ${FLAGS} --features "batsat/logging batsat-bin/logging"
+	@cd src/batsat-bin && cargo build --release ${FLAGS} --features "logging"
 	@ln -sf target/release/batsat-bin
 
 build-debug:
 	@cargo build ${FLAGS}
+	@ln -sf target/debug/batsat-bin
+
+build-debug-log:
+	@cd src/batsat-bin && cargo build ${FLAGS} --features "logging"
 	@ln -sf target/debug/batsat-bin
 
 all: build test
