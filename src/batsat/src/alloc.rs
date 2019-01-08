@@ -82,7 +82,9 @@ pub struct Ref<T: Copy>(u32, PhantomData<fn(T) -> T>);
 
 impl<T: Copy> fmt::Debug for Ref<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Ref").field(&self.0).finish()
+        if self == &Ref::UNDEF { write!(f, "UNDEF") }
+        else if self == &Ref::SPECIAL { write!(f, "SPECIAL") }
+        else { f.debug_tuple("Ref").field(&self.0).finish() }
     }
 }
 impl<T: Copy> PartialEq for Ref<T> {
