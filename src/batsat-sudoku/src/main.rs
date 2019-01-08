@@ -16,7 +16,7 @@ mod bref;
 use {
     crate::{
         bref::Ref as BRef,
-        grid::{Grid, Cell, CellValue, Position}, solve::Solver, },
+        grid::{Grid, Cell, }, solve::Solver, },
 };
 
 /// Result type.

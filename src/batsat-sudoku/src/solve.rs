@@ -135,7 +135,7 @@ impl Solver0 {
         }
     }
 
-    // update grid using `trail`.
+    /// update grid using `trail`.
     fn update_grid(&mut self, trail: &[BLit]) {
         if ! self.ok() { return; }
 
@@ -147,6 +147,18 @@ impl Solver0 {
                 match self.grid[pos] {
                     Cell::Empty => {
                         self.grid[pos] = Cell::Full(n);
+
+                        /* TODO: propagate that the other values are now impossible
+                        if self.propagate {
+                            // propagate `¬pos=n2` for n!=n2
+                            for n2 in 1..=9 {
+                                if n2 == n { continue }
+
+                                let lit2 = self.lm.find((pos,n2));
+                                arg.propagate(!lit2);
+                            }
+                        }
+                        */
                     },
                     Cell::Full(n2) if n == n2 => (),
                     Cell::Full(n2) => {
@@ -341,10 +353,9 @@ impl sat::Theory for Solver0 {
 
     fn explain_propagation(&mut self, p: BLit) -> &[BLit] {
         assert!(self.propagate);
-        assert!(p.sign()); // only propagate positive lits
-        let ((line,col),_n) = self.lm.lit_to_pred[p.var()];
+        let ((line,col),n) = self.lm.lit_to_pred[p.var()];
 
-        {
+        if p.sign() {
             // check if it's in column
             let col_full =
                 (0..9).all(|i| i == line || self.grid[(i,col)].full());
@@ -356,15 +367,22 @@ impl sat::Theory for Solver0 {
                     if i == line { continue }
                     let pos = (i,col);
                     if let Cell::Full(n) = self.grid[pos] {
-                        self.lits.push(self.lm.find((pos,n)));
+                        self.lits.push(! self.lm.find((pos,n)));
                     } else {
                         unreachable!()
                     }
                 }
+                trace!("explain propagation of {:?} using {:?}", p, &self.lits[..]);
                 return &self.lits
             }
+
+            panic!("cannot explain propagation of {:?}", p)
+        } else {
+            unimplemented!("negative propagations");
+            // TODO: handle propagation of `((line,col)!=n` because `((line,col)=n2`
+            // - find the actual cell value
+            // - explain that `(line,col)=n2 ==> (line,col)!=n`
         }
-        panic!("cannot explain propagation of {:?}", p)
     }
 }
 
