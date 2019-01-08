@@ -86,9 +86,9 @@ impl Default for Basic {
 pub struct Stats {
     basic: Basic,
     pub n_restarts: usize,
-    pub n_clauses: usize,
-    pub n_theory: usize,
-    pub n_learnt: usize,
+    pub n_clauses: u64,
+    pub n_theory: u64,
+    pub n_learnt: u64,
     pub n_gc: usize,
 }
 
@@ -97,6 +97,7 @@ impl Callbacks for Stats {
     fn stop(&self) -> bool { self.basic.stop() }
 
     fn on_restart(&mut self) { self.n_restarts += 1 }
+    #[inline(always)]
     fn on_gc(&mut self, _: usize, _: usize) { self.n_gc += 1 }
     fn on_new_clause(&mut self, _: &[Lit], k: ClauseKind) {
         self.n_clauses += 1;

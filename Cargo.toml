@@ -5,6 +5,13 @@ members = [
   "src/batsat",
   "src/batsat-bin",
   "src/batsat-ipasir",
+  "src/batsat-sudoku",
+]
+
+default-members = [
+  "src/batsat",
+  "src/batsat-bin",
+  "src/batsat-ipasir",
 ]
 
 [profile.release]
