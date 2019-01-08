@@ -57,6 +57,7 @@ mod system;
 
 fn main() {
     env_logger::init();
+    debug!("batsat-bin: start");
     let exitcode = main2().unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1)
@@ -155,7 +156,7 @@ type MSolver = Solver<CB>; // specialized solver
 fn main2() -> io::Result<i32> {
     let resource = system::ResourceMeasure::new();
 
-    let matches = App::new("batsain")
+    let matches = App::new("batsat-bin")
         .version("0.0.2")
         .author("Simon Cruanes")
         .about("Adaptation of MiniSat/RatSat in Rust")
