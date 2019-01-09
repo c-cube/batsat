@@ -6,7 +6,7 @@
 
 extern crate batsat;
 
-use batsat::{Solver,Var,Lit,lbool,SolverInterface,BasicSolver};
+use batsat::{self as sat, Var, Lit, lbool, SolverInterface};
 use std::mem;
 use std::boxed::Box;
 use std::os::raw::{c_char,c_void,c_int};
@@ -15,22 +15,34 @@ static NAME : &'static str = "batsat-0.2\0";
 
 /// The wrapper around a solver. It contains partial clauses, assumptions, etc.
 struct IpasirSolver {
-    solver: BasicSolver,
+    solver: SAT,
     vars: Vec<Var>, // int->var
     cur: Vec<Lit>, // current clause
     assumptions: Vec<Lit>,
+}
+
+type SAT = sat::Solver<CB>;
+
+type LearntCB = *const extern "C" fn(*mut c_void, *const c_int) -> c_void;
+
+/// Callbacks
+struct CB {
+    basic: sat::BasicCallbacks,
+    lits: Vec<c_int>, // temporary
+    lit_to_int: sat::VMap<c_int>, // reverse mapping lit->int
+    learn_cb: Option<(c_int, *mut c_void, LearntCB)>,
 }
 
 impl IpasirSolver {
     fn new() -> IpasirSolver {
         IpasirSolver {
             vars: Vec::new(),
-            solver: Solver::default(),
+            solver: SAT::new(sat::SolverOpts::default(), CB::new()),
             cur: Vec::new(),
             assumptions: Vec::new() }
     }
 
-    fn decompose(&mut self) -> (&mut BasicSolver, &mut Vec<Lit>, &mut Vec<Lit>) {
+    fn decompose(&mut self) -> (&mut SAT, &mut Vec<Lit>, &mut Vec<Lit>) {
         (&mut self.solver, &mut self.cur, &mut self.assumptions)
     }
 
@@ -38,7 +50,10 @@ impl IpasirSolver {
     fn get_var(&mut self, x: usize) -> Var {
         while x >= self.vars.len() {
             let i = self.vars.len();
-            self.vars[i] = self.solver.new_var_default();
+            let v = self.solver.new_var_default();
+            self.vars[i] = v;
+            // reverse mapping
+            self.solver.cb_mut().lit_to_int.insert(v, x as c_int, 0);
         }
         self.vars[x]
     }
@@ -48,6 +63,38 @@ impl IpasirSolver {
         assert!(lit != 0);
         let v = self.get_var(lit.abs() as usize);
         Lit::new(v, lit>0)
+    }
+}
+
+impl CB {
+    fn new() -> Self {
+        CB {
+            basic: sat::BasicCallbacks::new(),
+            lits: vec!(),
+            lit_to_int: sat::VMap::new(),
+            learn_cb: None,
+        }
+    }
+}
+
+impl batsat::Callbacks for CB {
+    fn on_new_clause(&mut self, lits: &[Lit], kind: sat::ClauseKind) {
+        if self.learn_cb.is_none() { return }
+        if kind != sat::ClauseKind::Learnt { return }
+
+        let learn = &mut self.learn_cb.unwrap();
+        if lits.len() > learn.0 as usize { return } // max len
+
+        self.lits.clear();
+        for lit in lits {
+            let mut i = self.lit_to_int[lit.var()];
+            if !lit.sign() { i = -i }
+            self.lits.push(i);
+        }
+        self.lits.push(0);
+        unsafe {
+            (*learn.2)(learn.1, self.lits.as_ptr());
+        }
     }
 }
 
@@ -174,7 +221,7 @@ pub extern "C" fn ipasir_set_terminate(
         let should_stop = terminate(state) != 0;
         should_stop
     };
-    s.solver.cb_mut().set_stop(f);
+    s.solver.cb_mut().basic.set_stop(f);
 
     mem::forget(s)
 }
@@ -184,7 +231,14 @@ pub extern "C" fn ipasir_set_learn(
     ptr: *mut c_void,
     state: *mut c_void,
     max_len: c_int,
-    learn: extern "C" fn(*mut c_void, *mut c_int) -> c_void
+    learn: LearntCB
 ) {
-    // FIXME
+    let mut s = get_solver(ptr);
+
+    {
+        let cb = s.solver.cb_mut();
+        cb.learn_cb = Some ((max_len, state, learn));
+    }
+
+    mem::forget(s)
 }
