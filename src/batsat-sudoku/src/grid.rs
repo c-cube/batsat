@@ -16,15 +16,10 @@ pub enum Cell {
 #[derive(Clone,Debug)]
 pub struct Grid {
     cells: [[Cell; DIM]; DIM],
-    view: View, // used to give views of columns, rows, squares
 }
-
-pub type View = [(Position,Cell); DIM];
 
 /// A position in the grid.
 pub type Position = (u8, u8);
-
-fn mk_view() -> View { [((0,0), Cell::Empty); DIM] }
 
 impl std::cmp::PartialEq<u8> for Cell {
     fn eq(&self, x: &u8) -> bool {
@@ -44,7 +39,7 @@ impl Cell {
 impl Grid {
     /// New sudoku, from the given grid.
     pub fn new(cells: [[Cell; DIM]; DIM]) -> Self {
-        Grid { cells, view: mk_view(), }
+        Grid { cells, }
     }
 
     /// Iterate over all cells.

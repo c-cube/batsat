@@ -353,7 +353,7 @@ impl sat::Theory for Solver0 {
 
     fn explain_propagation(&mut self, p: BLit) -> &[BLit] {
         assert!(self.propagate);
-        let ((line,col),n) = self.lm.lit_to_pred[p.var()];
+        let ((line,col),_n) = self.lm.lit_to_pred[p.var()];
 
         if p.sign() {
             // check if it's in column
