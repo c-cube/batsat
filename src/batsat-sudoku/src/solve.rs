@@ -367,7 +367,7 @@ impl sat::Theory for Solver0 {
                     if i == line { continue }
                     let pos = (i,col);
                     if let Cell::Full(n) = self.grid[pos] {
-                        self.lits.push(! self.lm.find((pos,n)));
+                        self.lits.push(self.lm.find((pos,n)));
                     } else {
                         unreachable!()
                     }
