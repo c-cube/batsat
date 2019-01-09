@@ -40,10 +40,18 @@ fn main() -> Result<()> {
     for file in args {
         info!("process sudoku file {:?}", file);
 
+        let mut now = std::time::Instant::now();
+
         let file = std::fs::File::open(file)?;
         let grids = parse::parse(file)?;
+        let n = grids.len();
 
-        println!("parsed {} grid(s)", grids.len());
+        println!("parsed {} grid(s)", n);
+        info!("parsed {} grid(s) (in {:.3}s)", n, {
+                let dur = now.elapsed();
+                dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
+        });
+        now = std::time::Instant::now();
 
         for grid in grids {
             println!("{}\nsolve grid\n{}", sep, grid.render());
@@ -64,6 +72,11 @@ fn main() -> Result<()> {
                 },
             }
         }
+
+        info!("solved {} grid(s) (in {:.3}s)", n, {
+                let dur = now.elapsed();
+                dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
+        });
     }
     Ok(())
 }
