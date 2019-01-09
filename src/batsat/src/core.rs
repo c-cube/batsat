@@ -676,6 +676,7 @@ impl<Cb:Callbacks> Solver<Cb> {
                 }
 
                 if has_propagated {
+                    self.v.th_st.clear(); // be sure to cleanup
                     lbool::UNDEF
                 } else {
                     lbool::TRUE // Model validated without further work needed
@@ -692,7 +693,6 @@ impl<Cb:Callbacks> Solver<Cb> {
                 };
                 self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
                 mem::swap(&mut local_confl_cl, &mut self.tmp_c_th); // re-use lits
-                self.v.th_st.clear(); // discard lemmas/propagations
                 lbool::FALSE
             }
         }
@@ -1711,6 +1711,7 @@ impl SolverV {
         self.qhead = trail_lim_level as i32;
         self.vars.trail.resize(trail_lim_level, Lit::UNDEF);
         // eprintln!("decision_level {} -> {}", self.trail_lim.len(), level);
+        self.th_st.clear();
         self.vars.trail_lim.resize(level as usize, 0);
     }
 
@@ -2121,6 +2122,7 @@ impl VarData {
 }
 
 impl PartialEq for Watcher {
+    #[inline(always)]
     fn eq(&self, rhs: &Self) -> bool {
         self.cref == rhs.cref
     }
@@ -2152,6 +2154,7 @@ impl Default for Seen {
 }
 
 impl Seen {
+    #[inline(always)]
     fn is_seen(&self) -> bool {
         *self != Seen::UNDEF
     }
