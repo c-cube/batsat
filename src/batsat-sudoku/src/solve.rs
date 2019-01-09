@@ -218,6 +218,7 @@ impl Solver0 {
                 let pos = (line,col);
 
                 trace!("propagate only unassigned pos {:?} to {}", pos, value);
+                trace!("current grid:\n{}", self.grid.render());
                 let lit = self.lm.find((pos,value));
                 arg.propagate(lit);
             }
@@ -363,8 +364,7 @@ impl sat::Theory for Solver0 {
             if col_full {
                 // we can explain propagation using the whole column
                 self.lits.clear();
-                for i in 0..9 {
-                    if i == line { continue }
+                for i in (0..9).filter(|&j| j != line) {
                     let pos = (i,col);
                     if let Cell::Full(n) = self.grid[pos] {
                         self.lits.push(self.lm.find((pos,n)));
