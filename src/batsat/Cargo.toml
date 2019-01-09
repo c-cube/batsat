@@ -1,8 +1,8 @@
 [package]
 name = "batsat"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
-description = "SAT solver in Rust"
+description = "Extensible SAT solver in Rust"
 homepage = "https://github.com/c-cube/batsat"
 repository = "https://github.com/c-cube/batsat"
 readme = "../../README.md"
@@ -10,6 +10,12 @@ keywords = ["sat", "minisat"]
 categories = ["algorithms"]
 license = "MIT"
 edition = "2018"
+
+publish = true
+
+exclude = [
+  "../../benchs", "../../papers", "../../scripts"
+]
 
 [dependencies]
 

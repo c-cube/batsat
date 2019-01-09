@@ -3,6 +3,8 @@ name = "batsat-ipasir"
 version = "0.1.0"
 authors = ["Simon Cruanes <simon.cruanes.2007@m4x.org>"]
 
+publish = false
+
 [lib]
 crate-type = ["staticlib", "cdylib"]
 

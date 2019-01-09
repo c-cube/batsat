@@ -10,12 +10,14 @@ keywords = ["sat", "dimacs"]
 categories = ["algorithms", "command-line-utilities"]
 license = "MIT"
 
+publish = false
+
 [dependencies]
 
 clap = "2.31.2"
 flate2 = "1.0"
 cpu-time = "0.1"
-batsat = {version="^0.2", path="../batsat"}
+batsat = {version="^0.3", path="../batsat"}
 #batsat = {version="^0.2", path="../batsat", features=["logging"]}
 
 log = {version = "0.4", optional=true}
