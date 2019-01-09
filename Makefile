@@ -50,7 +50,8 @@ SUDOKU_BENCHS_FAST= ./benchs/sudoku/sudoku.txt
 SUDOKU_BENCHS_SLOW= $(SUDOKU_BENCHS_FAST) ./benchs/sudoku/top1465.txt
 
 test-sudoku-fast: check-build-sudoku
-	@for file in $(SUDOKU_BENCHS_FAST) ; do ./sudoku.sh $$file > /dev/null ; done
+	@./sudoku.sh $(SUDOKU_BENCHS_FAST) > .sudoku-fast.res
+	@diff .sudoku-fast.res .sudoku-fast.ref # fail if not the same
 
 test-sudoku-slow: check-build-sudoku test-sudoku-fast
 	@for file in $(SUDOKU_BENCHS_SLOW) ; do ./sudoku.sh $$file > /dev/null ; done

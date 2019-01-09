@@ -6,3 +6,4 @@ benchs
 _build
 *.exe
 .merlin
+.sudoku-fast.res
