@@ -1963,7 +1963,7 @@ impl SolverV {
             simp_db_assigns: -1,
             simp_db_props: 0,
             progress_estimate: 0.0,
-            remove_satisfied: true,
+            remove_satisfied: false, // revert b5464ec81f76db9315dac3276b64614dd59cfe49
             next_var: Var::from_idx(0),
 
             ca: ClauseAllocator::new(),
