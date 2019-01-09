@@ -29,6 +29,7 @@ use {
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct Var(u32);
 
 impl fmt::Debug for Var {
@@ -66,6 +67,7 @@ impl AsIndex for Var {
 pub type VMap<V> = IntMap<Var, V>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct Lit(u32);
 
 impl Lit {
