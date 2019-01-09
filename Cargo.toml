@@ -21,5 +21,7 @@ lto = true # helps a lot with inlining
 # for `perf`:
 # debug = true 
 
+#debug-assertions = true
+
 [profile.dev]
 opt-level = 1
