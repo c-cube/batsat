@@ -641,13 +641,15 @@ impl<Cb:Callbacks> Solver<Cb> {
     fn call_theory<Th:Theory>(
         &mut self, th: &mut Th, k: TheoryCall, tmp_learnt: &mut Vec<Lit>
     ) -> lbool {
-        let confl_cl = &mut self.tmp_c_th;
-        confl_cl.clear();
-        let mut th_arg = TheoryArg{
-            v: &mut self.v,
-            lits: confl_cl,
-            conflict: false,
-            costly: false,
+        let mut th_arg = {
+            let confl_cl = &mut self.tmp_c_th;
+            confl_cl.clear();
+            TheoryArg{
+                v: &mut self.v,
+                lits: confl_cl,
+                conflict: false,
+                costly: false,
+            }
         };
         // call theory
         match k {
@@ -662,8 +664,8 @@ impl<Cb:Callbacks> Solver<Cb> {
             mem::swap(&mut local_confl_cl, th_arg.lits);
             drop(th_arg);
 
-            debug!("theory conflict {:?} (costly: {})", confl_cl, costly);
-            self.v.sort_clause_lits(confl_cl); // as if it were a normal clause
+            debug!("theory conflict {:?} (costly: {})", local_confl_cl, costly);
+            self.v.sort_clause_lits(&mut local_confl_cl); // as if it were a normal clause
             let learnt = {
                 let r = Conflict::ThLemma {lits: &local_confl_cl, add: costly};
                 self.v.analyze(r, &self.learnts, tmp_learnt, th)
@@ -2075,9 +2077,6 @@ impl VarState {
     }
 }
 
-#[derive(Copy,Clone)]
-struct TheoryConflictBuilder{ costly: bool, }
-
 // `Solver` is a valid theory argument
 impl<'a> TheoryArgument for TheoryArg<'a> {
     #[inline(always)]
@@ -2109,6 +2108,7 @@ impl<'a> TheoryArgument for TheoryArg<'a> {
     }
 
     fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
+        if lits.len() == 0 { panic!("conflicts must have a least one literal") }
         if !self.conflict {
             self.conflict = true;
             self.costly = costly;
