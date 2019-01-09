@@ -287,16 +287,12 @@ impl Solver0 {
     }
 
     // convert internal state back to what SAT expects
-    fn return_res<S>(&mut self, arg: &mut S) -> theory::CheckRes<S::Conflict>
-        where S: theory::TheoryArgument
-    {
+    fn return_res<S>(&mut self, arg: &mut S) where S: theory::TheoryArgument {
         if self.ok() {
             self.solution = Some((*self.grid).clone());
-            theory::CheckRes::Done
         } else {
             assert!(self.status.confl.len() >= 2);
-            let c = arg.mk_conflict(&mut self.status.confl, true);
-            theory::CheckRes::Conflict(c)
+            arg.raise_conflict(&mut self.status.confl, true);
         }
     }
 }
@@ -319,9 +315,7 @@ impl sat::Theory for Solver0 {
         }
     }
 
-    fn final_check<S>(&mut self, arg: &mut S) -> theory::CheckRes<S::Conflict>
-        where S: theory::TheoryArgument
-    {
+    fn final_check<S>(&mut self, arg: &mut S) where S: theory::TheoryArgument {
         debug!("final-check");
         assert!(self.ok());
         let trail = &arg.model()[..];
@@ -334,14 +328,12 @@ impl sat::Theory for Solver0 {
         self.return_res(arg)
     }
 
-    fn partial_check<S>(&mut self, arg: &mut S) -> theory::CheckRes<S::Conflict>
-        where S: theory::TheoryArgument
-    {
+    fn partial_check<S>(&mut self, arg: &mut S) where S: theory::TheoryArgument {
         debug!("partial-check");
         assert!(self.ok());
         let m = arg.model();
         if m.len() <= *self.trail_len {
-            return theory::CheckRes::Done
+            return
         }
 
         let trail = &m[*self.trail_len..];
