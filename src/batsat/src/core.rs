@@ -1301,6 +1301,10 @@ impl SolverV {
                     } else {
                         out_learnt.push(q); // part of the learnt clause
                     }
+                } else if self.seen[q.var()] == Seen::REMOVABLE {
+                    // the resolution goes back "up" the trail to `q`, which was
+                    // resolved again. This is wrong.
+                    panic!("possible cycle in conflict graph between {:?} and {:?}", p, q);
                 }
             }
             // Select next literal in the trail to look at:
@@ -1312,12 +1316,23 @@ impl SolverV {
             p = self.vars.trail[index - 1];
             index -= 1;
             cur_clause = ResolveWith::Resolve(p, self.vars.reason(p.var()));
-            self.seen[p.var()] = Seen::UNDEF;
+            self.seen[p.var()] = Seen::REMOVABLE;
             path_c -= 1;
 
             if path_c <= 0 {
                 break;
             }
+        }
+
+        // cleanup literals flagged `REMOVABLE`
+        index = self.vars.trail.len()-1;
+        loop {
+            let q = self.vars.trail[index];
+            if self.seen[q.var()] == Seen::REMOVABLE {
+                self.seen[q.var()] = Seen::UNDEF;
+            }
+            index -= 1;
+            if q == p { break }
         }
 
         // check that the first literal is a decision lit at conflict_level
