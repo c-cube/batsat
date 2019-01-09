@@ -280,7 +280,7 @@ impl ops::BitOrAssign for lbool {
 }
 
 /// The source of a clause
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Kind {
     Axiom,
     Learnt,

@@ -187,7 +187,6 @@ struct SolverV {
     // used, except `seen` wich is used in several places.
     seen: VMap<Seen>,
     minimize_stack: Vec<ShrinkStackElem>,
-    analyze_stack: Vec<Lit>,
     analyze_toclear: Vec<Lit>,
 
     // Resource contraints:
@@ -1960,7 +1959,6 @@ impl SolverV {
 
             seen: VMap::new(),
             minimize_stack: vec![],
-            analyze_stack: vec![],
             analyze_toclear: vec![],
             max_learnts: 0.0,
             learntsize_adjust_confl: 0.0,
