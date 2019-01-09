@@ -2,30 +2,15 @@
 use std::default::Default;
 use crate::clause::{Var,Lit,lbool};
 
-/// Result returned by the `final_check` call.
-///
-/// A theory can validate the model (returning `Done`)
-/// or signal a conflict (`Conflict`). If the theory also pushed clauses
-/// upon `Done` then the model search will resume.
-/// If the theory returns `Conflict(c)` then `c` must be a clause false
-/// in the current model.
-#[derive(Debug,PartialEq,Eq,Clone,Copy)]
-pub enum CheckRes<C> {
-    Done,
-    Conflict(C),
-}
-
 /// Theory that parametrizes the solver and can react on events.
 pub trait Theory {
     /// Check the model candidate `model` thoroughly.
     ///
-    /// Call `TheoryArgument.model()` to obtain the model.
+    /// Call `acts.model()` to obtain the model.
     /// If the partial model isn't satisfiable in the theory then
-    /// this *must* return `CheckRes::Conflict` and push a conflict
-    /// clause.
-    fn final_check<'a, S>(&mut self, acts: &mut S)
-        -> CheckRes<S::Conflict>
-        where S: TheoryArgument;
+    /// this *must* call `acts.raise_conflict` with a valid lemma that is
+    /// the negation of a subset of the `model`.
+    fn final_check<'a, S>(&mut self, acts: &mut S) where S: TheoryArgument;
 
     /// Push a new backtracking level
     fn create_level(&mut self);
@@ -42,14 +27,12 @@ pub trait Theory {
     /// but the theory may remember the length of the previous slice and use
     /// `acts.model()[prev_len..]` to get only the new literals.
     ///
-    /// This can return `Done` even if the partial model is invalid,
-    /// if the theory deems it too costly to verify.
+    /// This is allowed to not raise a conflict even if the partial
+    /// model is invalid, if the theory deems it too costly to verify.
     /// The model will be checked again in `final_check`.
     ///
-    /// The default implementation just returns `Done` without doing anything.
-    fn partial_check<S>(&mut self, _acts: &mut S) -> CheckRes<S::Conflict>
-        where S: TheoryArgument
-    { CheckRes::Done }
+    /// The default implementation just returns without doing anything.
+    fn partial_check<S>(&mut self, _acts: &mut S) where S: TheoryArgument {}
 
 
     /// If the theory uses `TheoryArgument::propagate`, it must implement
@@ -64,9 +47,6 @@ pub trait Theory {
 ///
 /// This is where the theory can perform actions such as adding clauses.
 pub trait TheoryArgument {
-    /// A conflict clause, which can only be created by `mk_conflict`
-    type Conflict;
-
     /// Current (possibly partial) model
     fn model(&self) -> &[Lit];
 
@@ -77,6 +57,8 @@ pub trait TheoryArgument {
     ///
     /// This is useful for lemma-on-demand or theory splitting, but can
     /// be relatively costly.
+    ///
+    /// NOTE: This is not fully supported yet.
     fn add_theory_lemma(&mut self, c: &[Lit]);
 
     /// Propagate the literal `p`, which is theory-implied by the current trail.
@@ -86,15 +68,20 @@ pub trait TheoryArgument {
     /// during conflict resolution.
     fn propagate(&mut self, p: Lit);
 
-    /// Make a conflict clause.
+    /// Add a conflict clause.
     ///
-    /// This should be used in the theory to returns `FinalCheckRes::Conflict`.
+    /// This should be used in the theory when the current partial model
+    /// is unsatisfiable. It will force the SAT solver to backtrack.
+    /// All propagations added with `propagate` during this session
+    /// will be discarded.
     ///
     /// ## Params
+    /// - `lits` a clause that is a tautology of the theory (ie a lemma)
+    ///     and that is false in the current (partial) model.
     /// - `costly` if true, indicates that the conflict `c` was costly to produce.
     ///     This is a hint for the SAT solver to keep the theory lemma that corresponds
     ///     to `c` along with the actual learnt clause.
-    fn mk_conflict(&mut self, lits: &[Lit], costly: bool) -> Self::Conflict;
+    fn raise_conflict(&mut self, lits: &[Lit], costly: bool);
 
     /// Value of given var in current model
     #[inline(always)]
@@ -119,8 +106,7 @@ impl Default for EmptyTheory {
 
 // theory for any context.
 impl Theory for EmptyTheory {
-    fn final_check<S>(&mut self, _: &mut S)
-        -> CheckRes<S::Conflict> where S: TheoryArgument { CheckRes::Done }
+    fn final_check<S>(&mut self, _: &mut S) where S: TheoryArgument { }
     fn create_level(&mut self) { self.0 += 1 }
     fn pop_levels(&mut self, n: usize) {
         debug_assert!(self.0 >= n);

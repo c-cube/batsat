@@ -29,7 +29,7 @@ use {
         self, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
         VMap, lbool, Lit, Var},
     crate::callbacks::{Callbacks,ProgressStatus},
-    crate::theory::{Theory,TheoryArgument,self},
+    crate::theory::{Theory,TheoryArgument,},
     crate::interface::SolverInterface,
 };
 
@@ -642,68 +642,73 @@ impl<Cb:Callbacks> Solver<Cb> {
         &mut self, th: &mut Th, k: TheoryCall, tmp_learnt: &mut Vec<Lit>
     ) -> lbool {
         let confl_cl = &mut self.tmp_c_th;
-        let r = {
-            let v = &mut self.v;
-            confl_cl.clear();
-            let mut th_arg = TheoryArg(v, confl_cl);
-            match k {
-                TheoryCall::Partial => th.partial_check(&mut th_arg),
-                TheoryCall::Final => th.final_check(&mut th_arg),
-            }
+        confl_cl.clear();
+        let mut th_arg = TheoryArg{
+            v: &mut self.v,
+            lits: confl_cl,
+            conflict: false,
+            costly: false,
         };
-        match r {
-            theory::CheckRes::Done => {
-                let mut has_propagated = false;
+        // call theory
+        match k {
+            TheoryCall::Partial => th.partial_check(&mut th_arg),
+            TheoryCall::Final => th.final_check(&mut th_arg),
+        }
+        if th_arg.conflict {
+            let costly = th_arg.costly;
 
-                for &p in self.v.th_st.props().iter() {
-                    trace!("add theory propagation {:?}", p);
-                    let value = self.v.vars.value_lit(p);
-                    if value == lbool::FALSE {
-                        // conflict: propagation of a negative lit
-                        debug!("inconsistent theory propagation {:?}", p);
-                        let learnt = {
-                            let r = Conflict::ThProp(p);
-                            self.v.analyze(r, &self.learnts, tmp_learnt, th)
-                        };
-                        self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
-                        return lbool::FALSE
-                    } else if value == lbool::UNDEF {
-                        has_propagated = true;
-                        let cr = CRef::SPECIAL; // indicates a theory propagation
-                        self.v.vars.unchecked_enqueue(p, cr);
-                    }
-                }
+            // borrow magic
+            let mut local_confl_cl = vec!();
+            mem::swap(&mut local_confl_cl, th_arg.lits);
+            drop(th_arg);
 
-                let mut lemmas = vec!();
-                for c in self.v.th_st.iter_lemmas() {
+            debug!("theory conflict {:?} (costly: {})", confl_cl, costly);
+            self.v.sort_clause_lits(confl_cl); // as if it were a normal clause
+            let learnt = {
+                let r = Conflict::ThLemma {lits: &local_confl_cl, add: costly};
+                self.v.analyze(r, &self.learnts, tmp_learnt, th)
+            };
+            self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
+            mem::swap(&mut local_confl_cl, &mut self.tmp_c_th); // re-use lits
+            lbool::FALSE
+        } else {
+            let mut has_propagated = false;
+
+            for &p in self.v.th_st.props().iter() {
+                trace!("add theory propagation {:?}", p);
+                let value = self.v.vars.value_lit(p);
+                if value == lbool::FALSE {
+                    // conflict: propagation of a negative lit
+                    debug!("inconsistent theory propagation {:?}", p);
+                    let learnt = {
+                        let r = Conflict::ThProp(p);
+                        self.v.analyze(r, &self.learnts, tmp_learnt, th)
+                    };
+                    self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
+                    return lbool::FALSE
+                } else if value == lbool::UNDEF {
                     has_propagated = true;
-                    trace!("add theory lemma {}", c.pp_dimacs());
-                    lemmas.push(c.into());
+                    let cr = CRef::SPECIAL; // indicates a theory propagation
+                    self.v.vars.unchecked_enqueue(p, cr);
                 }
-                // now add lemmas
-                for mut c in lemmas {
-                    self.add_clause_during_search(th, &mut c);
-                }
+            }
 
-                if has_propagated {
-                    self.v.th_st.clear(); // be sure to cleanup
-                    lbool::UNDEF
-                } else {
-                    lbool::TRUE // Model validated without further work needed
-                }
-            },
-            theory::CheckRes::Conflict(TheoryConflictBuilder{costly}) => {
-                let mut local_confl_cl = vec!();
-                mem::swap(&mut local_confl_cl, confl_cl);
-                debug!("theory conflict {:?} (costly: {})", local_confl_cl, costly);
-                self.sort_clause_lits(&mut local_confl_cl); // as if it were a normal clause
-                let learnt = {
-                    let r = Conflict::ThLemma {lits: &mut local_confl_cl, add: costly};
-                    self.v.analyze(r, &self.learnts, tmp_learnt, th)
-                };
-                self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
-                mem::swap(&mut local_confl_cl, &mut self.tmp_c_th); // re-use lits
-                lbool::FALSE
+            let mut lemmas = vec!();
+            for c in self.v.th_st.iter_lemmas() {
+                has_propagated = true;
+                trace!("add theory lemma {}", c.pp_dimacs());
+                lemmas.push(c.into());
+            }
+            // now add lemmas
+            for mut c in lemmas {
+                self.add_clause_during_search(th, &mut c);
+            }
+
+            if has_propagated {
+                self.v.th_st.clear(); // be sure to cleanup
+                lbool::UNDEF
+            } else {
+                lbool::TRUE // Model validated without further work needed
             }
         }
     }
@@ -966,30 +971,6 @@ impl<Cb:Callbacks> Solver<Cb> {
         true
     }
 
-    /// Sort literals of `clause` so that unassigned literals are first,
-    /// followed by literals in decreasing assignment level
-    fn sort_clause_lits(&self, clause: &mut [Lit]) {
-        // sort clause to put unassigned/high level lits first
-        clause.sort_unstable_by(|&lit1, &lit2| {
-            let has_val1 = self.v.value_lit(lit1) != lbool::UNDEF;
-            let has_val2 = self.v.value_lit(lit2) != lbool::UNDEF;
-
-            // unassigned variables come first
-            if has_val1 && !has_val2 { return cmp::Ordering::Greater }
-            if !has_val1 && has_val2 { return cmp::Ordering::Less }
-
-            let lvl1 = self.v.level_lit(lit1);
-            let lvl2 = self.v.level_lit(lit2);
-            lvl2.cmp(&lvl1) // higher level come first
-        });
-
-        // check that the first literal is a proper watch
-        debug_assert!(self.v.value_lit(clause[0]) == lbool::UNDEF || {
-            let lvl0 = self.v.level_lit(clause[0]);
-                      clause[1..].iter().all(|&lit2| self.v.level_lit(lit2) <= lvl0)
-        });
-    }
-
     /// Add clause during search
     fn add_clause_during_search<Th:Theory>(
         &mut self, th: &mut Th, clause: &mut Vec<Lit>
@@ -1002,13 +983,18 @@ impl<Cb:Callbacks> Solver<Cb> {
             self.cancel_until(th, 0); // only at level 0
         }
 
-        self.sort_clause_lits(clause);
+        self.v.sort_clause_lits(clause);
         self.add_clause_(clause)
     }
 }
 
-// The theory argument
-struct TheoryArg<'a>(&'a mut SolverV, &'a mut Vec<Lit>);
+/// The temporary theory argument
+struct TheoryArg<'a> {
+    v: &'a mut SolverV,
+    lits: &'a mut Vec<Lit>,
+    conflict: bool,
+    costly: bool,
+}
 
 /// Temporary representation of a learnt clause, produced in `analyze`.
 struct LearntClause<'a> {
@@ -1689,6 +1675,30 @@ impl SolverV {
         self.order_heap().build(&vs);
     }
 
+    /// Sort literals of `clause` so that unassigned literals are first,
+    /// followed by literals in decreasing assignment level
+    fn sort_clause_lits(&self, clause: &mut [Lit]) {
+        // sort clause to put unassigned/high level lits first
+        clause.sort_unstable_by(|&lit1, &lit2| {
+            let has_val1 = self.value_lit(lit1) != lbool::UNDEF;
+            let has_val2 = self.value_lit(lit2) != lbool::UNDEF;
+
+            // unassigned variables come first
+            if has_val1 && !has_val2 { return cmp::Ordering::Greater }
+            if !has_val1 && has_val2 { return cmp::Ordering::Less }
+
+            let lvl1 = self.level_lit(lit1);
+            let lvl2 = self.level_lit(lit2);
+            lvl2.cmp(&lvl1) // higher level come first
+        });
+
+        // check that the first literal is a proper watch
+        debug_assert!(self.value_lit(clause[0]) == lbool::UNDEF || {
+            let lvl0 = self.level_lit(clause[0]);
+                      clause[1..].iter().all(|&lit2| self.level_lit(lit2) <= lvl0)
+        });
+    }
+
     /// Move to the given clause allocator, where clause indices might differ
     fn reloc_all(
         &mut self,
@@ -2070,36 +2080,41 @@ struct TheoryConflictBuilder{ costly: bool, }
 
 // `Solver` is a valid theory argument
 impl<'a> TheoryArgument for TheoryArg<'a> {
-    type Conflict = TheoryConflictBuilder;
+    #[inline(always)]
+    fn value_lit(&self, lit: Lit) -> lbool { self.v.vars.value_lit(lit) }
 
     #[inline(always)]
-    fn value_lit(&self, lit: Lit) -> lbool { self.0.vars.value_lit(lit) }
+    fn value(&self, v: Var) -> lbool { self.v.vars.value(v) }
 
     #[inline(always)]
-    fn value(&self, v: Var) -> lbool { self.0.vars.value(v) }
-
-    #[inline(always)]
-    fn model(&self) -> &[Lit] { &self.0.vars.trail }
+    fn model(&self) -> &[Lit] { &self.v.vars.trail }
 
     // make a new (decision) literal
     fn mk_new_lit(&mut self) -> Lit {
-        let v = self.0.new_var(lbool::FALSE, true);
+        let v = self.v.new_var(lbool::FALSE, true);
         Lit::new(v, true)
     }
 
     fn add_theory_lemma(&mut self, c: &[Lit]) {
-        self.0.th_st.push_lemma(c)
+        if !self.conflict {
+            self.v.th_st.push_lemma(c)
+        }
     }
 
     #[inline(always)]
     fn propagate(&mut self, p: Lit) {
-        self.0.th_st.push_propagate(p);
+        if !self.conflict {
+            self.v.th_st.push_propagate(p);
+        }
     }
 
-    fn mk_conflict(&mut self, lits: &[Lit], costly: bool) -> Self::Conflict {
-        self.1.clear();
-        self.1.extend_from_slice(lits);
-        TheoryConflictBuilder {costly}
+    fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
+        if !self.conflict {
+            self.conflict = true;
+            self.costly = costly;
+            self.lits.clear();
+            self.lits.extend_from_slice(lits);
+        }
     }
 }
 
