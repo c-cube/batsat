@@ -1229,6 +1229,7 @@ impl SolverV {
 
         let mut cur_clause = ResolveWith::Init(orig);
         let mut path_c = 0;
+        #[allow(unused)]
         let mut p = Lit::UNDEF;
 
         out_learnt.push(Lit::UNDEF); // leave room for the UIP
