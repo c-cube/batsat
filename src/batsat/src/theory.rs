@@ -66,7 +66,12 @@ pub trait TheoryArgument {
     /// This will add `p` on the trail. The theory must be ready to
     /// provide an explanation via `Theory::explain_prop(p)` if asked to
     /// during conflict resolution.
-    fn propagate(&mut self, p: Lit);
+    ///
+    /// Returns `true` if propagation succeeded (or did nothing), `false`
+    /// if the propagation results in an immediate conflict.
+    /// If this returns `false`, the theory should avoid doing more work and
+    /// return as early as reasonably possible.
+    fn propagate(&mut self, p: Lit) -> bool;
 
     /// Add a conflict clause.
     ///
