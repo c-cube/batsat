@@ -1,6 +1,6 @@
 [package]
 name = "batsat"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
 description = "Extensible SAT solver in Rust"
 homepage = "https://github.com/c-cube/batsat"
