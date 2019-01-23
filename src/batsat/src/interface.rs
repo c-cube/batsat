@@ -16,6 +16,7 @@ pub trait SolverInterface {
     fn num_conflicts(&self) -> u64;
     fn num_propagations(&self) -> u64;
     fn num_decisions(&self) -> u64;
+    fn num_restarts(&self) -> u64;
 
     fn is_ok(&self) -> bool;
 

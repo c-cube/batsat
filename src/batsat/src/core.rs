@@ -314,6 +314,7 @@ impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
     fn num_conflicts(&self) -> u64 { self.v.num_conflicts() }
     fn num_propagations(&self) -> u64 { self.v.num_props() }
     fn num_decisions(&self) -> u64 { self.v.decisions }
+    fn num_restarts(&self) -> u64 { self.v.starts }
 
     fn value_lvl_0(&self, lit: Lit) -> lbool {
         let mut res = self.v.value_lit(lit);
