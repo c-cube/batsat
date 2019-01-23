@@ -7,6 +7,10 @@
   * use this `add theory conflict` in batsmt
   * generalize conflict analysis so every resolution step can use `{CRef,&[Lit],Propagation}`
     (then enable propagations in batsmt)
+  * add `propagate` to the TheoryArg, with `lit * SmallVec<lit>`
+    → need to properly use it in explanation
+      (turn it into a clause on the fly if used in a conflict?
+       or resolve directly anyway?)
 
 - use bitset for more compact `IntMap<K,bool>`
 - redo allocator, ECS style
@@ -19,13 +23,11 @@
 
 - try using https://crates.io/crates/roaring for watch lists?
 
-- parametrize to get SMT like stuff?
 - push/pop
 - try http://contain-rs.github.io/bit-vec/bit_vec/ for IntSet (more compact)
 - nice API around the core solver for unsat cores, push/pop, etc.
   which allocates new literals as needed
 - minimal unsat cores using card constraints
-- optional DRAT output
 - finish ipasir interface
 - ~~Pseudo Boolean~~ cardinality constraints --> minimal unsat cores
 
@@ -40,6 +42,7 @@ http://algo.informatik.uni-tuebingen.de/forschung/sat/SlidesDanielLeBerreWorksho
 
 ## Done
 
+- parametrize to get SMT like-theory
 - optional DRAT output
 - provide closure `|| -> bool` for checking resources
   * move libc dep into the binary itself
