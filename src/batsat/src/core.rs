@@ -186,7 +186,7 @@ struct SolverV {
     // Temporaries (to reduce allocation overhead). Each variable is prefixed by the method in which it is
     // used, except `seen` wich is used in several places.
     seen: VMap<Seen>,
-    minimize_stack: Vec<ShrinkStackElem>,
+    minimize_stack: Vec<Lit>,
     analyze_toclear: Vec<Lit>,
 
     // Resource contraints:
@@ -1388,16 +1388,28 @@ impl SolverV {
         }
     }
 
+    /// An abstraction of the level of a variable
+    #[inline]
+    fn abstract_level(&self, v: Var) -> u32 {
+        1 << (self.level(v) & 31) 
+    }
+
     fn minimize_conflict(&mut self, out_learnt: &mut Vec<Lit>) {
         // Simplify conflict clause:
         self.analyze_toclear.clear();
         self.analyze_toclear.extend_from_slice(&out_learnt);
         let new_size = if self.ccmin_mode == 2 {
+            let mut abstract_levels = 0;
+            for a in out_learnt[1..].iter() {
+                abstract_levels |= self.abstract_level(a.var())
+            }
+
             let mut j = 1;
             for i in 1..out_learnt.len() {
                 let lit = out_learnt[i];
                 // can eliminate `lit` only if it's redundant *and* not a decision
-                if self.reason(lit.var()) == CRef::UNDEF || !self.lit_redundant(lit) {
+                if self.reason(lit.var()) == CRef::UNDEF ||
+                    !self.lit_redundant(lit, abstract_levels) {
                     out_learnt[j] = lit;
                     j += 1;
                 }
@@ -1489,83 +1501,66 @@ impl SolverV {
     ///
     /// It can be removed from `C` if it is propagation-implied
     /// by literals of level 0 exclusively or if `C x p.reason` subsumes `C`.
-    // TODO: port abstract levels from minisat, to make this faster.
-    fn lit_redundant(&mut self, mut p: Lit) -> bool {
-        debug_assert!(self.seen[p.var()] == Seen::UNDEF || self.seen[p.var()] == Seen::SOURCE);
-        debug_assert!(self.reason(p.var()) != CRef::UNDEF);
+    fn lit_redundant(&mut self, p: Lit, abstract_levels: u32) -> bool {
+        self.minimize_stack.clear();
+        self.minimize_stack.push(p);
 
-        let mut cr = self.reason(p.var());
-        let stack = &mut self.minimize_stack;
-        stack.clear();
+        let top = self.analyze_toclear.len();
 
-        let mut i: u32 = 1;
-        loop {
-            // theory propagation
+        while self.minimize_stack.len() > 0 {
+            let q = * self.minimize_stack.last().unwrap();
+            let cr = self.reason(q.var());
+            debug_assert_ne!(cr, CRef::UNDEF);
+            self.minimize_stack.pop();
+
+            // special case: theory propagation
             if cr == CRef::SPECIAL {
-                if self.vars.level(p.var()) == 0 {
+                if self.vars.level(q.var()) == 0 {
                     continue; // level 0, just continue
                 } else {
                     // we just bail out here, even though the theory propagation
                     // could be caused by propagations that ultimately
                     // come from level 0
                     // TODO: actually perform resolution here
+
+                    for a in self.analyze_toclear[top..].iter() {
+                        self.seen[a.var()] = Seen::UNDEF;
+                    }
+                    self.analyze_toclear.resize(top, Lit::UNDEF);
                     return false;
                 }
             }
 
             let c = self.ca.get_ref(cr);
-            if i < c.size() {
-                // Checking `p`-parents `l`:
-                let l: Lit = c[i];
-
-                // Variable at level 0 or previously removable:
-                if self.vars.level(l.var()) == 0 || self.seen[l.var()] == Seen::SOURCE
-                    || self.seen[l.var()] == Seen::REMOVABLE
-                {
-                    i += 1;
+            // `q` comes from some propagation with `c`, check if these lits can
+            // also be eliminated or are already in the learnt clause
+            for &l in c.lits()[1..].iter() {
+                // Variable at level 0 or previously removable: just skip
+                if self.vars.level(l.var()) == 0 || self.seen[l.var()] == Seen::SOURCE {
                     continue;
                 }
 
-                // Check if variable can not be removed for some local reason
-                // (e.g. if it's a decision or has failed to be removed already)
-                if self.vars.reason(l.var()) == CRef::UNDEF || self.seen[l.var()] == Seen::FAILED {
-                    stack.push(ShrinkStackElem::new(0, p));
-                    for elem in stack.iter() {
-                        // elements in the stack can't justify making a literal
-                        // redundant, so remember that
-                        if self.seen[elem.l.var()] == Seen::UNDEF {
-                            self.seen[elem.l.var()] = Seen::FAILED;
-                            self.analyze_toclear.push(elem.l);
-                        }
+                if self.reason(l.var()) != CRef::UNDEF &&
+                    (self.abstract_level(l.var()) & abstract_levels) != 0
+                {
+                    // keep this literal.
+                    // NOTE: if the level of `l` isn't in `abstract_levels`, it
+                    // means it comes from propagations at a decision level
+                    // unrelated to the learnt clause, and therefore is
+                    // somehow implied by an unrelated decision, so there's no
+                    // chance to eliminate `l` via resolutions from the learnt clause.
+                    self.seen[l.var()] = Seen::SOURCE;
+                    self.minimize_stack.push(l);
+                    self.analyze_toclear.push(l);
+                } else {
+                    // cannot remove `l`, cancel
+                    for a in self.analyze_toclear[top..].iter() {
+                        self.seen[a.var()] = Seen::UNDEF;
                     }
-
-                    return false;
+                    self.analyze_toclear.resize(top, Lit::UNDEF);
+                    return false
                 }
-
-                // Recursively check if `l` is redundant itself
-                stack.push(ShrinkStackElem::new(i, p));
-                i = 0;
-                p = l;
-                cr = self.vars.reason(p.var());
-            } else {
-                // Finished with current element `p` and reason `c`:
-                if self.seen[p.var()] == Seen::UNDEF {
-                    self.seen[p.var()] = Seen::REMOVABLE;
-                    self.analyze_toclear.push(p);
-                }
-
-                // Terminate with success if stack is empty:
-                if stack.len() == 0 {
-                    break;
-                }
-
-                // Continue with top element on stack:
-                let last = stack.pop().expect("stack is empty");
-                i = last.i;
-                p = last.l;
-                cr = self.vars.reason(p.var());
             }
-            i += 1;
         }
 
         true
@@ -2168,20 +2163,12 @@ struct WatcherDeleted<'a> {
     ca: &'a ClauseAllocator,
 }
 
-#[derive(Debug, Clone, Copy)]
-/// Elements of the stack used for conflict clause minimization
-struct ShrinkStackElem {
-    i: u32,
-    l: Lit,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 enum Seen {
     UNDEF,
     SOURCE,
     REMOVABLE,
-    FAILED,
 }
 
 mod utils {
@@ -2258,28 +2245,20 @@ impl<'a> Comparator<Var> for VarOrder<'a> {
 }
 
 impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
+    #[inline]
     fn deleted(&self, w: &Watcher) -> bool {
         self.ca.get_ref(w.cref).mark() == 1
     }
 }
 
-impl ShrinkStackElem {
-    fn new(i: u32, l: Lit) -> Self {
-        Self { i, l }
-    }
-}
-
 impl Default for Seen {
-    fn default() -> Self {
-        Seen::UNDEF
-    }
+    #[inline]
+    fn default() -> Self { Seen::UNDEF }
 }
 
 impl Seen {
     #[inline(always)]
-    fn is_seen(&self) -> bool {
-        *self != Seen::UNDEF
-    }
+    fn is_seen(&self) -> bool { *self != Seen::UNDEF }
 }
 
 
