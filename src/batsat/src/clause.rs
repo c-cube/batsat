@@ -279,6 +279,10 @@ impl ops::BitOrAssign for lbool {
     }
 }
 
+impl From<bool> for lbool {
+    fn from(x: bool) -> Self { if x { lbool::TRUE } else { lbool::FALSE } }
+}
+
 /// The source of a clause
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Kind {
