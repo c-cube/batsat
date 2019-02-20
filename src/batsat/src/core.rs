@@ -305,7 +305,7 @@ impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
     fn value_var(&self, v: Var) -> lbool {
         self.model.get(v.idx() as usize).map_or(lbool::UNDEF, |&v| v)
     }
-    fn value_lit(&self, v: Lit) -> lbool { self.value_var(v.var()) ^ !v.sign() }
+    fn value_lit(&self, v: Lit) -> lbool { self.v.vars.value_lit(v) }
     fn get_model(&self) -> &[lbool] { &self.model }
     fn is_ok(&self) -> bool { self.v.ok }
 
