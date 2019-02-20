@@ -655,6 +655,7 @@ impl<Cb:Callbacks> Solver<Cb> {
 
             debug!("theory conflict {:?} (costly: {})", local_confl_cl, costly);
             self.v.sort_clause_lits(&mut local_confl_cl); // as if it were a normal clause
+            local_confl_cl.dedup();
             let learnt = {
                 let r = Conflict::ThLemma {lits: &local_confl_cl, add: costly};
                 self.v.analyze(r, &self.learnts, tmp_learnt, th)
@@ -1689,7 +1690,11 @@ impl SolverV {
 
             let lvl1 = self.level_lit(lit1);
             let lvl2 = self.level_lit(lit2);
-            lvl2.cmp(&lvl1) // higher level come first
+            if lvl1 != lvl2 {
+                lvl2.cmp(&lvl1) // higher level come first
+            } else {
+                lit1.cmp(&lit2) // otherwise default comparison
+            }
         });
 
         // check that the first literal is a proper watch
