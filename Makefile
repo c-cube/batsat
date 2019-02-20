@@ -17,7 +17,7 @@ build-debug-log:
 	@cd src/batsat-bin && cargo build ${FLAGS} --features "logging"
 	@ln -sf target/debug/batsat-bin
 
-all: build test
+dev: build test
 
 build-ipasir:
 	@cargo build --release -p batsat-ipasir
