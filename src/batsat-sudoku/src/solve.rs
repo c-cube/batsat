@@ -172,7 +172,7 @@ impl Solver0 {
     }
 
     // check constraints, possibly propagating literals or creating a conflict.
-    fn check_constraints<S>(&mut self, arg: &mut S) where S: theory::TheoryArgument {
+    fn check_constraints(&mut self, arg: &mut theory::TheoryArg) {
 
         // check unicity in columns
         for col in 0..9 {
@@ -287,7 +287,7 @@ impl Solver0 {
     }
 
     // convert internal state back to what SAT expects
-    fn return_res<S>(&mut self, arg: &mut S) where S: theory::TheoryArgument {
+    fn return_res(&mut self, arg: &mut theory::TheoryArg) {
         if self.ok() {
             self.solution = Some((*self.grid).clone());
         } else {
@@ -315,7 +315,7 @@ impl sat::Theory for Solver0 {
         }
     }
 
-    fn final_check<S>(&mut self, arg: &mut S) where S: theory::TheoryArgument {
+    fn final_check(&mut self, arg: &mut theory::TheoryArg) {
         debug!("final-check");
         assert!(self.ok());
         let trail = &arg.model()[..];
@@ -328,7 +328,7 @@ impl sat::Theory for Solver0 {
         self.return_res(arg)
     }
 
-    fn partial_check<S>(&mut self, arg: &mut S) where S: theory::TheoryArgument {
+    fn partial_check(&mut self, arg: &mut theory::TheoryArg) {
         debug!("partial-check");
         assert!(self.ok());
         let m = arg.model();

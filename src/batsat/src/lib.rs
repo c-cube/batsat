@@ -54,7 +54,7 @@ pub mod theory;
 pub mod drat;
 
 pub use crate::{
-    theory::{TheoryArgument,Theory,EmptyTheory},
+    theory::{TheoryArg,Theory,EmptyTheory},
     interface::SolverInterface,
     callbacks::{Callbacks,Basic as BasicCallbacks,Stats as StatsCallbacks, ProgressStatus},
     core::{Solver, SolverOpts},

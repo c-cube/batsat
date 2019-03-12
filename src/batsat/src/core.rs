@@ -29,7 +29,7 @@ use {
         self, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, OccLists, OccListsData,
         VMap, lbool, Lit, Var},
     crate::callbacks::{Callbacks,ProgressStatus},
-    crate::theory::{Theory,TheoryArgument,},
+    crate::theory::{Theory,},
     crate::interface::SolverInterface,
 };
 
@@ -979,8 +979,10 @@ enum TheoryConflict {
     Prop(Lit)
 }
 
-/// The temporary theory argument
-struct TheoryArg<'a> {
+/// The temporary theory argument, passed to the theory.
+///
+/// This is where the theory can perform actions such as adding clauses.
+pub struct TheoryArg<'a> {
     v: &'a mut SolverV,
     lits: &'a mut Vec<Lit>,
     has_propagated: bool,
@@ -2088,32 +2090,44 @@ impl<'a> TheoryArg<'a> {
             TheoryConflict::Prop(_) | TheoryConflict::Clause{..} => false,
         }
     }
-}
 
-// `Solver` is a valid theory argument
-impl<'a> TheoryArgument for TheoryArg<'a> {
+    /// Value of given var in current model.
     #[inline(always)]
-    fn value_lit(&self, lit: Lit) -> lbool { self.v.vars.value_lit(lit) }
+    pub fn value(&self, v: Var) -> lbool { self.v.vars.value(v) }
 
+    /// Current (possibly partial) model.
     #[inline(always)]
-    fn value(&self, v: Var) -> lbool { self.v.vars.value(v) }
+    pub fn model(&self) -> &[Lit] { &self.v.vars.trail }
 
-    #[inline(always)]
-    fn model(&self) -> &[Lit] { &self.v.vars.trail }
-
-    // make a new (decision) literal
-    fn mk_new_lit(&mut self) -> Lit {
+    /// Allocate a new literal.
+    pub fn mk_new_lit(&mut self) -> Lit {
         let v = self.v.new_var(lbool::FALSE, true);
         Lit::new(v, true)
     }
 
-    fn add_theory_lemma(&mut self, c: &[Lit]) {
+    /// Push a theory lemma into the solver.
+    ///
+    /// This is useful for lemma-on-demand or theory splitting, but can
+    /// be relatively costly.
+    ///
+    /// NOTE: This is not fully supported yet.
+    pub fn add_theory_lemma(&mut self, c: &[Lit]) {
         if self.is_ok() {
             self.v.th_st.push_lemma(c)
         }
     }
 
-    fn propagate(&mut self, p: Lit) -> bool {
+    /// Propagate the literal `p`, which is theory-implied by the current trail.
+    ///
+    /// This will add `p` on the trail. The theory must be ready to
+    /// provide an explanation via `Theory::explain_prop(p)` if asked to
+    /// during conflict resolution.
+    ///
+    /// Returns `true` if propagation succeeded (or did nothing), `false`
+    /// if the propagation results in an immediate conflict.
+    /// If this returns `false`, the theory should avoid doing more work and
+    /// return as early as reasonably possible.
+    pub fn propagate(&mut self, p: Lit) -> bool {
         if ! self.is_ok() { return false }
         let v_p = self.v.vars.value_lit(p);
         if v_p == lbool::TRUE { true }
@@ -2131,7 +2145,20 @@ impl<'a> TheoryArgument for TheoryArg<'a> {
         }
     }
 
-    fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
+    /// Add a conflict clause.
+    ///
+    /// This should be used in the theory when the current partial model
+    /// is unsatisfiable. It will force the SAT solver to backtrack.
+    /// All propagations added with `propagate` during this session
+    /// will be discarded.
+    ///
+    /// ## Params
+    /// - `lits` a clause that is a tautology of the theory (ie a lemma)
+    ///     and that is false in the current (partial) model.
+    /// - `costly` if true, indicates that the conflict `c` was costly to produce.
+    ///     This is a hint for the SAT solver to keep the theory lemma that corresponds
+    ///     to `c` along with the actual learnt clause.
+    pub fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
         if lits.len() == 0 { panic!("conflicts must have a least one literal") }
         if self.is_ok() {
             self.conflict = TheoryConflict::Clause{costly};
