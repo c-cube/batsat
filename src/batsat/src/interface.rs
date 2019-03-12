@@ -30,6 +30,9 @@ pub trait SolverInterface {
     /// Create a new variable with the default polarity
     fn new_var_default(&mut self) -> Var;
 
+    /// Get the i-th variable, possibly creating it if it doesn't already exist.
+    fn var_of_int(&mut self, i: u32) -> Var;
+
     /// Add a clause to the solver. Returns `false` if the solver is in
     /// an `UNSAT` state.
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool;

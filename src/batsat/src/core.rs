@@ -284,6 +284,15 @@ impl<Cb:Callbacks> SolverInterface for Solver<Cb> {
         self.new_var(lbool::UNDEF, true)
     }
 
+    fn var_of_int(&mut self, v_idx: u32) -> Var {
+        while v_idx >= self.num_vars() {
+            self.new_var_default();
+        }
+        let var = Var::from_idx(v_idx);
+        debug_assert_eq!(var.idx(), v_idx);
+        var
+    }
+
     // in the API, we can only add clauses at level 0
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
         debug!("add toplevel clause {:?}", clause);
