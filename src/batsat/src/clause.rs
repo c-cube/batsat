@@ -53,6 +53,11 @@ impl Var {
     pub fn idx(&self) -> u32 {
         self.0
     }
+
+    /// Make a variable from the index. This should only be used
+    /// with integers obtained from an existing `v.idx()`
+    #[inline]
+    pub fn unsafe_from_idx(idx: u32) -> Self { Var::from_idx(idx) }
 }
 
 impl AsIndex for Var {
