@@ -1,7 +1,7 @@
 
 use {
     std::default::Default,
-    crate::clause::{Var,Lit,lbool},
+    crate::clause::Lit,
 };
 
 /// Argument passed to the Theory

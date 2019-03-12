@@ -79,10 +79,6 @@ impl Lit {
         Lit(var.0 * 2 + (!sign) as u32)
     }
     #[inline(always)]
-    pub(crate) fn from_idx(idx: u32) -> Self {
-        Lit(idx)
-    }
-    #[inline(always)]
     pub fn idx(&self) -> u32 {
         self.0
     }
@@ -441,11 +437,6 @@ impl<'a> ClauseMut<'a> {
         debug_assert!(!self.reloced());
         self.set_reloced(true);
         self.data[0].cref = c;
-    }
-    #[inline(always)]
-    pub fn lits(& self) -> &'a [Lit] {
-        let ptr = self.data.as_ptr() as *const ClauseData as *const Lit;
-        unsafe { slice::from_raw_parts(ptr, self.data.len()) }
     }
     pub fn shrink(self, new_size: u32) {
         debug_assert!(2 <= new_size);

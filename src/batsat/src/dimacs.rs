@@ -21,7 +21,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 use {
     std::io::{self, BufRead},
-    crate::{interface::SolverInterface, {Lit, Var, lbool}},
+    crate::{interface::SolverInterface, {Lit, lbool}},
 };
 
 /// `parse(input, solver)` adds the content of `input` to the solver
@@ -100,10 +100,8 @@ fn read_clause<S: SolverInterface, R: BufRead>(
             return Ok(());
         }
         let var = (parsed_lit.abs() - 1) as u32;
-        while var >= solver.num_vars() {
-            solver.new_var_default();
-        }
-        lits.push(Lit::new(Var::from_idx(var), parsed_lit > 0));
+        let lit = Lit::new(solver.var_of_int(var), parsed_lit > 0);
+        lits.push(lit);
     }
 }
 
