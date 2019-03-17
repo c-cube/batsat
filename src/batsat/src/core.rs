@@ -2093,7 +2093,7 @@ impl VarState {
 
 impl<'a> TheoryArg<'a> {
     #[inline]
-    fn is_ok(&self) -> bool {
+    pub fn is_ok(&self) -> bool {
         match self.conflict {
             TheoryConflict::Nil => true,
             TheoryConflict::Prop(_) | TheoryConflict::Clause{..} => false,
