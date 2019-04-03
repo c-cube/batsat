@@ -1,0 +1,28 @@
+
+provers = [ "batsat", "minisat" ]
+
+[batsat]
+
+binary = "./batsat-bin"
+cmd = "./batsat-bin --cpu-lim $timeout $file"
+unsat = "s UNSAT"
+sat = "s SAT"
+unknown = "INDETERMINATE"
+version = "git:."
+
+[minisat]
+
+cmd = "minisat -cpu-lim=$timeout $file"
+unsat = "UNSATISFIABLE"
+sat = "^SATISFIABLE"
+unknown = "INDETERMINATE"
+version = "2.2"
+
+[test]
+
+timeout=30
+problems = ".*\\.cnf\\.*"
+provers = [ "batsat", "minisat" ]
+dir = [ "benchs/msat/" ]
+
+expect = "program:minisat"
