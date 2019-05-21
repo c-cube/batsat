@@ -1,19 +1,20 @@
-
 //! Representation of sudoku grids.
 
 /// Dimension of the grid
-pub const DIM : usize = 9;
+pub const DIM: usize = 9;
 
 pub type CellValue = u8;
 
-#[derive(PartialEq,Eq,Hash,Clone,Copy,Debug)]
-pub enum Cell {
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+pub struct Cell(u8);
+
+pub enum CellView {
     Empty,
     Full(CellValue),
 }
 
 /// A sudoku grid.
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Grid {
     cells: [[Cell; DIM]; DIM],
 }
@@ -23,93 +24,128 @@ pub type Position = (u8, u8);
 
 impl std::cmp::PartialEq<u8> for Cell {
     fn eq(&self, x: &u8) -> bool {
-        match self { Cell::Full(n) => n == x, Cell::Empty => false }
+        self.0 == *x
     }
 }
 
 impl Cell {
     /// Is the cell empty?
     #[inline(always)]
-    pub fn empty(&self) -> bool { match self { Cell::Empty => true, _ => false } }
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
 
     #[inline(always)]
-    pub fn full(&self) -> bool { !self.empty() }
+    pub fn is_full(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub const EMPTY: Cell = Cell(0);
+
+    pub fn view(&self) -> CellView {
+        if self.0 == 0 {
+            CellView::Empty
+        } else {
+            CellView::Full(self.0)
+        }
+    }
+
+    pub fn new(c: CellValue) -> Self {
+        Cell(c)
+    }
 }
 
 impl Grid {
     /// New sudoku, from the given grid.
     pub fn new(cells: [[Cell; DIM]; DIM]) -> Self {
-        Grid { cells, }
+        Grid { cells }
     }
 
     /// Iterate over all cells.
-    pub fn iter_cells(&self) -> impl Iterator<Item=&Cell> {
+    pub fn iter_cells(&self) -> impl Iterator<Item = &Cell> {
         self.cells.iter().flat_map(|row| row.iter())
     }
 
     /// Iterate over all cells, with their position.
-    pub fn iter(&self) -> impl Iterator<Item=(&Cell,Position)> {
-        self.cells.iter().enumerate()
-            .flat_map(move |(i,row)| {
-                row.iter().enumerate().map(move |(j,c)| (c,(i as u8,j as u8)))
-            })
+    pub fn iter(&self) -> impl Iterator<Item = (&Cell, Position)> {
+        self.cells.iter().enumerate().flat_map(move |(i, row)| {
+            row.iter()
+                .enumerate()
+                .map(move |(j, c)| (c, (i as u8, j as u8)))
+        })
     }
 
     /// All cells are full?
     pub fn full(&self) -> bool {
-        self.iter_cells().all(|&c| c != Cell::Empty)
+        self.iter_cells().all(|&c| c.is_full())
     }
 
     /// Make a string representing the grid.
     pub fn render(&self) -> String {
         let mut s = String::new();
-        for _i in 0..11 { s.push('-'); }
+        for _i in 0..11 {
+            s.push('-');
+        }
         s.push('\n');
         for row in self.cells.iter() {
             s.push('|');
             for &c in row.iter() {
-                let c: char = match c {
-                    Cell::Empty => '.',
-                    Cell::Full(n) => std::char::from_u32((n + b'0') as u32).unwrap(),
+                let c: char = match c.view() {
+                    CellView::Empty => '.',
+                    CellView::Full(n) => std::char::from_u32((n + b'0') as u32).unwrap(),
                 };
                 s.push(c);
             }
             s.push('|');
             s.push('\n');
         }
-        for _i in 0..11 { s.push('-'); }
+        for _i in 0..11 {
+            s.push('-');
+        }
         s.push('\n');
         s
     }
 
     /// Iterate over distinct pairs of `(position,cell)` that belong in the same square.
-    pub fn iter_square_pairs(&self) -> impl Iterator<Item=((Position,&Cell),(Position,&Cell))> {
-        IterSq{grid: &self, line: 0, col: 0, i: 0, j: 1}
+    pub fn iter_square_pairs(
+        &self,
+    ) -> impl Iterator<Item = ((Position, &Cell), (Position, &Cell))> {
+        IterSq {
+            grid: &self,
+            line: 0,
+            col: 0,
+            i: 0,
+            j: 1,
+        }
     }
 
     /// Does this grid satisfy normal constraints?
     pub fn is_correct(&self) -> bool {
         // rows
         for row in self.cells.iter() {
-            for i in 0 .. DIM as u8 {
-                for j in i+1 .. DIM as u8 {
-                    if row[i as usize] == row[j as usize] { return false }
+            for i in 0..DIM as u8 {
+                for j in i + 1..DIM as u8 {
+                    if row[i as usize] == row[j as usize] {
+                        return false;
+                    }
                 }
             }
         }
 
         for col in 0..DIM as u8 {
-            for i in 0 .. DIM as u8 {
-                for j in i+1 .. DIM as u8 {
-                    if self[(i,col)] == self[(j,col)] { return false }
+            for i in 0..DIM as u8 {
+                for j in i + 1..DIM as u8 {
+                    if self[(i, col)] == self[(j, col)] {
+                        return false;
+                    }
                 }
             }
         }
 
-        for ((p1,c1), (p2,c2)) in self.iter_square_pairs() {
-            assert_ne!(p1,p2);
-            if c1==c2 {
-                return false
+        for ((p1, c1), (p2, c2)) in self.iter_square_pairs() {
+            assert_ne!(p1, p2);
+            if c1 == c2 {
+                return false;
             }
         }
 
@@ -134,7 +170,7 @@ impl std::ops::IndexMut<Position> for Grid {
 
 // iterator over squares.
 // invariant: i<j
-struct IterSq<'a>{
+struct IterSq<'a> {
     grid: &'a Grid,
     line: u8,
     col: u8,
@@ -143,7 +179,7 @@ struct IterSq<'a>{
 }
 
 impl<'a> Iterator for IterSq<'a> {
-    type Item = ((Position,&'a Cell),(Position,&'a Cell));
+    type Item = ((Position, &'a Cell), (Position, &'a Cell));
     fn next(&mut self) -> Option<Self::Item> {
         if self.j == 9 {
             self.i += 1;
@@ -164,14 +200,59 @@ impl<'a> Iterator for IterSq<'a> {
         }
         debug_assert!(self.i < 9 && self.j < 9 && self.col < 3 && self.line < 3);
 
-        let pos1 = (3*self.line + self.i / 3, 3*self.col + self.i % 3);
-        let pos2 = (3*self.line + self.j / 3, 3*self.col + self.j % 3);
+        let pos1 = (3 * self.line + self.i / 3, 3 * self.col + self.i % 3);
+        let pos2 = (3 * self.line + self.j / 3, 3 * self.col + self.j % 3);
         debug_assert_ne!(pos1, pos2);
 
         self.j += 1;
 
-        Some(((pos1, &self.grid[pos1]),(pos2, &self.grid[pos2])))
+        Some(((pos1, &self.grid[pos1]), (pos2, &self.grid[pos2])))
     }
 }
 
+pub struct BacktrackableGrid {
+    g: Grid,
+    undo: Vec<Undo>,
+    levels: Vec<usize>,
+}
 
+#[derive(Copy, Clone)]
+struct Undo(Position, Cell);
+
+impl BacktrackableGrid {
+    pub fn new(g: Grid) -> Self {
+        Self {
+            g,
+            undo: vec![],
+            levels: vec![],
+        }
+    }
+    pub fn push_level(&mut self) {
+        self.levels.push(self.undo.len())
+    }
+    pub fn n_levels(&self) -> usize {
+        self.levels.len()
+    }
+
+    pub fn pop_levels(&mut self, n: usize) {
+        assert!(n <= self.levels.len());
+        let off = self.levels[self.levels.len() - n];
+        self.levels.truncate(self.levels.len() - n);
+        while self.undo.len() > off {
+            let u = self.undo.pop().unwrap();
+            self.g[u.0] = u.1;
+        }
+    }
+
+    pub fn set(&mut self, p: Position, c: Cell) {
+        self.undo.push(Undo(p.clone(), self.g[p]));
+        self.g[p] = c;
+    }
+}
+
+impl std::ops::Deref for BacktrackableGrid {
+    type Target = Grid;
+    fn deref(&self) -> &Self::Target {
+        &self.g
+    }
+}

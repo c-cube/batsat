@@ -1,10 +1,12 @@
-
 //! A sudoku solver.
 
 use {
+    crate::{
+        grid::{BacktrackableGrid, Cell, CellValue, CellView, Grid, Position},
+        BRef,
+    },
+    batsat::{self as sat, lbool, theory, Lit as BLit, SolverInterface},
     std::collections::HashMap,
-    crate::{BRef, grid::{Cell, CellValue, Grid, Position}},
-    batsat::{self as sat, lbool, Lit as BLit, theory, SolverInterface},
 };
 
 /// A sudoku solver, using SAT
@@ -27,7 +29,7 @@ struct Solver0 {
     status: Status,
     lm: LitMap,
     lits: Vec<BLit>, // temporary
-    grid: BRef<Grid>,
+    grid: BacktrackableGrid,
     solution: Option<Grid>, // copy of solution, if any
     trail_len: BRef<usize>, // part of the trail we've seen
 }
@@ -56,7 +58,9 @@ impl Solver {
         let mut sat = SAT::new_with(opts, Default::default());
         s0.create_lits(&mut sat); // be sure to create literals to decide
         Solver {
-            grid0: grid, sat, s0,
+            grid0: grid,
+            sat,
+            s0,
         }
     }
 
@@ -66,10 +70,10 @@ impl Solver {
     }
 
     fn assumptions(&self) -> Vec<BLit> {
-        let mut res = vec!();
+        let mut res = vec![];
         for (c, pos) in self.grid0.iter() {
-            if let Cell::Full(n) = c {
-                let lit = self.s0.lm.find((pos,*n));
+            if let CellView::Full(n) = c.view() {
+                let lit = self.s0.lm.find((pos, n));
                 res.push(lit);
             }
         }
@@ -85,16 +89,23 @@ impl Solver {
         let assumptions = self.assumptions();
         self.s0.solution = None;
         let now = std::time::Instant::now();
-        info!("solve with {} assumptions, corresponding to initial grid", assumptions.len());
+        info!(
+            "solve with {} assumptions, corresponding to initial grid",
+            assumptions.len()
+        );
         let res = self.sat.solve_limited_th(&mut self.s0, &assumptions[..]);
 
         info!("solving done ({:.3}s).", {
-                let dur = now.elapsed();
-                dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
-            });
-        info!("sat stats: decisions {}, propagations {}, conflicts {}, {}",
-             self.sat.num_decisions(), self.sat.num_propagations(),
-             self.sat.num_conflicts(), self.sat.cb());
+            let dur = now.elapsed();
+            dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
+        });
+        info!(
+            "sat stats: decisions {}, propagations {}, conflicts {}, {}",
+            self.sat.num_decisions(),
+            self.sat.num_propagations(),
+            self.sat.num_conflicts(),
+            self.sat.cb()
+        );
 
         if res == lbool::TRUE {
             assert!(self.s0.solution.is_some());
@@ -111,8 +122,8 @@ impl Solver0 {
         Solver0 {
             propagate: false,
             lm: LitMap::new(),
-            grid: BRef::new(grid),
-            lits: vec!(),
+            grid: BacktrackableGrid::new(grid),
+            lits: vec![],
             trail_len: BRef::new(0),
             status: Status::new(),
             solution: None,
@@ -120,33 +131,37 @@ impl Solver0 {
     }
 
     #[inline(always)]
-    fn ok(&self) -> bool { self.status.ok }
+    fn ok(&self) -> bool {
+        self.status.ok
+    }
 
     /// Create literals in `SAT`.
     fn create_lits(&mut self, sat: &mut SAT) {
-        let pred_sentinel: Predicate = ((0,0),0);
-        for (_c,pos) in self.grid.iter() {
-            for n in 1 ..= 9 {
+        let pred_sentinel: Predicate = ((0, 0), 0);
+        for (_c, pos) in self.grid.iter() {
+            for n in 1..=9 {
                 // variable for `pos=n`
                 let var = sat.new_var_default();
-                self.lm.pred_to_lit.insert((pos,n), BLit::new(var,true));
-                self.lm.lit_to_pred.insert(var, (pos,n), pred_sentinel);
+                self.lm.pred_to_lit.insert((pos, n), BLit::new(var, true));
+                self.lm.lit_to_pred.insert(var, (pos, n), pred_sentinel);
             }
         }
     }
 
     /// update grid using `trail`.
     fn update_grid(&mut self, trail: &[BLit]) {
-        if ! self.ok() { return; }
+        if !self.ok() {
+            return;
+        }
 
         // update `self.grid`, producing conflict in case of incompatible assignments
         for &lit in trail.iter() {
             if lit.sign() {
                 let (pos, n) = self.lm.lit_to_pred[lit.var()];
 
-                match self.grid[pos] {
-                    Cell::Empty => {
-                        self.grid[pos] = Cell::Full(n);
+                match self.grid[pos].view() {
+                    CellView::Empty => {
+                        self.grid.set(pos, Cell::new(n));
 
                         /* TODO: propagate that the other values are now impossible
                         if self.propagate {
@@ -159,11 +174,11 @@ impl Solver0 {
                             }
                         }
                         */
-                    },
-                    Cell::Full(n2) if n == n2 => (),
-                    Cell::Full(n2) => {
+                    }
+                    CellView::Full(n2) if n == n2 => (),
+                    CellView::Full(n2) => {
                         // conflict: incompatible assignments
-                        self.status.mk_conflict(&[!lit, !self.lm.find((pos,n2))]);
+                        self.status.mk_conflict(&[!lit, !self.lm.find((pos, n2))]);
                         return;
                     }
                 }
@@ -173,28 +188,28 @@ impl Solver0 {
 
     // check constraints, possibly propagating literals or creating a conflict.
     fn check_constraints(&mut self, arg: &mut theory::TheoryArg) {
-
         // check unicity in columns
         for col in 0..9 {
             let mut n_assigned = 0;
 
             for i in 0..9 {
-                let p1 = (i,col);
+                let p1 = (i, col);
 
-                let n = match self.grid[p1] {
-                    Cell::Empty => continue,
-                    Cell::Full(n) => {
+                let n = match self.grid[p1].view() {
+                    CellView::Empty => continue,
+                    CellView::Full(n) => {
                         n_assigned += 1;
                         n
-                    },
+                    }
                 };
 
-                for j in i+1 .. 9 {
-                    let p2 = (j,col);
+                for j in i + 1..9 {
+                    let p2 = (j, col);
                     if self.grid[p2] == n {
                         trace!("col conflict for {:?} and {:?} (val {})", p1, p2, n);
-                        self.status.mk_conflict(&[!self.lm.find((p1,n)), !self.lm.find((p2,n))]);
-                        return
+                        self.status
+                            .mk_conflict(&[!self.lm.find((p1, n)), !self.lm.find((p2, n))]);
+                        return;
                     }
                 }
             }
@@ -205,7 +220,7 @@ impl Solver0 {
                 let mut unused_value = [true; 10];
                 let mut unused_pos = [true; 9];
                 for i in 0..9 {
-                    if let Cell::Full(n) = self.grid[(i,col)] {
+                    if let CellView::Full(n) = self.grid[(i, col)].view() {
                         unused_value[n as usize] = false;
                         unused_pos[i as usize] = false;
                     }
@@ -215,11 +230,11 @@ impl Solver0 {
                 debug_assert!(unused_pos.iter().any(|b| *b));
                 let value = (1..=9).find(|&i| unused_value[i as usize]).unwrap();
                 let line = (0..9).find(|&i| unused_pos[i as usize]).unwrap();
-                let pos = (line,col);
+                let pos = (line, col);
 
                 trace!("propagate only unassigned pos {:?} to {}", pos, value);
                 trace!("current grid:\n{}", self.grid.render());
-                let lit = self.lm.find((pos,value));
+                let lit = self.lm.find((pos, value));
                 arg.propagate(lit);
             }
         }
@@ -232,20 +247,21 @@ impl Solver0 {
             for i in 0..9 {
                 let p1 = (line, i);
 
-                let n = match self.grid[p1] {
-                    Cell::Empty => continue,
-                    Cell::Full(n) => {
+                let n = match self.grid[p1].view() {
+                    CellView::Empty => continue,
+                    CellView::Full(n) => {
                         n_assigned += 1;
                         n
-                    },
+                    }
                 };
 
-                for j in i+1 .. 9 {
+                for j in i + 1..9 {
                     let p2 = (line, j);
                     if self.grid[p2] == n {
                         trace!("line conflict for {:?} and {:?} (val {})", p1, p2, n);
-                        self.status.mk_conflict(&[!self.lm.find((p1,n)), !self.lm.find((p2,n))]);
-                        return
+                        self.status
+                            .mk_conflict(&[!self.lm.find((p1, n)), !self.lm.find((p2, n))]);
+                        return;
                     }
                 }
             }
@@ -257,29 +273,34 @@ impl Solver0 {
         // TODO: if line almost full, propagate
 
         // check unicity in squares
-        for ((p1,c1),(p2,c2)) in self.grid.iter_square_pairs() {
-            match (c1,c2) {
-                (Cell::Full(n), Cell::Full(n2)) if n==n2 => {
-                    assert_ne!(p1,p2);
-                        trace!("square conflict for {:?} and {:?} (val {})", p1, p2, n);
-                    self.status.mk_conflict(&[!self.lm.find((p1,*n)), !self.lm.find((p2,*n))]);
-                    return
-                },
+        for ((p1, c1), (p2, c2)) in self.grid.iter_square_pairs() {
+            match (c1.view(), c2.view()) {
+                (CellView::Full(n), CellView::Full(n2)) if n == n2 => {
+                    assert_ne!(p1, p2);
+                    trace!("square conflict for {:?} and {:?} (val {})", p1, p2, n);
+                    self.status
+                        .mk_conflict(&[!self.lm.find((p1, n)), !self.lm.find((p2, n))]);
+                    return;
+                }
                 _ => (),
             }
         }
     }
 
     fn check_full(&mut self) {
-        if !self.ok() { return }
+        if !self.ok() {
+            return;
+        }
 
         // check that all cells are full
-        for (c,pos) in self.grid.iter() {
-            if let Cell::Empty = c {
-                let Solver0{lm, ref mut status, ..} = self;
+        for (c, pos) in self.grid.iter() {
+            if let CellView::Empty = c.view() {
+                let Solver0 {
+                    lm, ref mut status, ..
+                } = self;
                 // conflict: `∨_i pos=i`
                 trace!("conflict: cell {:?} must be filled", pos);
-                let c = (1 ..= 9).map(|i| lm.find((pos,i)));
+                let c = (1..=9).map(|i| lm.find((pos, i)));
                 status.mk_conflict_iter(c);
                 break;
             }
@@ -299,7 +320,9 @@ impl Solver0 {
 
 impl sat::Theory for Solver0 {
     #[inline]
-    fn n_levels(&self) -> usize { self.grid.n_levels() }
+    fn n_levels(&self) -> usize {
+        self.grid.n_levels()
+    }
     #[inline]
     fn create_level(&mut self) {
         self.grid.push_level();
@@ -333,7 +356,7 @@ impl sat::Theory for Solver0 {
         assert!(self.ok());
         let m = arg.model();
         if m.len() <= *self.trail_len {
-            return
+            return;
         }
 
         let trail = &m[*self.trail_len..];
@@ -346,26 +369,25 @@ impl sat::Theory for Solver0 {
 
     fn explain_propagation(&mut self, p: BLit) -> &[BLit] {
         assert!(self.propagate);
-        let ((line,col),_n) = self.lm.lit_to_pred[p.var()];
+        let ((line, col), _n) = self.lm.lit_to_pred[p.var()];
 
         if p.sign() {
             // check if it's in column
-            let col_full =
-                (0..9).all(|i| i == line || self.grid[(i,col)].full());
+            let col_full = (0..9).all(|i| i == line || self.grid[(i, col)].is_full());
 
             if col_full {
                 // we can explain propagation using the whole column
                 self.lits.clear();
                 for i in (0..9).filter(|&j| j != line) {
-                    let pos = (i,col);
-                    if let Cell::Full(n) = self.grid[pos] {
-                        self.lits.push(self.lm.find((pos,n)));
+                    let pos = (i, col);
+                    if let CellView::Full(n) = self.grid[pos].view() {
+                        self.lits.push(self.lm.find((pos, n)));
                     } else {
                         unreachable!()
                     }
                 }
                 trace!("explain propagation of {:?} using {:?}", p, &self.lits[..]);
-                return &self.lits
+                return &self.lits;
             }
 
             panic!("cannot explain propagation of {:?}", p)
@@ -380,11 +402,16 @@ impl sat::Theory for Solver0 {
 
 impl Status {
     fn new() -> Self {
-        Status {confl: vec!(), ok: true}
+        Status {
+            confl: vec![],
+            ok: true,
+        }
     }
 
     fn mk_conflict(&mut self, c: &[BLit]) {
-        if ! self.ok { return }
+        if !self.ok {
+            return;
+        }
 
         self.ok = false;
         self.confl.clear();
@@ -392,8 +419,13 @@ impl Status {
     }
 
     /// Create a conflict from the given iterator.
-    fn mk_conflict_iter<I>(&mut self, i: I) where I: Iterator<Item=BLit> {
-        if ! self.ok { return }
+    fn mk_conflict_iter<I>(&mut self, i: I)
+    where
+        I: Iterator<Item = BLit>,
+    {
+        if !self.ok {
+            return;
+        }
 
         self.ok = false;
         self.confl.clear();
