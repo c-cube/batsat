@@ -16,10 +16,10 @@ default-members = [
 
 [profile.release]
 opt-level = 3
-lto = true # helps a lot with inlining
+lto = "thin" # helps a lot with inlining
 
 # for `perf`:
-# debug = true 
+# debug = true
 
 #debug-assertions = true
 
