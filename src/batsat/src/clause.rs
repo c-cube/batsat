@@ -771,10 +771,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
 
     /// Obtain a fully usable occurrence list using the given predicate
     pub fn promote<P: DeletePred<V>>(&mut self, pred: P) -> OccLists<K, V, P> {
-        OccLists {
-            data: self,
-            pred: pred,
-        }
+        OccLists { data: self, pred }
     }
 
     /// `oclist.lookup_mut_pred(idx, p)` returns an up-to-date list of occurrences

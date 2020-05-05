@@ -19,39 +19,41 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-extern crate clap;
-extern crate flate2;
-extern crate cpu_time;
 extern crate batsat;
+extern crate clap;
+extern crate cpu_time;
+extern crate flate2;
 
-#[cfg(not(feature="logging"))]
+#[cfg(not(feature = "logging"))]
 #[macro_use]
 pub(crate) mod log {
     macro_rules! debug {
-        ($( $x:expr ),*) => { }
+        ($( $x:expr ),*) => {};
     }
 }
 
-#[cfg(not(feature="logging"))]
+#[cfg(not(feature = "logging"))]
 mod env_logger {
     pub fn init() {}
 }
 
-#[cfg(feature="logging")]
+#[cfg(feature = "logging")]
 extern crate env_logger;
 
-#[cfg(feature="logging")]
+#[cfg(feature = "logging")]
 #[macro_use]
 extern crate log;
 
+use batsat::{
+    drat, lbool, Callbacks, ClauseKind, Lit, ProgressStatus, Solver, SolverInterface, SolverOpts,
+};
+use clap::{App, Arg};
+use flate2::bufread::GzDecoder;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::mem;
 use std::process::exit;
 use std::time::Instant;
-use clap::{App, Arg};
-use flate2::bufread::GzDecoder;
-use batsat::{lbool, Lit, Solver, SolverOpts, SolverInterface, Callbacks, ProgressStatus, drat, ClauseKind};
 
 mod system;
 
@@ -73,7 +75,13 @@ struct CB {
 }
 
 impl CB {
-    fn new() -> Self { CB {verbosity:0, lim: None, proof: None, } }
+    fn new() -> Self {
+        CB {
+            verbosity: 0,
+            lim: None,
+            proof: None,
+        }
+    }
     fn enable_proof(&mut self) {
         if self.proof.is_none() {
             self.proof = Some(drat::Proof::new())
@@ -89,16 +97,24 @@ impl CB {
 impl Callbacks for CB {
     fn on_start(&mut self) {
         if self.verbosity >= 1 {
-            println!( "c ============================[ Search Statistics ]==============================");
-            println!( "c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |");
-            println!( "c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |");
-            println!( "c ===============================================================================");
+            println!(
+                "c ============================[ Search Statistics ]=============================="
+            );
+            println!(
+                "c | Conflicts |          ORIGINAL         |          LEARNT          | Progress |"
+            );
+            println!(
+                "c |           |    Vars  Clauses Literals |    Limit  Clauses Lit/Cl |          |"
+            );
+            println!(
+                "c ==============================================================================="
+            );
         }
     }
 
     fn on_simplify(&mut self) {}
 
-    fn on_result(&mut self, _:lbool) {
+    fn on_result(&mut self, _: lbool) {
         if self.verbosity >= 1 {
             println!(
                 "c ==============================================================================="
@@ -106,14 +122,22 @@ impl Callbacks for CB {
         }
     }
 
-    fn on_progress<F>(&mut self, p: F) where F: FnOnce() -> ProgressStatus {
+    fn on_progress<F>(&mut self, p: F)
+    where
+        F: FnOnce() -> ProgressStatus,
+    {
         if self.verbosity >= 1 {
             let p = p();
             println!(
                 "c | {:9} | {:7} {:8} {:8} | {:8} {:8} {:6.0} | {:6.3} % |",
                 p.conflicts,
-                p.dec_vars, p.n_clauses, p.n_clause_lits, p.max_learnt,
-                p.n_learnt, p.n_learnt_lits, p.progress_estimate
+                p.dec_vars,
+                p.n_clauses,
+                p.n_clause_lits,
+                p.max_learnt,
+                p.n_learnt,
+                p.n_learnt_lits,
+                p.progress_estimate
             );
         }
     }
@@ -122,9 +146,7 @@ impl Callbacks for CB {
         match (k, &mut self.proof) {
             (_, None) => (),
             (ClauseKind::Axiom, _) => (),
-            (_, Some(p)) => {
-                p.create_clause(&c)
-            }
+            (_, Some(p)) => p.create_clause(&c),
         }
     }
 
@@ -146,7 +168,7 @@ impl Callbacks for CB {
     fn stop(&self) -> bool {
         match self.lim {
             None => false,
-            Some((ref r, max_cpu)) => r.cpu_time() > max_cpu
+            Some((ref r, max_cpu)) => r.cpu_time() > max_cpu,
         }
     }
 }
@@ -157,7 +179,7 @@ fn main2() -> io::Result<i32> {
     let resource = system::ResourceMeasure::new();
 
     let matches = App::new("batsat-bin")
-        .version("0.0.2")
+        .version("0.3.1")
         .author("Simon Cruanes")
         .about("Adaptation of MiniSat/RatSat in Rust")
         .arg(Arg::with_name("input-file"))
@@ -296,7 +318,7 @@ fn main2() -> io::Result<i32> {
     let cpu_lim = matches
         .value_of("cpu-lim")
         .and_then(|s| s.parse().ok())
-        .filter(|x| *x>0.);
+        .filter(|x| *x > 0.);
 
     // allocate callbacks
     let mut cb = CB::new();
@@ -318,7 +340,9 @@ fn main2() -> io::Result<i32> {
     let mut incremental = false;
     if let Some(input_file) = input_file {
         incremental = input_file.ends_with(".icnf");
-        if incremental { solver.cb_mut().verbosity = 0; }
+        if incremental {
+            solver.cb_mut().verbosity = 0;
+        }
         debug!("solve file {} (incremental: {})", input_file, incremental);
         let file = BufReader::new(File::open(input_file)?);
         read_input_autogz(file, &mut solver, is_strict, incremental)?;
@@ -353,7 +377,9 @@ fn main2() -> io::Result<i32> {
             duration.as_secs(),
             duration.subsec_nanos() / 10_000_000
         );
-        println!("c |                                                                             |");
+        println!(
+            "c |                                                                             |"
+        );
     }
 
     if !solver.simplify() {
@@ -386,8 +412,7 @@ fn main2() -> io::Result<i32> {
     }
     if incremental {
         return Ok(0);
-    }
-    else if ret == lbool::TRUE {
+    } else if ret == lbool::TRUE {
         println!("s SATISFIABLE");
 
         // print model
@@ -443,18 +468,30 @@ fn read_input_autogz<R: BufRead>(
 ) -> io::Result<()> {
     let is_gz = input.fill_buf()?.starts_with(b"\x1F\x8B");
     if is_gz {
-        read_input(BufReader::new(GzDecoder::new(input)), solver, is_strict, incremental)
+        read_input(
+            BufReader::new(GzDecoder::new(input)),
+            solver,
+            is_strict,
+            incremental,
+        )
     } else {
         read_input(input, solver, is_strict, incremental)
     }
 }
 
 fn read_input<R: BufRead>(
-    mut input: R, solver: &mut MSolver, is_strict: bool, incremental: bool
+    mut input: R,
+    solver: &mut MSolver,
+    is_strict: bool,
+    incremental: bool,
 ) -> io::Result<()> {
     if solver.cb().verbosity > 0 {
-        println!("c ============================[ Problem Statistics ]=============================");
-        println!("c |                                                                             |");
+        println!(
+            "c ============================[ Problem Statistics ]============================="
+        );
+        println!(
+            "c |                                                                             |"
+        );
     }
     batsat::dimacs::parse(&mut input, solver, is_strict, incremental)?;
     Ok(())

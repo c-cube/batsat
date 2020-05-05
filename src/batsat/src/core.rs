@@ -1315,7 +1315,7 @@ impl SolverV {
 
         let mut index = self.vars.trail.len();
 
-        'main: loop {
+        loop {
             // obtain literals to resolve with, as well as a flag indicating
             // whether they should be true or false in the trail
             let mut lits_are_true = false;
