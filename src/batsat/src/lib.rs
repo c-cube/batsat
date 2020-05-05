@@ -20,48 +20,45 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 //======== LOG ============
 
 // stubs when logging is not enabled
-#[cfg(not(feature="logging"))]
+#[cfg(not(feature = "logging"))]
 #[macro_use]
 pub(crate) mod log {
     macro_rules! trace {
-        ($( $x:expr ),*) => {}
+        ($( $x:expr ),*) => {};
     }
     macro_rules! debug {
-        ($( $x:expr ),*) => {}
+        ($( $x:expr ),*) => {};
     }
     macro_rules! info {
-        ($( $x:expr ),*) => {}
+        ($( $x:expr ),*) => {};
     }
 }
 
-#[cfg(feature="logging")]
+#[cfg(feature = "logging")]
 #[macro_use]
 pub extern crate log;
 
-extern crate smallvec;
 extern crate bit_vec;
+extern crate smallvec;
 
 //======== PUBLIC INTERFACE ============
 
 pub mod alloc;
-pub mod intmap;
-pub mod clause;
-pub mod dimacs;
-pub mod core;
-pub mod interface;
 pub mod callbacks;
-pub mod theory;
+pub mod clause;
+pub mod core;
+pub mod dimacs;
 pub mod drat;
+pub mod interface;
+pub mod intmap;
+pub mod theory;
 
 pub use crate::{
-    theory::{TheoryArg,Theory,EmptyTheory},
-    interface::SolverInterface,
-    callbacks::{Callbacks,Basic as BasicCallbacks,Stats as StatsCallbacks, ProgressStatus},
+    callbacks::{Basic as BasicCallbacks, Callbacks, ProgressStatus, Stats as StatsCallbacks},
+    clause::{display::Print, lbool, Kind as ClauseKind, LMap, LSet, Lit, VMap, Var},
     core::{Solver, SolverOpts},
-    clause::{
-        lbool, Lit, Var, LMap, LSet, VMap, display::Print,
-        Kind as ClauseKind,
-    },
+    interface::SolverInterface,
+    theory::{EmptyTheory, Theory, TheoryArg},
 };
 
 /// Basic solver, with basic callbacks and no theory

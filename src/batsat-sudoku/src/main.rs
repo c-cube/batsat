@@ -1,4 +1,3 @@
-
 //! A SMT-style sudoku solver.
 //!
 //! It relies on the SAT solver for exploring models, but creates clauses
@@ -6,21 +5,22 @@
 
 // benchmarks from https://github.com/attractivechaos/plb/tree/ca35a7dfb2a235fa00fce58f7d1d426d69c6123a/sudoku/incoming
 
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 
-mod grid;
-mod solve;
-mod parse;
 mod bref;
+mod grid;
+mod parse;
+mod solve;
 
-use {
-    crate::{
-        bref::Ref as BRef,
-        grid::{Grid, Cell, }, solve::Solver, },
+use crate::{
+    bref::Ref as BRef,
+    grid::{Cell, Grid},
+    solve::Solver,
 };
 
 /// Result type.
-pub type Result<T> = std::result::Result<T, Box<std::error::Error>>;
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
 
     let propagate = match std::env::var("PROPAGATE") {
         Ok(s) => s.trim() == "1",
-        Err(_) => false
+        Err(_) => false,
     };
     if propagate {
         println!("note: using propagation");
@@ -48,8 +48,8 @@ fn main() -> Result<()> {
 
         println!("parsed {} grid(s)", n);
         info!("parsed {} grid(s) (in {:.3}s)", n, {
-                let dur = now.elapsed();
-                dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
+            let dur = now.elapsed();
+            dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
         });
         now = std::time::Instant::now();
 
@@ -64,18 +64,18 @@ fn main() -> Result<()> {
                 Some(sol) => {
                     println!("solution:\n{}", sol.render());
 
-                    if ! sol.full() {
-                        return Err("solution not completed".into())
-                    } else if ! sol.is_correct() {
-                        return Err("solution not correct".into())
+                    if !sol.full() {
+                        return Err("solution not completed".into());
+                    } else if !sol.is_correct() {
+                        return Err("solution not correct".into());
                     }
-                },
+                }
             }
         }
 
         info!("solved {} grid(s) (in {:.3}s)", n, {
-                let dur = now.elapsed();
-                dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
+            let dur = now.elapsed();
+            dur.as_secs() as f64 + dur.subsec_millis() as f64 * 1e-3
         });
     }
     Ok(())

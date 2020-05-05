@@ -1,9 +1,8 @@
-
 /* Main Interface */
 
 use crate::{
+    clause::{lbool, Lit, Var},
     theory::{self, Theory},
-    clause::{Var, Lit, lbool},
 };
 
 /// Main interface for a solver: it makes it possible to add clauses,
@@ -45,7 +44,7 @@ pub trait SolverInterface {
     }
 
     /// Simplify using the given theory.
-    fn simplify_th<Th:Theory>(&mut self, th: &mut Th) -> bool;
+    fn simplify_th<Th: Theory>(&mut self, th: &mut Th) -> bool;
 
     /// Search for a model that respects a given set of assumptions (with resource constraints).
     ///
@@ -57,7 +56,7 @@ pub trait SolverInterface {
     /// Solve using the given theory.
     ///
     /// - `th` is the theory.
-    fn solve_limited_th<Th:Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
+    fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
 
     /// Obtain the slice of literals that are proved at level 0.
     ///

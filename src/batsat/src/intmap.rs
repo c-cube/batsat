@@ -19,11 +19,11 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
+use bit_vec::BitVec;
 use std::cmp;
 use std::iter;
-use std::ops;
 use std::marker::PhantomData;
-use bit_vec::BitVec;
+use std::ops;
 
 pub trait AsIndex: Copy {
     fn as_index(self) -> usize;
@@ -38,23 +38,34 @@ pub struct IntMap<K: AsIndex, V> {
 
 impl<K: AsIndex, V> Default for IntMap<K, V> {
     fn default() -> Self {
-        Self { map: Vec::new(), _marker: PhantomData, }
+        Self {
+            map: Vec::new(),
+            _marker: PhantomData,
+        }
     }
 }
 
 impl<K: AsIndex, V> IntMap<K, V> {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     #[inline]
     pub fn has(&self, k: K) -> bool {
         k.as_index() < self.map.len()
     }
-    pub fn reserve(&mut self, key: K, pad: V) where V: Clone {
+    pub fn reserve(&mut self, key: K, pad: V)
+    where
+        V: Clone,
+    {
         let index = key.as_index();
         if index >= self.map.len() {
             self.map.resize(index + 1, pad);
         }
     }
-    pub fn reserve_default(&mut self, key: K) where V: Default {
+    pub fn reserve_default(&mut self, key: K)
+    where
+        V: Default,
+    {
         let index = key.as_index();
         if index >= self.map.len() {
             // self.map.resize_default(index + 1);
@@ -63,11 +74,17 @@ impl<K: AsIndex, V> IntMap<K, V> {
         }
     }
     #[inline]
-    pub fn insert(&mut self, key: K, val: V, pad: V) where V: Clone {
+    pub fn insert(&mut self, key: K, val: V, pad: V)
+    where
+        V: Clone,
+    {
         self.reserve(key, pad);
         self[key] = val;
     }
-    pub fn insert_default(&mut self, key: K, val: V) where V: Default {
+    pub fn insert_default(&mut self, key: K, val: V)
+    where
+        V: Default,
+    {
         self.reserve_default(key);
         self[key] = val;
     }
@@ -82,11 +99,17 @@ impl<K: AsIndex, V> IntMap<K, V> {
         self.map.clear();
         self.map.shrink_to_fit();
     }
-    pub fn iter(& self) -> impl iter::Iterator<Item=(K,&V)> {
-        self.map.iter().enumerate().map(|(k, v)| (K::from_index(k), v))
+    pub fn iter(&self) -> impl iter::Iterator<Item = (K, &V)> {
+        self.map
+            .iter()
+            .enumerate()
+            .map(|(k, v)| (K::from_index(k), v))
     }
-    pub fn iter_mut(&mut self) -> impl iter::Iterator<Item=(K,&mut V)> {
-        self.map.iter_mut().enumerate().map(|(k, v)| (K::from_index(k), v))
+    pub fn iter_mut(&mut self) -> impl iter::Iterator<Item = (K, &mut V)> {
+        self.map
+            .iter_mut()
+            .enumerate()
+            .map(|(k, v)| (K::from_index(k), v))
     }
 }
 
@@ -104,14 +127,16 @@ impl<K: AsIndex, V> ops::IndexMut<K> for IntMap<K, V> {
     }
 }
 
-#[derive(Debug,Clone)]
-pub struct IntMapBool<K : AsIndex> {
+#[derive(Debug, Clone)]
+pub struct IntMapBool<K: AsIndex> {
     map: BitVec,
     _marker: PhantomData<fn(K)>, // contravariance
 }
 
 impl<K: AsIndex> Default for IntMapBool<K> {
-    fn default() -> Self { IntMapBool::new() }
+    fn default() -> Self {
+        IntMapBool::new()
+    }
 }
 
 impl<K: AsIndex> ops::Index<K> for IntMapBool<K> {
@@ -124,7 +149,10 @@ impl<K: AsIndex> ops::Index<K> for IntMapBool<K> {
 
 impl<K: AsIndex> IntMapBool<K> {
     pub fn new() -> Self {
-        Self { map: BitVec::new(), _marker: PhantomData::default(), }
+        Self {
+            map: BitVec::new(),
+            _marker: PhantomData::default(),
+        }
     }
     #[inline]
     pub fn has(&self, k: K) -> bool {
@@ -142,7 +170,9 @@ impl<K: AsIndex> IntMapBool<K> {
         }
         debug_assert!(self.map.capacity() > index);
     }
-    pub fn clear(&mut self) { self.map.clear(); }
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
     pub fn free(&mut self) {
         self.map.clear();
         self.map.shrink_to_fit();
@@ -154,7 +184,7 @@ impl<K: AsIndex> IntMapBool<K> {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct IntSet<K: AsIndex> {
     in_set: IntMapBool<K>,
     xs: Vec<K>,
@@ -202,7 +232,9 @@ impl<K: AsIndex> ops::Index<usize> for IntSet<K> {
 
 impl<K: AsIndex> ops::Deref for IntSet<K> {
     type Target = [K];
-    fn deref(&self) -> &Self::Target { &self.xs }
+    fn deref(&self) -> &Self::Target {
+        &self.xs
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -213,7 +245,10 @@ pub struct HeapData<K: AsIndex> {
 
 impl<K: AsIndex> Default for HeapData<K> {
     fn default() -> Self {
-        Self { heap: Vec::new(), indices: IntMap::new(), }
+        Self {
+            heap: Vec::new(),
+            indices: IntMap::new(),
+        }
     }
 }
 
@@ -232,7 +267,10 @@ impl<K: AsIndex> HeapData<K> {
     }
 
     pub fn promote<Comp: Comparator<K>>(&mut self, comp: Comp) -> Heap<K, Comp> {
-        Heap { data: self, comp: comp, }
+        Heap {
+            data: self,
+            comp: comp,
+        }
     }
 }
 
@@ -245,11 +283,25 @@ impl<K: AsIndex> ops::Index<usize> for HeapData<K> {
 
 pub trait Comparator<T: ?Sized> {
     fn cmp(&self, lhs: &T, rhs: &T) -> cmp::Ordering;
-    fn max(&self, lhs: T, rhs: T) -> T where T: Sized {
-        if self.ge(&rhs, &lhs) { rhs } else { lhs }
+    fn max(&self, lhs: T, rhs: T) -> T
+    where
+        T: Sized,
+    {
+        if self.ge(&rhs, &lhs) {
+            rhs
+        } else {
+            lhs
+        }
     }
-    fn min(&self, lhs: T, rhs: T) -> T where T: Sized {
-        if self.le(&lhs, &rhs) { lhs } else { rhs }
+    fn min(&self, lhs: T, rhs: T) -> T
+    where
+        T: Sized,
+    {
+        if self.le(&lhs, &rhs) {
+            lhs
+        } else {
+            rhs
+        }
     }
     fn le(&self, lhs: &T, rhs: &T) -> bool {
         match self.cmp(lhs, rhs) {
@@ -264,9 +316,13 @@ pub trait Comparator<T: ?Sized> {
         }
     }
     #[inline]
-    fn gt(&self, lhs: &T, rhs: &T) -> bool { self.lt(rhs, lhs) }
+    fn gt(&self, lhs: &T, rhs: &T) -> bool {
+        self.lt(rhs, lhs)
+    }
     #[inline]
-    fn ge(&self, lhs: &T, rhs: &T) -> bool { self.le(rhs, lhs) }
+    fn ge(&self, lhs: &T, rhs: &T) -> bool {
+        self.le(rhs, lhs)
+    }
 }
 
 #[derive(Debug)]

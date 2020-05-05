@@ -1,8 +1,4 @@
-
-use {
-    std::default::Default,
-    crate::clause::Lit,
-};
+use {crate::clause::Lit, std::default::Default};
 
 /// Argument passed to the Theory
 pub use crate::core::TheoryArg;
@@ -39,7 +35,6 @@ pub trait Theory {
     /// The default implementation just returns without doing anything.
     fn partial_check(&mut self, _acts: &mut TheoryArg) {}
 
-
     /// If the theory uses `TheoryArgument::propagate`, it must implement
     /// this function to explain the propagations.
     ///
@@ -53,21 +48,31 @@ pub struct EmptyTheory(usize);
 
 impl EmptyTheory {
     /// New empty theory.
-    pub fn new() -> Self { EmptyTheory(0) }
+    pub fn new() -> Self {
+        EmptyTheory(0)
+    }
 }
 
 impl Default for EmptyTheory {
-    fn default() -> Self { EmptyTheory::new() }
+    fn default() -> Self {
+        EmptyTheory::new()
+    }
 }
 
 // theory for any context.
 impl Theory for EmptyTheory {
     fn final_check(&mut self, _: &mut TheoryArg) {}
-    fn create_level(&mut self) { self.0 += 1 }
+    fn create_level(&mut self) {
+        self.0 += 1
+    }
     fn pop_levels(&mut self, n: usize) {
         debug_assert!(self.0 >= n);
         self.0 -= n
     }
-    fn n_levels(&self) -> usize { self.0 }
-    fn explain_propagation(&mut self, _p: Lit) -> &[Lit] { unreachable!() }
+    fn n_levels(&self) -> usize {
+        self.0
+    }
+    fn explain_propagation(&mut self, _p: Lit) -> &[Lit] {
+        unreachable!()
+    }
 }
