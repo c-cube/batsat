@@ -96,3 +96,19 @@ pub trait SolverInterface {
     fn unsat_core_contains_var(&self, v: Var) -> bool;
 }
 
+#[cfg(test)]
+mod test {
+    use crate::*;
+    #[test]
+    fn test_reg7() {
+        let mut solver: Solver<callbacks::Basic> =
+            Solver::new(Default::default(), Default::default());
+        let a = Lit::new(solver.new_var_default(), false);
+        let b = Lit::new(solver.new_var_default(), false);
+        assert!(solver.add_clause_reuse(&mut vec![a, b]));
+        assert_eq!(solver.solve_limited(&[!b]), lbool::TRUE);
+        assert!(solver.add_clause_reuse(&mut vec![!a, b]));
+        assert!(solver.add_clause_reuse(&mut vec![!a, !b]));
+        solver.solve_limited(&[]);
+    }
+}
