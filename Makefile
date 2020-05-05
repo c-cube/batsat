@@ -58,14 +58,13 @@ test-sudoku-slow: check-build-sudoku test-sudoku-fast
 
 J?=3
 DATE=$(shell date +%FT%H:%M)
-TEST_OPTS?= -j $(J) --junit test.xml
-
-logitest-quick:
+TEST_OPTS?= -j $(J)
+TEST_TOOL=benchpress
+$(TEST_TOOL)-basic: build
 	@mkdir -p snapshots
-	@logitest run --meta=`git rev-parse HEAD` \
-	  --summary snapshots/bench-$(DATE).txt \
-	  --csv snapshots/bench-$(DATE).csv \
-	  -c benchs/conf.toml $(TEST_OPTS)
+	@benchpress run --prover batsat --prover minisat \
+	  -c benchs/benchpress.sexp benchs/basic/ -t 10 --progress \
+	  --csv snapshots/bench-basic-$(DATE)-csv $(TEST_OPTS)
 
 .PHONY: prebuild check release clean
 
