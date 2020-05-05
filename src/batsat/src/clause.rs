@@ -24,7 +24,6 @@ use {
         alloc::{self, RegionAllocator},
         intmap::{AsIndex, IntMap, IntMapBool, IntSet},
     },
-    smallvec::SmallVec,
     std::{fmt, iter::DoubleEndedIterator, ops, slice, u32},
 };
 
@@ -743,7 +742,7 @@ pub trait DeletePred<V> {
     fn deleted(&self, v: &V) -> bool;
 }
 
-pub type OccVec<V> = SmallVec<[V; 4]>;
+pub type OccVec<V> = Vec<V>;
 
 #[derive(Debug, Clone)]
 /// List of occurrences of objects of type `K` (e.g. literals) in values
