@@ -26,7 +26,9 @@ pub(crate) struct ResourceMeasure {
 
 impl ResourceMeasure {
     pub(crate) fn new() -> ResourceMeasure {
-        ResourceMeasure { start: ProcessTime::now() }
+        ResourceMeasure {
+            start: ProcessTime::now(),
+        }
     }
 
     pub fn cpu_time(&self) -> f64 {
@@ -40,4 +42,3 @@ impl ResourceMeasure {
     }
     */
 }
-
