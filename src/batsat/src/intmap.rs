@@ -267,10 +267,7 @@ impl<K: AsIndex> HeapData<K> {
     }
 
     pub fn promote<Comp: Comparator<K>>(&mut self, comp: Comp) -> Heap<K, Comp> {
-        Heap {
-            data: self,
-            comp: comp,
-        }
+        Heap { data: self, comp }
     }
 }
 
