@@ -108,6 +108,8 @@ mod test {
         assert_eq!(solver.solve_limited(&[!b]), lbool::TRUE);
         assert!(solver.add_clause_reuse(&mut vec![!a, b]));
         assert!(solver.add_clause_reuse(&mut vec![!a, !b]));
-        solver.solve_limited(&[]);
+        // panics in #7
+        assert_eq!(solver.solve_limited(&[]), lbool::TRUE);
+        assert_eq!(solver.solve_limited(&[a]), lbool::FALSE);
     }
 }
