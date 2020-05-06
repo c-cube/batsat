@@ -1435,10 +1435,11 @@ impl SolverV {
             if self.seen[q.var()] == Seen::REMOVABLE {
                 self.seen[q.var()] = Seen::UNDEF;
             }
-            index -= 1;
             if q == p {
                 break;
             }
+            // avoid overflow by decreasing index only if we keep looping (#7)
+            index -= 1;
         }
 
         // check that the first literal is a decision lit at conflict_level
