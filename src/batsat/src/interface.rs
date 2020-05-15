@@ -17,6 +17,7 @@ pub trait SolverInterface {
     fn num_decisions(&self) -> u64;
     fn num_restarts(&self) -> u64;
 
+    /// Is the solver in a state that can still be satisfiable?
     fn is_ok(&self) -> bool;
 
     /// Print some current statistics to standard output.
@@ -26,10 +27,12 @@ pub trait SolverInterface {
     /// used as a decision variable (NOTE! This has effects on the meaning of a SATISFIABLE result).
     fn new_var(&mut self, upol: lbool, dvar: bool) -> Var;
 
-    /// Create a new variable with the default polarity
+    /// Create a new variable with the default polarity.
+    ///
+    /// The default polarity is not specified.
     fn new_var_default(&mut self) -> Var;
 
-    /// Get the i-th variable, possibly creating it if it doesn't already exist.
+    /// Get the `i`-th variable, possibly creating it if it doesn't already exist.
     fn var_of_int(&mut self, i: u32) -> Var;
 
     /// Add a clause to the solver. Returns `false` if the solver is in
@@ -63,17 +66,17 @@ pub trait SolverInterface {
     /// These literals will keep this value from now on.
     fn proved_at_lvl_0(&self) -> &[Lit];
 
-    /// Query whole model
+    /// Query whole model, as a mapping from `Var` to `lbool`.
     ///
     /// Precondition: last result was `Sat` (ie `lbool::TRUE`)
     fn get_model(&self) -> &[lbool];
 
-    /// Query model for var
+    /// Query model for var.
     ///
     /// Precondition: last result was `Sat` (ie `lbool::TRUE`)
     fn value_var(&self, v: Var) -> lbool;
 
-    /// Query model for lit
+    /// Query model for lit.
     fn value_lit(&self, lit: Lit) -> lbool;
 
     /// Value of this literal if it's assigned at level 0, or `UNDEF` otherwise

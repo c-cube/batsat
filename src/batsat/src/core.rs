@@ -37,12 +37,14 @@ use {
 #[cfg(feature = "logging")]
 use crate::clause::display::Print;
 
-/// The main solver structure
+/// The main solver structure.
+///
+/// Each instance is a full-fledged SAT solver, and
+/// it can be parametrized further with a `theory::TheoryArg` and
+/// with basic `callbacks::Callbacks`.
 ///
 /// A `Solver` object contains the whole state of the SAT solver, including
 /// a clause allocator, literals, clauses, and statistics.
-///
-/// It is parametrized by `Callbacks`
 pub struct Solver<Cb: Callbacks> {
     // Extra results: (read-only member variable)
     /// If problem is satisfiable, this vector contains the model (if any).
@@ -250,7 +252,7 @@ mod theory_st {
     }
 }
 ///
-/// Print the model/proof as DIMACS
+/// Print the model/proof as DIMACS.
 pub struct SolverPrintDimacs<'a, Cb: Callbacks + 'a> {
     s: &'a Solver<Cb>,
     model: bool, // model or proof
@@ -404,7 +406,7 @@ impl<Cb: Callbacks + Default> Default for Solver<Cb> {
 }
 
 impl<Cb: Callbacks> Solver<Cb> {
-    /// Create a new solver with the given options and default callbacks
+    /// Create a new solver with the given options and the callbacks `cb`.
     pub fn new(opts: SolverOpts, cb: Cb) -> Self {
         Solver::new_with(opts, cb)
     }
@@ -1052,6 +1054,9 @@ enum TheoryConflict {
 /// The temporary theory argument, passed to the theory.
 ///
 /// This is where the theory can perform actions such as adding clauses.
+/// When the theory is called (on a partial model that is satisfiable on
+/// the boolean level), it can use this object to trigger conflicts,
+/// add lemmas, and propagate literals.
 pub struct TheoryArg<'a> {
     v: &'a mut SolverV,
     lits: &'a mut Vec<Lit>,
@@ -2224,6 +2229,9 @@ impl VarState {
 }
 
 impl<'a> TheoryArg<'a> {
+    /// Is the state of the solver still potentially satisfiable?
+    ///
+    /// `is_ok() == false` means UNSAT was found.
     #[inline]
     pub fn is_ok(&self) -> bool {
         match self.conflict {
@@ -2238,7 +2246,7 @@ impl<'a> TheoryArg<'a> {
         self.v.vars.value(v)
     }
 
-    /// Current (possibly partial) model.
+    /// Current (possibly partial) model, as a slice of true literals.
     #[inline(always)]
     pub fn model(&self) -> &[Lit] {
         &self.v.vars.trail
@@ -2457,6 +2465,9 @@ impl Watcher {
     }
 }
 
+/// Solver options.
+///
+/// This can be used to tune the solver heuristics.
 pub struct SolverOpts {
     pub var_decay: f64,
     pub clause_decay: f64,

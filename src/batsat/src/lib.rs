@@ -17,6 +17,11 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
+//! Batsat
+//!
+//! A SAT solver in rust, originally reimplement from Minisat 2.2 (which is in C++),
+//! and evolved from there.
+
 //======== LOG ============
 
 // stubs when logging is not enabled
@@ -58,5 +63,7 @@ pub use crate::{
     theory::{EmptyTheory, Theory, TheoryArg},
 };
 
-/// Basic solver, with basic callbacks and no theory
+/// Basic solver, with basic callbacks and no theory.
+///
+/// Use this if you just want a normal SAT solver.
 pub type BasicSolver = Solver<BasicCallbacks>;
