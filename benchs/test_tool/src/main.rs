@@ -1,24 +1,21 @@
-
 /// Script to run tests by comparing *Minisat* and *Ratsat* on
 /// a bunch of files.
-
-extern crate walkdir;
-extern crate threadpool;
-extern crate ansi_term;
-
-use std::path::{Path,PathBuf};
-use std::collections::{HashMap,HashSet};
-use std::time::{Instant,Duration};
-use std::thread;
-use std::sync::{Arc,mpsc};
+use ansi_term::Colour::{Green, Red};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    sync::{mpsc, Arc},
+    thread,
+    time::{Duration, Instant},
+};
 use threadpool::ThreadPool;
-use std::process::{Command,Stdio};
-use std::io::Write;
-use ansi_term::Colour::{Green,Red};
 
-type Result<T> = std::result::Result<T, Box<std::error::Error>>;
+type Error = anyhow::Error;
+type Result<T> = anyhow::Result<T>;
 
-#[derive(Clone,PartialEq,Eq,Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct SolverName(String);
 
 impl std::fmt::Debug for SolverName {
@@ -28,10 +25,12 @@ impl std::fmt::Debug for SolverName {
 }
 
 impl SolverName {
-    fn new(s: &str) -> SolverName { SolverName(s.to_owned()) }
+    fn new(s: &str) -> SolverName {
+        SolverName(s.to_owned())
+    }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 struct Solver {
     name: Arc<SolverName>,
     mk_proof: bool, // produces proofs?
@@ -45,8 +44,8 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
         Solver {
             name: Arc::new(SolverName::new("minisat")),
             mk_proof: false,
-            cmd:"minisat".to_owned(),
-            args: vec![format!("-cpu-lim={}", task.timeout)]
+            cmd: "minisat".to_owned(),
+            args: vec![format!("-cpu-lim={}", task.timeout)],
         },
         {
             let mut args = vec!["--cpu-lim".to_owned(), format!("{}", task.timeout)];
@@ -57,7 +56,7 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
             Solver {
                 name: Arc::new(SolverName::new("batsat")),
                 mk_proof: false,
-                cmd:"./../batsat-bin".to_owned(),
+                cmd: "./../batsat-bin".to_owned(),
                 args: vec!["--cpu-lim".to_owned(), format!("{}", task.timeout)],
             }
         },
@@ -65,12 +64,15 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
     // add a checked version of batsat, if there's a checker
     if task.checker.is_some() {
         v.push({
-            let args =
-                vec!["--proof".to_owned(), "--cpu-lim".to_owned(), format!("{}", task.timeout)];
+            let args = vec![
+                "--proof".to_owned(),
+                "--cpu-lim".to_owned(),
+                format!("{}", task.timeout),
+            ];
             Solver {
                 name: Arc::new(SolverName::new("batsat-proof")),
                 mk_proof: true,
-                cmd:"./../batsat-bin".to_owned(),
+                cmd: "./../batsat-bin".to_owned(),
                 args,
             }
         });
@@ -78,7 +80,7 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
     v
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 /// A call along with what solver and what file it was
 struct SolverResult {
     name: Arc<SolverName>,
@@ -87,7 +89,7 @@ struct SolverResult {
     res: SolverAnswer,
 }
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum SolverAnswer {
     CheckFailed,
     SolverFailed(String),
@@ -104,7 +106,7 @@ impl SolverAnswer {
     }
 }
 
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug, Copy, Clone)]
 /// Statistics for one prover
 struct Stats {
     unknown: i32,
@@ -118,8 +120,13 @@ struct Stats {
 impl Stats {
     fn new() -> Stats {
         Stats {
-            unknown: 0, sat: 0, unsat: 0, check_failed: 0,
-            solver_fail: 0, total_time: 0.}
+            unknown: 0,
+            sat: 0,
+            unsat: 0,
+            check_failed: 0,
+            solver_fail: 0,
+            total_time: 0.,
+        }
     }
 
     // update with the given results
@@ -134,7 +141,7 @@ impl Stats {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 /// Results of all solvers on a given file
 struct FileResult(HashMap<Arc<SolverName>, SolverResult>);
 
@@ -148,24 +155,32 @@ struct DirTask {
 }
 
 struct DirResult {
-    results: HashMap<Arc<PathBuf>,FileResult>,
+    results: HashMap<Arc<PathBuf>, FileResult>,
     stats: HashMap<Arc<SolverName>, Stats>,
     failures: HashSet<Arc<PathBuf>>,
+    errors: Vec<Error>,
     n_check_failed: usize,
     expected: HashMap<Arc<PathBuf>, SolverAnswer>, // if a solver found a result
 }
 
 impl DirResult {
-    fn update(&mut self, c: SolverResult) {
+    fn update(&mut self, c: Result<SolverResult>) {
+        let c = match c {
+            Err(e) => {
+                self.errors.push(e);
+                return;
+            }
+            Ok(x) => x,
+        };
+
         // look for mismatches
         let mut is_present = false;
-        let is_fail =
-            if let Some(res_exp) = self.expected.get(&c.path) {
-                is_present = true;
-                c.res.is_definite() && res_exp != &c.res
-            } else {
-                false
-            };
+        let is_fail = if let Some(res_exp) = self.expected.get(&c.path) {
+            is_present = true;
+            c.res.is_definite() && res_exp != &c.res
+        } else {
+            false
+        };
 
         if is_fail {
             self.failures.insert(c.path.clone());
@@ -178,14 +193,15 @@ impl DirResult {
 
         // update stats for this solver
         {
-            let s = &mut self.stats.get_mut(& c.name).unwrap();
+            let s = &mut self.stats.get_mut(&c.name).unwrap();
             s.update(&c.res);
             s.total_time += c.time;
         }
 
         println!("  {:-15}: {:?}", c.name.0, c);
         // update entry for this file
-        let tbl = self.results
+        let tbl = self
+            .results
             .entry(c.path.to_owned())
             .or_insert_with(|| FileResult(HashMap::new()));
         tbl.0.insert(c.name.clone(), c);
@@ -193,7 +209,11 @@ impl DirResult {
 }
 
 /// Call a solver on a file
-fn solve_file(solver: Solver, path: Arc<PathBuf>, checker: &Option<String>) -> Result<SolverResult> {
+fn solve_file(
+    solver: Solver,
+    path: Arc<PathBuf>,
+    checker: &Option<String>,
+) -> Result<SolverResult> {
     let start = Instant::now();
 
     // run the solver on the file
@@ -214,9 +234,12 @@ fn solve_file(solver: Solver, path: Arc<PathBuf>, checker: &Option<String>) -> R
         Some(20) => Unsat,
         x => {
             let s = String::from_utf8(out.stdout.clone())?;
-            println!("unknown exit code for solver {:?}: {:?}\nstdout: {:?}", solver.cmd, x, s);
+            println!(
+                "unknown exit code for solver {:?}: {:?}\nstdout: {:?}",
+                solver.cmd, x, s
+            );
             SolverFailed(s)
-        },
+        }
     };
 
     if let Some(check_cmd) = checker {
@@ -230,26 +253,38 @@ fn solve_file(solver: Solver, path: Arc<PathBuf>, checker: &Option<String>) -> R
                 .spawn()?;
             {
                 // write proof into its output
-                let stdin = checker_p.stdin.as_mut().expect("cannot get stdin of checker");
+                let stdin = checker_p
+                    .stdin
+                    .as_mut()
+                    .expect("cannot get stdin of checker");
                 stdin.write_all(out.stdout.as_slice())?;
             }
             let checker_out = checker_p.wait()?;
 
-            if ! checker_out.success() {
-                println!("checking failed for {:?} on {}", solver.name, path.display());
+            if !checker_out.success() {
+                println!(
+                    "checking failed for {:?} on {}",
+                    solver.name,
+                    path.display()
+                );
                 res = CheckFailed
             }
         }
     };
 
-    Ok(SolverResult {name: solver.name.clone(), path: path.clone(), time, res})
+    Ok(SolverResult {
+        name: solver.name.clone(),
+        path: path.clone(),
+        time,
+        res,
+    })
 }
 
 /// message sent on channels
 enum SyncMsg {
     StartedJob,
     SentAllJobs,
-    JobResult(SolverResult),
+    JobResult(Result<SolverResult>),
 }
 
 /// Main thread that collects results and aggregates them into `res`
@@ -264,7 +299,7 @@ fn collect_thread(mut res: DirResult, rx: mpsc::Receiver<SyncMsg>) -> DirResult 
             Err(_) => {
                 println!("collect thread: timeout");
                 std::process::exit(1) // fail
-            },
+            }
             Ok(StartedJob) => n_jobs += 1,
             Ok(SentAllJobs) => sent_all_jobs = true,
             Ok(JobResult(c)) => {
@@ -280,8 +315,12 @@ fn collect_thread(mut res: DirResult, rx: mpsc::Receiver<SyncMsg>) -> DirResult 
 }
 
 fn process_task(task: &DirTask) -> Result<DirResult> {
-    println!("process {} with {} jobs (proof: {})",
-        task.path.display(), task.jobs, task.checker.is_some());
+    println!(
+        "process {} with {} jobs (proof: {})",
+        task.path.display(),
+        task.jobs,
+        task.checker.is_some()
+    );
 
     let solvers = mk_solvers(&task);
     let pool = ThreadPool::new(task.jobs);
@@ -289,13 +328,17 @@ fn process_task(task: &DirTask) -> Result<DirResult> {
 
     // main thread
     let main_thread = {
-        let mut stats: HashMap<_,Stats> =
-            solvers.iter()
+        let stats: HashMap<_, Stats> = solvers
+            .iter()
             .map(|s| (s.name.clone(), Stats::new()))
             .collect();
         let state = DirResult {
-            stats, results: HashMap::new(), n_check_failed: 0,
-            failures: HashSet::new(), expected: HashMap::new(),
+            stats,
+            results: HashMap::new(),
+            n_check_failed: 0,
+            failures: HashSet::new(),
+            errors: vec![],
+            expected: HashMap::new(),
         };
         thread::spawn(move || collect_thread(state, rx))
     };
@@ -321,11 +364,11 @@ fn process_task(task: &DirTask) -> Result<DirResult> {
             tx.send(SyncMsg::StartedJob).unwrap(); // must wait for one more job
 
             pool.execute(move || {
-                let c = solve_file(solver, path, &checker).unwrap();
+                let c = solve_file(solver, path, &checker);
                 tx.send(SyncMsg::JobResult(c)).unwrap() // result of the job
             });
         }
-    };
+    }
     tx.send(SyncMsg::SentAllJobs).unwrap(); // only now can the main thread consider stopping
 
     // wait for the main thread to be done
@@ -336,12 +379,22 @@ fn process_task(task: &DirTask) -> Result<DirResult> {
 
 fn main() -> Result<()> {
     let dir = std::env::var("DIR").ok().unwrap_or("msat".to_owned());
-    let timeout: i64 = std::env::var("TIMEOUT").ok().unwrap_or("10".to_owned()).parse()?;
-    let jobs: usize = std::env::var("JOBS").ok().unwrap_or("3".to_owned()).parse()?;
+    let timeout: i64 = std::env::var("TIMEOUT")
+        .ok()
+        .unwrap_or("10".to_owned())
+        .parse()?;
+    let jobs: usize = std::env::var("JOBS")
+        .ok()
+        .unwrap_or("3".to_owned())
+        .parse()?;
     let checker = std::env::var("CHECKER").ok();
 
-    let dres = process_task(
-        &DirTask {path: Path::new(&dir).to_owned(), timeout, jobs, checker})?;
+    let dres = process_task(&DirTask {
+        path: Path::new(&dir).to_owned(),
+        timeout,
+        jobs,
+        checker,
+    })?;
 
     println!("{:#?}", dres.stats);
     if dres.failures.len() != 0 {
@@ -351,7 +404,11 @@ fn main() -> Result<()> {
         }
         panic!() // oh no
     } else if dres.n_check_failed != 0 {
-        println!("{} ({})", Red.bold().paint("CHECK FAILURE(S)"), dres.n_check_failed);
+        println!(
+            "{} ({})",
+            Red.bold().paint("CHECK FAILURE(S)"),
+            dres.n_check_failed
+        );
         panic!() // oh no
     } else {
         println!("{}", Green.bold().paint("OK"));

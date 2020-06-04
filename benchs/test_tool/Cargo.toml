@@ -2,11 +2,13 @@
 name = "test_tool"
 version = "0.1.0"
 authors = ["Simon Cruanes <simon.cruanes.2007@m4x.org>"]
+edition = "2018"
 
 [dependencies]
 
-walkdir = "2"
+walkdir = {version="2", default-features=false}
 threadpool = "1.7.1"
-ansi_term = "0.11"
+ansi_term = {version="0.11", default-features=false}
+anyhow = "1.0"
 
 [workspace]
