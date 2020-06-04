@@ -12,7 +12,6 @@ use std::{
 };
 use threadpool::ThreadPool;
 
-type Error = anyhow::Error;
 type Result<T> = anyhow::Result<T>;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -80,13 +79,13 @@ fn mk_solvers(task: &DirTask) -> Vec<Solver> {
     v
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 /// A call along with what solver and what file it was
 struct SolverResult {
     name: Arc<SolverName>,
     path: Arc<PathBuf>,
     time: f64,
-    res: SolverAnswer,
+    res: Result<SolverAnswer>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,6 +114,7 @@ struct Stats {
     check_failed: i32,
     solver_fail: i32,
     total_time: f64,
+    errors: i32,
 }
 
 impl Stats {
@@ -123,6 +123,7 @@ impl Stats {
             unknown: 0,
             sat: 0,
             unsat: 0,
+            errors: 0,
             check_failed: 0,
             solver_fail: 0,
             total_time: 0.,
@@ -130,18 +131,19 @@ impl Stats {
     }
 
     // update with the given results
-    fn update(&mut self, r: &SolverAnswer) {
+    fn update(&mut self, r: &Result<SolverAnswer>) {
         match r {
-            Unknown => self.unknown += 1,
-            Sat => self.sat += 1,
-            Unsat => self.unsat += 1,
-            CheckFailed => self.check_failed += 1,
-            SolverFailed(_) => self.solver_fail += 1,
+            Ok(Unknown) => self.unknown += 1,
+            Ok(Sat) => self.sat += 1,
+            Ok(Unsat) => self.unsat += 1,
+            Ok(CheckFailed) => self.check_failed += 1,
+            Ok(SolverFailed(_)) => self.solver_fail += 1,
+            Err(_) => self.errors += 1,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 /// Results of all solvers on a given file
 struct FileResult(HashMap<Arc<SolverName>, SolverResult>);
 
@@ -158,37 +160,34 @@ struct DirResult {
     results: HashMap<Arc<PathBuf>, FileResult>,
     stats: HashMap<Arc<SolverName>, Stats>,
     failures: HashSet<Arc<PathBuf>>,
-    errors: Vec<Error>,
+    errors: Vec<String>,
     n_check_failed: usize,
     expected: HashMap<Arc<PathBuf>, SolverAnswer>, // if a solver found a result
 }
 
 impl DirResult {
-    fn update(&mut self, c: Result<SolverResult>) {
-        let c = match c {
-            Err(e) => {
-                self.errors.push(e);
-                return;
-            }
-            Ok(x) => x,
-        };
-
+    fn update(&mut self, c: SolverResult) {
         // look for mismatches
         let mut is_present = false;
-        let is_fail = if let Some(res_exp) = self.expected.get(&c.path) {
-            is_present = true;
-            c.res.is_definite() && res_exp != &c.res
-        } else {
-            false
-        };
 
-        if is_fail {
-            self.failures.insert(c.path.clone());
-        } else if c.res.is_definite() && !is_present {
-            self.expected.insert(c.path.clone(), c.res.clone()); // we know what to expect!
-        }
-        if let SolverAnswer::CheckFailed = c.res {
-            self.n_check_failed += 1;
+        match &c.res {
+            Ok(res) => {
+                let is_fail = if let Some(res_exp) = self.expected.get(&c.path) {
+                    is_present = true;
+                    res.is_definite() && res_exp != res
+                } else {
+                    false
+                };
+                if is_fail {
+                    self.failures.insert(c.path.clone());
+                } else if res.is_definite() && !is_present {
+                    self.expected.insert(c.path.clone(), res.clone()); // we know what to expect!
+                    if let SolverAnswer::CheckFailed = res {
+                        self.n_check_failed += 1;
+                    }
+                }
+            }
+            Err(e) => self.errors.push(e.to_string()),
         }
 
         // update stats for this solver
@@ -210,10 +209,10 @@ impl DirResult {
 
 /// Call a solver on a file
 fn solve_file(
-    solver: Solver,
-    path: Arc<PathBuf>,
+    solver: &Solver,
+    path: &Arc<PathBuf>,
     checker: &Option<String>,
-) -> Result<SolverResult> {
+) -> Result<(f64, SolverAnswer)> {
     let start = Instant::now();
 
     // run the solver on the file
@@ -272,19 +271,14 @@ fn solve_file(
         }
     };
 
-    Ok(SolverResult {
-        name: solver.name.clone(),
-        path: path.clone(),
-        time,
-        res,
-    })
+    Ok((time, res))
 }
 
 /// message sent on channels
 enum SyncMsg {
     StartedJob,
     SentAllJobs,
-    JobResult(Result<SolverResult>),
+    JobResult(SolverResult),
 }
 
 /// Main thread that collects results and aggregates them into `res`
@@ -364,7 +358,16 @@ fn process_task(task: &DirTask) -> Result<DirResult> {
             tx.send(SyncMsg::StartedJob).unwrap(); // must wait for one more job
 
             pool.execute(move || {
-                let c = solve_file(solver, path, &checker);
+                let (time, res) = match solve_file(&solver, &path, &checker) {
+                    Ok((time, ans)) => (time, Ok(ans)),
+                    Err(e) => (0., Err(e)),
+                };
+                let c = SolverResult {
+                    name: solver.name.clone(),
+                    path,
+                    time,
+                    res,
+                };
                 tx.send(SyncMsg::JobResult(c)).unwrap() // result of the job
             });
         }
@@ -397,7 +400,13 @@ fn main() -> Result<()> {
     })?;
 
     println!("{:#?}", dres.stats);
-    if dres.failures.len() != 0 {
+    if dres.errors.len() != 0 {
+        println!("{} ({})", Red.bold().paint("ERRORS"), dres.errors.len());
+        for e in dres.errors.iter() {
+            println!("  error: {:?}", e)
+        }
+        panic!() // oh no
+    } else if dres.failures.len() != 0 {
         println!("{} ({})", Red.bold().paint("FAILURE"), dres.failures.len());
         for f in dres.failures.iter() {
             println!("  failure on: {:?}", f)
