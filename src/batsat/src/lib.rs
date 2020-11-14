@@ -41,7 +41,7 @@ pub(crate) mod log {
 
 #[cfg(feature = "logging")]
 #[macro_use]
-pub extern crate log;
+pub(crate) extern crate log;
 
 //======== PUBLIC INTERFACE ============
 
