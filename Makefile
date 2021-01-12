@@ -68,3 +68,5 @@ $(TEST_TOOL)-basic: build
 
 .PHONY: prebuild check release clean
 
+clippy:
+	@cargo clippy --
