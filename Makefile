@@ -66,6 +66,10 @@ $(TEST_TOOL)-basic: build
 	  -c benchs/benchpress.sexp benchs/basic/ -t 10 --progress \
 	  --csv snapshots/bench-basic-$(DATE)-csv $(TEST_OPTS)
 
+$(TEST_TOOL)-sat: build
+	@benchpress run -c benchs/benchpress.sexp -j 4 --timeout 10 --progress \
+		benchs/ -p minisat -p batsat
+
 .PHONY: prebuild check release clean
 
 clippy:
