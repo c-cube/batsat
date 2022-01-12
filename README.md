@@ -1,9 +1,10 @@
-# BatSat [![build status]](https://travis-ci.org/c-cube/batsat) [![Latest Version]](https://crates.io/crates/batsat)
+# BatSat [![Build](https://github.com/c-cube/batsat/actions/workflows/rust.yml/badge.svg)](https://github.com/c-cube/batsat/actions/workflows/rust.yml) [![Latest Version]](https://crates.io/crates/batsat)
 
-[build status]: https://api.travis-ci.org/c-cube/batsat.svg?branch=master
 [Latest Version]: https://img.shields.io/crates/v/batsat.svg
 
 This is a Rust SAT solver forked from [ratsat](https://github.com/qnighy/ratsat), a reimplementation of MiniSat.
+
+For reference, a [simple benchmark](https://benchpress.cedeela.fr/show/res-20220112T143715-921dc3ad-f9fa-493d-8a08-540eecad9827.sqlite/) comparing it to minisat on a set of (easy) problems.
 
 ## License
 
