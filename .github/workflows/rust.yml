@@ -20,3 +20,7 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Run sudoku tests
+      run: |
+        ./sudoku.sh benchs/sudoku/sudoku.txt > .sudoku-fast.res
+        diff .sudoku-fast.res .sudoku-fast.ref # fail if not the same
