@@ -85,6 +85,7 @@ struct VarState {
 }
 
 struct SolverV {
+    opts: SolverOpts,
     vars: VarState,
 
     learntsize_adjust_start_confl: i32,
@@ -114,33 +115,6 @@ struct SolverV {
     num_learnts: u64,
     clauses_literals: u64,
     learnts_literals: u64,
-
-    // Mode of operation:
-    clause_decay: f64,
-    random_var_freq: f64,
-    random_seed: f64,
-    luby_restart: bool,
-    /// Controls conflict clause minimization (0=none, 1=basic, 2=deep).
-    ccmin_mode: i32,
-    /// Controls the level of phase saving (0=none, 1=limited, 2=full).
-    phase_saving: i32,
-    /// Use random polarities for branching heuristics.
-    rnd_pol: bool,
-    /// Initialize variable activities with a small random value.
-    rnd_init_act: bool,
-    /// The fraction of wasted memory allowed before a garbage collection is triggered.
-    garbage_frac: f64,
-    /// Minimum number to set the learnts limit to.
-    min_learnts_lim: i32,
-
-    /// The initial restart limit. (default 100)
-    restart_first: i32,
-    /// The factor with which the restart limit is multiplied in each restart. (default 1.5)
-    restart_inc: f64,
-    /// The intitial limit for learnt clauses is a factor of the original clauses. (default 1 / 3)
-    learntsize_factor: f64,
-    /// The limit for learnt clauses is multiplied with this factor each restart. (default 1.1)
-    learntsize_inc: f64,
 
     // /// A heuristic measurement of the activity of a variable.
     // v.activity: VMap<f64>,
@@ -226,7 +200,7 @@ impl TheoryState {
     }
 
     /// Iterate over the clauses contained in this theory state
-    fn iter_lemmas<'a>(&'a mut self) -> impl Iterator<Item = &'a [Lit]> + 'a {
+    fn iter_lemmas(&mut self) -> impl Iterator<Item = &[Lit]> {
         theory_st::LIter(self, 0)
     }
 }
@@ -309,6 +283,18 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         );
         clause.sort_unstable();
         self.add_clause_(clause)
+    }
+
+    fn reset(&mut self) {
+        let new_v = SolverV::new(&self.v.opts);
+        self.v = new_v;
+        self.model.clear();
+        self.conflict.clear();
+        self.asynch_interrupt.store(false, Ordering::SeqCst);
+        self.clauses.clear();
+        self.learnts.clear();
+        self.tmp_c_th.clear();
+        self.tmp_c_add_cl.clear();
     }
 
     fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
@@ -519,7 +505,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                 if self.v.learntsize_adjust_cnt == 0 {
                     self.v.learntsize_adjust_confl *= self.v.learntsize_adjust_inc;
                     self.v.learntsize_adjust_cnt = self.v.learntsize_adjust_confl as i32;
-                    self.v.max_learnts *= self.v.learntsize_inc;
+                    self.v.max_learnts *= self.v.opts.learntsize_inc;
 
                     let trail_lim_head = self
                         .v
@@ -640,18 +626,18 @@ impl<Cb: Callbacks> Solver<Cb> {
         learnt: LearntClause,
         k: clause::Kind,
     ) {
-        self.cb.on_new_clause(&learnt.clause, k);
+        self.cb.on_new_clause(learnt.clause, k);
         self.cancel_until(th, learnt.backtrack_lvl as u32);
 
         // propagate the only lit of `learnt_clause` that isn't false
         if learnt.clause.len() == 1 {
             // directly propagate the unit clause at level 0
             self.v.vars.unchecked_enqueue(learnt.clause[0], CRef::UNDEF);
-        } else if learnt.clause.len() == 0 {
+        } else if learnt.clause.is_empty() {
             self.v.ok = false;
         } else {
             // propagate the lit, justified by `cr`
-            let cr = self.v.ca.alloc_with_learnt(&learnt.clause, true);
+            let cr = self.v.ca.alloc_with_learnt(learnt.clause, true);
             self.learnts.push(cr);
             self.v.attach_clause(cr);
             self.v.cla_bump_activity(&self.learnts, cr);
@@ -725,10 +711,7 @@ impl<Cb: Callbacks> Solver<Cb> {
             self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
             lbool::FALSE
         } else {
-            debug_assert!(match th_arg.conflict {
-                TheoryConflict::Nil => true,
-                _ => false,
-            });
+            debug_assert!(matches!(th_arg.conflict, TheoryConflict::Nil));
 
             let mut has_propagated = th_arg.has_propagated;
 
@@ -764,9 +747,9 @@ impl<Cb: Callbacks> Solver<Cb> {
         self.v.solves += 1;
         let mut tmp_learnt: Vec<Lit> = vec![];
 
-        self.v.max_learnts = self.num_clauses() as f64 * self.v.learntsize_factor;
-        if self.v.max_learnts < self.v.min_learnts_lim as f64 {
-            self.v.max_learnts = self.v.min_learnts_lim as f64;
+        self.v.max_learnts = self.num_clauses() as f64 * self.v.opts.learntsize_factor;
+        if self.v.max_learnts < self.v.opts.min_learnts_lim as f64 {
+            self.v.max_learnts = self.v.opts.min_learnts_lim as f64;
         }
 
         self.v.learntsize_adjust_confl = self.v.learntsize_adjust_start_confl as f64;
@@ -779,12 +762,12 @@ impl<Cb: Callbacks> Solver<Cb> {
         // Search:
         let mut curr_restarts: i32 = 0;
         loop {
-            let rest_base = if self.v.luby_restart {
-                utils::luby(self.v.restart_inc, curr_restarts)
+            let rest_base = if self.v.opts.luby_restart {
+                utils::luby(self.v.opts.restart_inc, curr_restarts)
             } else {
-                f64::powi(self.v.restart_inc, curr_restarts)
+                f64::powi(self.v.opts.restart_inc, curr_restarts)
             };
-            let nof_clauses = (rest_base * self.v.restart_first as f64) as i32;
+            let nof_clauses = (rest_base * self.v.opts.restart_first as f64) as i32;
             status = self.search(th, nof_clauses, &mut tmp_learnt);
             if !self.within_budget() {
                 break;
@@ -950,7 +933,7 @@ impl<Cb: Callbacks> Solver<Cb> {
     /// Check whether the space wasted by dead clauses in the clause allocator exceeds
     /// the threshold
     fn check_garbage(&mut self) {
-        if self.v.ca.wasted() as f64 > self.v.ca.len() as f64 * self.v.garbage_frac {
+        if self.v.ca.wasted() as f64 > self.v.ca.len() as f64 * self.v.opts.garbage_frac {
             self.garbage_collect();
         }
     }
@@ -1015,13 +998,13 @@ impl<Cb: Callbacks> Solver<Cb> {
         }
 
         clause.resize(j, Lit::UNDEF);
-        if clause.len() == 0 {
+        if clause.is_empty() {
             self.v.ok = false;
             return false;
         } else if clause.len() == 1 {
             self.v.vars.unchecked_enqueue(clause[0], CRef::UNDEF);
         } else {
-            let cr = self.v.ca.alloc_with_learnt(&clause, false);
+            let cr = self.v.ca.alloc_with_learnt(clause, false);
             self.clauses.push(cr);
             self.v.attach_clause(cr);
         }
@@ -1151,7 +1134,7 @@ impl SolverV {
     }
 
     fn cla_decay_activity(&mut self) {
-        self.cla_inc *= 1.0 / self.clause_decay;
+        self.cla_inc *= 1.0 / self.opts.clause_decay;
     }
 
     fn cla_bump_activity(&mut self, learnts: &[CRef], cr: CRef) {
@@ -1177,11 +1160,13 @@ impl SolverV {
         let mut next = Var::UNDEF;
 
         // Random decision:
-        if utils::drand(&mut self.random_seed) < self.random_var_freq
+        if utils::drand(&mut self.opts.random_seed) < self.opts.random_var_freq
             && !self.order_heap().is_empty()
         {
-            let idx_tmp =
-                utils::irand(&mut self.random_seed, self.order_heap_data.len() as i32) as usize;
+            let idx_tmp = utils::irand(
+                &mut self.opts.random_seed,
+                self.order_heap_data.len() as i32,
+            ) as usize;
             next = self.order_heap_data[idx_tmp];
             if self.value(next) == lbool::UNDEF && self.decision[next] {
                 self.rnd_decisions += 1;
@@ -1204,8 +1189,8 @@ impl SolverV {
             Lit::UNDEF
         } else if self.user_pol[next] != lbool::UNDEF {
             Lit::new(next, self.user_pol[next] == lbool::TRUE)
-        } else if self.rnd_pol {
-            Lit::new(next, utils::drand(&mut self.random_seed) < 0.5)
+        } else if self.opts.rnd_pol {
+            Lit::new(next, utils::drand(&mut self.opts.random_seed) < 0.5)
         } else {
             Lit::new(next, self.polarity[next])
         }
@@ -1227,10 +1212,10 @@ impl SolverV {
         self.vars
             .vardata
             .insert_default(v, VarData::new(CRef::UNDEF, 0));
-        if self.rnd_init_act {
+        if self.opts.rnd_init_act {
             self.vars
                 .activity
-                .insert_default(v, utils::drand(&mut self.random_seed) * 0.00001);
+                .insert_default(v, utils::drand(&mut self.opts.random_seed) * 0.00001);
         } else {
             self.vars.activity.insert_default(v, 0.0);
         }
@@ -1347,8 +1332,7 @@ impl SolverV {
                         c = self.ca.get_ref(cr); // re-borrow
                     }
 
-                    let lits = c.lits();
-                    lits
+                    c.lits()
                 }
                 ResolveWith::Resolve(lit, cr) if cr == CRef::SPECIAL => {
                     // theory propagation, ask the theory to justify `lit`
@@ -1524,8 +1508,8 @@ impl SolverV {
     fn minimize_conflict(&mut self, out_learnt: &mut Vec<Lit>) {
         // Simplify conflict clause:
         self.analyze_toclear.clear();
-        self.analyze_toclear.extend_from_slice(&out_learnt);
-        let new_size = if self.ccmin_mode == 2 {
+        self.analyze_toclear.extend_from_slice(out_learnt);
+        let new_size = if self.opts.ccmin_mode == 2 {
             let mut abstract_levels = 0;
             for a in out_learnt[1..].iter() {
                 abstract_levels |= self.abstract_level(a.var())
@@ -1543,7 +1527,7 @@ impl SolverV {
                 }
             }
             j
-        } else if self.ccmin_mode == 1 {
+        } else if self.opts.ccmin_mode == 1 {
             let mut j = 1;
             for i in 1..out_learnt.len() {
                 let lit = out_learnt[i];
@@ -1937,7 +1921,7 @@ impl SolverV {
         for c in (trail_lim_level..self.vars.trail.len()).rev() {
             let x = self.vars.trail[c].var();
             self.vars.ass[x] = lbool::UNDEF;
-            if self.phase_saving > 1 || (self.phase_saving == 1 && c > trail_lim_last) {
+            if self.opts.phase_saving > 1 || (self.opts.phase_saving == 1 && c > trail_lim_last) {
                 self.polarity[x] = self.vars.trail[c].sign();
             }
             self.insert_var_order(x);
@@ -2050,24 +2034,12 @@ impl SolverV {
     }
     fn new(opts: &SolverOpts) -> Self {
         Self {
+            opts: opts.clone(),
             vars: VarState::new(opts),
             num_clauses: 0,
             num_learnts: 0,
             clauses_literals: 0,
             learnts_literals: 0,
-
-            clause_decay: opts.clause_decay,
-            random_var_freq: opts.random_var_freq,
-            random_seed: opts.random_seed,
-            luby_restart: opts.luby_restart,
-            ccmin_mode: opts.ccmin_mode,
-            phase_saving: opts.phase_saving,
-            rnd_pol: false,
-            rnd_init_act: opts.rnd_init_act,
-            garbage_frac: opts.garbage_frac,
-            min_learnts_lim: opts.min_learnts_lim,
-            restart_first: opts.restart_first,
-            restart_inc: opts.restart_inc,
 
             // Parameters (experimental):
             learntsize_adjust_start_confl: 100,
@@ -2087,10 +2059,6 @@ impl SolverV {
             // v.learnts_literals: 0,
             max_literals: 0,
             tot_literals: 0,
-
-            // Parameters (the rest):
-            learntsize_factor: 1.0 / 3.0,
-            learntsize_inc: 1.1,
 
             polarity: VMap::new(),
             user_pol: VMap::new(),
@@ -2468,19 +2436,34 @@ impl Watcher {
 /// Solver options.
 ///
 /// This can be used to tune the solver heuristics.
+#[derive(Clone)]
 pub struct SolverOpts {
-    pub var_decay: f64,
-    pub clause_decay: f64,
-    pub random_var_freq: f64,
-    pub random_seed: f64,
-    pub ccmin_mode: i32,
-    pub phase_saving: i32,
-    pub rnd_init_act: bool,
-    pub luby_restart: bool,
-    pub restart_first: i32,
-    pub restart_inc: f64,
-    pub garbage_frac: f64,
-    pub min_learnts_lim: i32,
+    var_decay: f64,
+    clause_decay: f64,
+    random_var_freq: f64,
+    random_seed: f64,
+    luby_restart: bool,
+    /// Controls conflict clause minimization (0=none, 1=basic, 2=deep).
+    ccmin_mode: i32,
+    /// Controls the level of phase saving (0=none, 1=limited, 2=full).
+    phase_saving: i32,
+    /// Use random polarities for branching heuristics.
+    rnd_pol: bool,
+    /// Initialize variable activities with a small random value.
+    rnd_init_act: bool,
+    /// The fraction of wasted memory allowed before a garbage collection is triggered.
+    garbage_frac: f64,
+    /// Minimum number to set the learnts limit to.
+    min_learnts_lim: i32,
+
+    /// The initial restart limit. (default 100)
+    restart_first: i32,
+    /// The factor with which the restart limit is multiplied in each restart. (default 1.5)
+    restart_inc: f64,
+    /// The intitial limit for learnt clauses is a factor of the original clauses. (default 1 / 3)
+    learntsize_factor: f64,
+    /// The limit for learnt clauses is multiplied with this factor each restart. (default 1.1)
+    learntsize_inc: f64,
 }
 
 impl Default for SolverOpts {
@@ -2498,6 +2481,9 @@ impl Default for SolverOpts {
             restart_inc: 2.0,
             garbage_frac: 0.20,
             min_learnts_lim: 0,
+            learntsize_factor: 1.0 / 3.0,
+            learntsize_inc: 1.1,
+            rnd_pol: false,
         }
     }
 }

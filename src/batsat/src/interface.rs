@@ -20,6 +20,12 @@ pub trait SolverInterface {
     /// Is the solver in a state that can still be satisfiable?
     fn is_ok(&self) -> bool;
 
+    /// Reset solver state, forget all clauses, etc.
+    ///
+    /// this possibly allocates a new solver internally. It is useful to
+    /// reuse the same interface and callbacks.
+    fn reset(&mut self);
+
     /// Print some current statistics to standard output.
     fn print_stats(&self);
 
