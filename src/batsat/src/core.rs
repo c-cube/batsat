@@ -2438,32 +2438,32 @@ impl Watcher {
 /// This can be used to tune the solver heuristics.
 #[derive(Clone)]
 pub struct SolverOpts {
-    var_decay: f64,
-    clause_decay: f64,
-    random_var_freq: f64,
-    random_seed: f64,
-    luby_restart: bool,
+    pub var_decay: f64,
+    pub clause_decay: f64,
+    pub random_var_freq: f64,
+    pub random_seed: f64,
+    pub luby_restart: bool,
     /// Controls conflict clause minimization (0=none, 1=basic, 2=deep).
-    ccmin_mode: i32,
+    pub ccmin_mode: i32,
     /// Controls the level of phase saving (0=none, 1=limited, 2=full).
-    phase_saving: i32,
+    pub phase_saving: i32,
     /// Use random polarities for branching heuristics.
-    rnd_pol: bool,
+    pub rnd_pol: bool,
     /// Initialize variable activities with a small random value.
-    rnd_init_act: bool,
+    pub rnd_init_act: bool,
     /// The fraction of wasted memory allowed before a garbage collection is triggered.
-    garbage_frac: f64,
+    pub garbage_frac: f64,
     /// Minimum number to set the learnts limit to.
-    min_learnts_lim: i32,
+    pub min_learnts_lim: i32,
 
     /// The initial restart limit. (default 100)
-    restart_first: i32,
+    pub restart_first: i32,
     /// The factor with which the restart limit is multiplied in each restart. (default 1.5)
-    restart_inc: f64,
+    pub restart_inc: f64,
     /// The intitial limit for learnt clauses is a factor of the original clauses. (default 1 / 3)
-    learntsize_factor: f64,
+    pub learntsize_factor: f64,
     /// The limit for learnt clauses is multiplied with this factor each restart. (default 1.1)
-    learntsize_inc: f64,
+    pub learntsize_inc: f64,
 }
 
 impl Default for SolverOpts {
