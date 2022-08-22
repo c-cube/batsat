@@ -9,6 +9,7 @@ readme = "README.md"
 keywords = ["sat", "dimacs"]
 categories = ["algorithms", "command-line-utilities"]
 license = "MIT"
+edition = "2018"
 
 publish = false
 
