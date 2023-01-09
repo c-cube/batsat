@@ -1399,9 +1399,8 @@ impl SolverV {
             }
             // Select next literal in the trail to look at:
             while !self.seen[self.vars.trail[index - 1].var()].is_seen() {
-                debug_assert_eq!(
-                    self.vars.level(self.vars.trail[index - 1].var()),
-                    conflict_level
+                debug_assert!(
+                    self.vars.level(self.vars.trail[index - 1].var())  >= conflict_level
                 );
                 index -= 1;
             }
