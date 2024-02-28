@@ -28,10 +28,7 @@ use {
     crate::interface::SolverInterface,
     crate::intmap::{Comparator, Heap, HeapData},
     crate::theory::Theory,
-    std::{
-        cmp, f64, fmt, i32, mem,
-        sync::atomic::{AtomicBool, Ordering},
-    },
+    std::{cmp, f64, fmt, i32, mem},
 };
 
 #[cfg(feature = "logging")]
@@ -54,7 +51,6 @@ pub struct Solver<Cb: Callbacks> {
     conflict: LSet,
 
     cb: Cb, // the callbacks
-    asynch_interrupt: AtomicBool,
 
     /// List of problem clauses.
     clauses: Vec<CRef>,
@@ -290,7 +286,6 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         self.v = new_v;
         self.model.clear();
         self.conflict.clear();
-        self.asynch_interrupt.store(false, Ordering::SeqCst);
         self.clauses.clear();
         self.learnts.clear();
         self.tmp_c_th.clear();
@@ -298,7 +293,6 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
     }
 
     fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
-        self.asynch_interrupt.store(false, Ordering::SeqCst);
         self.v.assumptions.clear();
         self.v.assumptions.extend_from_slice(assumps);
         self.solve_internal(th)
@@ -416,7 +410,6 @@ impl<Cb: Callbacks> Solver<Cb> {
             cb,
             clauses: vec![],
             learnts: vec![],
-            asynch_interrupt: AtomicBool::new(false),
             v: SolverV::new(&opts),
             tmp_c_th: vec![],
             tmp_c_add_cl: vec![],
@@ -955,18 +948,8 @@ impl<Cb: Callbacks> Solver<Cb> {
         }
     }
 
-    /// Interrupt search asynchronously
-    pub fn interrupt_async(&self) {
-        self.asynch_interrupt.store(true, Ordering::Relaxed);
-    }
-
-    fn has_been_interrupted(&self) -> bool {
-        self.asynch_interrupt.load(Ordering::Relaxed)
-    }
-
     fn within_budget(&self) -> bool {
-        !self.has_been_interrupted()
-            && (self.v.conflict_budget < 0 || self.v.conflicts < self.v.conflict_budget as u64)
+        (self.v.conflict_budget < 0 || self.v.conflicts < self.v.conflict_budget as u64)
             && (self.v.propagation_budget < 0
                 || self.v.propagations < self.v.propagation_budget as u64)
             && !self.cb.stop()
@@ -1399,9 +1382,7 @@ impl SolverV {
             }
             // Select next literal in the trail to look at:
             while !self.seen[self.vars.trail[index - 1].var()].is_seen() {
-                debug_assert!(
-                    self.vars.level(self.vars.trail[index - 1].var())  >= conflict_level
-                );
+                debug_assert!(self.vars.level(self.vars.trail[index - 1].var()) >= conflict_level);
                 index -= 1;
             }
 
