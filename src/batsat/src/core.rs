@@ -292,10 +292,18 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         self.tmp_c_add_cl.clear();
     }
 
-    fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
+    fn raw_solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
         self.v.assumptions.clear();
         self.v.assumptions.extend_from_slice(assumps);
         self.solve_internal(th)
+    }
+
+    fn pop_model<Th: Theory>(&mut self, th: &mut Th) {
+        self.cancel_until(th, 0)
+    }
+
+    fn raw_value_lit(&self, l: Lit) -> lbool {
+        self.v.value_lit(l)
     }
 
     #[inline(always)]
@@ -791,12 +799,8 @@ impl<Cb: Callbacks> Solver<Cb> {
             self.v.ok = false;
         }
 
-        self.cancel_until(th, 0);
         debug!("res: {:?}", status);
-        trace!(
-            "proved at lvl 0: {:?}",
-            self.v.vars.iter_trail().collect::<Vec<_>>()
-        );
+        trace!("proved at lvl 0: {:?}", self.v.vars.proved_at_lvl_0());
         status
     }
 
