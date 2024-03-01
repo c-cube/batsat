@@ -65,7 +65,53 @@ pub trait SolverInterface {
     /// Solve using the given theory.
     ///
     /// - `th` is the theory.
-    fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
+    fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
+        let res = self.raw_solve_limited_th(th, assumps);
+        self.pop_model(th);
+        res
+    }
+
+    /// Solve using the given theory, and leave the solver in a state representing the model.
+    ///
+    /// [`pop_model`](Self::pop_model)`(th)` must be called before any changes are made
+    /// to `self` or `th`
+    ///
+    /// - `th` is the theory.
+    fn raw_solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
+
+    /// Restore the state of `self` and `th` after calling
+    /// [`raw_solve_limited_th`](Self::raw_solve_limited_th)
+    ///
+    /// This method is idempotent
+    fn pop_model<Th: Theory>(&mut self, th: &mut Th);
+
+    /// Value of this literal if it's assigned or `UNDEF` otherwise
+    ///
+    /// Returns the model value if it is called between
+    /// [`raw_solve_limited_th`](Self::raw_solve_limited_th) and [`pop_model`](Self::pop_model)
+    fn raw_value_lit(&self, l: Lit) -> lbool;
+
+    /// Solve using the given theory and return a [`SolveResult`]
+    fn solve_limited_th_full<'a, Th: Theory>(
+        &'a mut self,
+        th: &'a mut Th,
+        assumps: &[Lit],
+    ) -> SolveResult<'a, Self, Th> {
+        let res = self.raw_solve_limited_th(th, assumps);
+        if res == lbool::FALSE {
+            self.pop_model(th);
+            return SolveResult::Unsat(self.unsat_core());
+        }
+        let model = SolverModel {
+            solver: self,
+            theory: th,
+        };
+        if res == lbool::TRUE {
+            SolveResult::Sat(model)
+        } else {
+            SolveResult::Unknown(model)
+        }
+    }
 
     /// Obtain the slice of literals that are proved at level 0.
     ///
@@ -102,6 +148,38 @@ pub trait SolverInterface {
     ///
     /// Precondition: last result was `Unsat`
     fn unsat_core_contains_var(&self, v: Var) -> bool;
+}
+
+/// Result of calling [`SolverInterface::solve_limited_th_full`], contains the unsat-core
+/// if the solver returned unsat and a [`SolverModel`] otherwise
+pub enum SolveResult<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> {
+    Unsat(&'a [Lit]),
+    Sat(SolverModel<'a, S, Th>),
+    Unknown(SolverModel<'a, S, Th>),
+}
+
+/// State of a [`SolverInterface`] and its [`Theory`] representing a model
+pub struct SolverModel<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> {
+    solver: &'a mut S,
+    theory: &'a mut Th,
+}
+
+impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> Drop for SolverModel<'a, S, Th> {
+    fn drop(&mut self) {
+        self.solver.pop_model(self.theory)
+    }
+}
+
+impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> SolverModel<'a, S, Th> {
+    /// State of the [`Theory`]
+    pub fn theory(&self) -> &Th {
+        &self.theory
+    }
+
+    /// Query model for lit.
+    pub fn value_lit(&self, l: Lit) -> lbool {
+        self.solver.raw_value_lit(l)
+    }
 }
 
 #[cfg(test)]
