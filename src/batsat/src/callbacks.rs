@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use {
     super::clause::{self, lbool, Lit},
     super::ClauseKind,
@@ -164,5 +166,40 @@ impl fmt::Display for Stats {
 impl Default for Stats {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// [`Callbacks`] that allow the solver to be asynchronously interrupted
+pub struct AsyncInterrupt(Arc<AtomicBool>);
+
+/// Handle used to interrupt a solver using [`AsyncInterrupt`]
+pub struct AsyncInterruptHandle(Arc<AtomicBool>);
+
+impl Callbacks for AsyncInterrupt {
+    fn on_start(&mut self) {
+        self.0.store(false, Ordering::SeqCst)
+    }
+    fn stop(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for AsyncInterrupt {
+    fn default() -> Self {
+        AsyncInterrupt(Arc::new(AtomicBool::new(false)))
+    }
+}
+
+impl AsyncInterrupt {
+    /// Return an [`AsyncInterruptHandle`] that can be used to interrupt the solver
+    fn get_handle(&self) -> AsyncInterruptHandle {
+        AsyncInterruptHandle(self.0.clone())
+    }
+}
+
+impl AsyncInterruptHandle {
+    /// Interrupt the solver
+    fn interrupt_async(&self) {
+        self.0.store(true, Ordering::SeqCst)
     }
 }
