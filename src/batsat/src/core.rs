@@ -292,7 +292,11 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         self.tmp_c_add_cl.clear();
     }
 
-    fn raw_solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
+    fn solve_limited_preserving_trail_th<Th: Theory>(
+        &mut self,
+        th: &mut Th,
+        assumps: &[Lit],
+    ) -> lbool {
         self.v.assumptions.clear();
         self.v.assumptions.extend_from_slice(assumps);
         self.solve_internal(th)

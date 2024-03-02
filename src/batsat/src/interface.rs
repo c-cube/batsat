@@ -66,7 +66,7 @@ pub trait SolverInterface {
     ///
     /// - `th` is the theory.
     fn solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool {
-        let res = self.raw_solve_limited_th(th, assumps);
+        let res = self.solve_limited_preserving_trail_th(th, assumps);
         self.pop_model(th);
         res
     }
@@ -77,10 +77,14 @@ pub trait SolverInterface {
     /// to `self` or `th`
     ///
     /// - `th` is the theory.
-    fn raw_solve_limited_th<Th: Theory>(&mut self, th: &mut Th, assumps: &[Lit]) -> lbool;
+    fn solve_limited_preserving_trail_th<Th: Theory>(
+        &mut self,
+        th: &mut Th,
+        assumps: &[Lit],
+    ) -> lbool;
 
     /// Restore the state of `self` and `th` after calling
-    /// [`raw_solve_limited_th`](Self::raw_solve_limited_th)
+    /// [`raw_solve_limited_th`](Self::solve_limited_preserving_trail_th)
     ///
     /// This method is idempotent
     fn pop_model<Th: Theory>(&mut self, th: &mut Th);
@@ -88,7 +92,7 @@ pub trait SolverInterface {
     /// Value of this literal if it's assigned or `UNDEF` otherwise
     ///
     /// Returns the model value if it is called between
-    /// [`raw_solve_limited_th`](Self::raw_solve_limited_th) and [`pop_model`](Self::pop_model)
+    /// [`raw_solve_limited_th`](Self::solve_limited_preserving_trail_th) and [`pop_model`](Self::pop_model)
     fn raw_value_lit(&self, l: Lit) -> lbool;
 
     /// Solve using the given theory and return a [`SolveResult`]
@@ -97,7 +101,7 @@ pub trait SolverInterface {
         th: &'a mut Th,
         assumps: &[Lit],
     ) -> SolveResult<'a, Self, Th> {
-        let res = self.raw_solve_limited_th(th, assumps);
+        let res = self.solve_limited_preserving_trail_th(th, assumps);
         if res == lbool::FALSE {
             self.pop_model(th);
             return SolveResult::Unsat(self.unsat_core());
