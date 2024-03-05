@@ -554,6 +554,11 @@ impl<Cb: Callbacks> Solver<Cb> {
                 {
                     let th_res = self.call_theory(th, TheoryCall::Partial, tmp_learnt);
 
+                    let Some(th_res) = th_res else {
+                        self.v.conflicts += 1;
+                        return lbool::FALSE;
+                    };
+
                     if th_res == lbool::UNDEF {
                         // some theory propagations, do not decide yet
                         continue 'main;
@@ -593,6 +598,11 @@ impl<Cb: Callbacks> Solver<Cb> {
                     if next == Lit::UNDEF {
                         // no decision? time for a theory final-check
                         let th_res = self.call_theory(th, TheoryCall::Final, tmp_learnt);
+
+                        let Some(th_res) = th_res else {
+                            self.v.conflicts += 1;
+                            return lbool::FALSE;
+                        };
 
                         if th_res == lbool::TRUE {
                             // Model found and validated by the theory
@@ -664,14 +674,15 @@ impl<Cb: Callbacks> Solver<Cb> {
     /// Call theory to check the current (possibly partial) model
     ///
     /// Returns `UNDEF` if the theory propagated something, `TRUE` if
-    /// the theory accepted the model without propagations, and `FALSE` if
-    /// the theory rejected the model.
+    /// the theory accepted the model without propagations, `FALSE` if
+    /// the theory rejected the model, and `None` if  the theory rejected
+    /// the model at level 0.
     fn call_theory<Th: Theory>(
         &mut self,
         th: &mut Th,
         k: TheoryCall,
         tmp_learnt: &mut Vec<Lit>,
-    ) -> lbool {
+    ) -> Option<lbool> {
         let mut th_arg = {
             let confl_cl = &mut self.tmp_c_th;
             confl_cl.clear();
@@ -696,25 +707,19 @@ impl<Cb: Callbacks> Solver<Cb> {
             debug!("theory conflict {:?} (costly: {})", local_confl_cl, costly);
             self.v.sort_clause_lits(&mut local_confl_cl); // as if it were a normal clause
             local_confl_cl.dedup();
-            let learnt = {
-                let r = Conflict::ThLemma {
-                    lits: &local_confl_cl,
-                    add: costly,
-                };
-                self.v.analyze(r, &self.learnts, tmp_learnt, th)
+            let r = Conflict::ThLemma {
+                lits: &local_confl_cl,
+                add: costly,
             };
-            self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
+            self.handle_theory_conflict(th, tmp_learnt, r)?;
             mem::swap(&mut local_confl_cl, &mut self.tmp_c_th); // re-use lits
-            lbool::FALSE
+            Some(lbool::FALSE)
         } else if let TheoryConflict::Prop(p) = th_arg.conflict {
             // conflict: propagation of a lit known to be false
             debug!("inconsistent theory propagation {:?}", p);
-            let learnt = {
-                let r = Conflict::ThProp(p);
-                self.v.analyze(r, &self.learnts, tmp_learnt, th)
-            };
-            self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
-            lbool::FALSE
+            let r = Conflict::ThProp(p);
+            self.handle_theory_conflict(th, tmp_learnt, r)?;
+            Some(lbool::FALSE)
         } else {
             debug_assert!(matches!(th_arg.conflict, TheoryConflict::Nil));
 
@@ -733,11 +738,25 @@ impl<Cb: Callbacks> Solver<Cb> {
 
             if has_propagated {
                 self.v.th_st.clear(); // be sure to cleanup
-                lbool::UNDEF
+                Some(lbool::UNDEF)
             } else {
-                lbool::TRUE // Model validated without further work needed
+                Some(lbool::TRUE) // Model validated without further work needed
             }
         }
+    }
+
+    fn handle_theory_conflict<Th: Theory>(
+        &mut self,
+        th: &mut Th,
+        tmp_learnt: &mut Vec<Lit>,
+        r: Conflict,
+    ) -> Option<()> {
+        if self.v.decision_level() == 0 {
+            return None;
+        }
+        let learnt = self.v.analyze(r, &self.learnts, tmp_learnt, th);
+        self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
+        Some(())
     }
 
     /// Main solve method (assumptions given in `self.assumptions`).
