@@ -410,6 +410,8 @@ enum TheoryCall {
     Final,
 }
 
+struct ConflictAtLevel0;
+
 // main algorithm
 impl<Cb: Callbacks> Solver<Cb> {
     /// Create a new solver with the given options and callbacks.
@@ -554,7 +556,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                 {
                     let th_res = self.call_theory(th, TheoryCall::Partial, tmp_learnt);
 
-                    let Some(th_res) = th_res else {
+                    let Ok(th_res) = th_res else {
                         self.v.conflicts += 1;
                         return lbool::FALSE;
                     };
@@ -599,7 +601,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                         // no decision? time for a theory final-check
                         let th_res = self.call_theory(th, TheoryCall::Final, tmp_learnt);
 
-                        let Some(th_res) = th_res else {
+                        let Ok(th_res) = th_res else {
                             self.v.conflicts += 1;
                             return lbool::FALSE;
                         };
@@ -682,7 +684,7 @@ impl<Cb: Callbacks> Solver<Cb> {
         th: &mut Th,
         k: TheoryCall,
         tmp_learnt: &mut Vec<Lit>,
-    ) -> Option<lbool> {
+    ) -> Result<lbool, ConflictAtLevel0> {
         let mut th_arg = {
             let confl_cl = &mut self.tmp_c_th;
             confl_cl.clear();
@@ -713,13 +715,13 @@ impl<Cb: Callbacks> Solver<Cb> {
             };
             self.handle_theory_conflict(th, tmp_learnt, r)?;
             mem::swap(&mut local_confl_cl, &mut self.tmp_c_th); // re-use lits
-            Some(lbool::FALSE)
+            Ok(lbool::FALSE)
         } else if let TheoryConflict::Prop(p) = th_arg.conflict {
             // conflict: propagation of a lit known to be false
             debug!("inconsistent theory propagation {:?}", p);
             let r = Conflict::ThProp(p);
             self.handle_theory_conflict(th, tmp_learnt, r)?;
-            Some(lbool::FALSE)
+            Ok(lbool::FALSE)
         } else {
             debug_assert!(matches!(th_arg.conflict, TheoryConflict::Nil));
 
@@ -738,9 +740,9 @@ impl<Cb: Callbacks> Solver<Cb> {
 
             if has_propagated {
                 self.v.th_st.clear(); // be sure to cleanup
-                Some(lbool::UNDEF)
+                Ok(lbool::UNDEF)
             } else {
-                Some(lbool::TRUE) // Model validated without further work needed
+                Ok(lbool::TRUE) // Model validated without further work needed
             }
         }
     }
@@ -750,13 +752,13 @@ impl<Cb: Callbacks> Solver<Cb> {
         th: &mut Th,
         tmp_learnt: &mut Vec<Lit>,
         r: Conflict,
-    ) -> Option<()> {
+    ) -> Result<(), ConflictAtLevel0> {
         if self.v.decision_level() == 0 {
-            return None;
+            return Err(ConflictAtLevel0);
         }
         let learnt = self.v.analyze(r, &self.learnts, tmp_learnt, th);
         self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
-        Some(())
+        Ok(())
     }
 
     /// Main solve method (assumptions given in `self.assumptions`).
