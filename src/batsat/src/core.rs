@@ -2160,6 +2160,13 @@ impl VarState {
 
     fn var_decay_activity(&mut self) {
         self.var_inc *= 1.0 / self.var_decay;
+        if self.var_inc > 1e100 {
+            // Rescale:
+            for (_, x) in self.activity.iter_mut() {
+                *x *= 1e-100;
+            }
+            self.var_inc *= 1e-100;
+        }
     }
 
     #[inline(always)]
@@ -2182,13 +2189,6 @@ impl VarState {
     /// Increase a variable with the current 'bump' value.
     fn var_bump_activity(&mut self, order_heap_data: &mut HeapData<Var>, v: Var) {
         self.activity[v] += self.var_inc;
-        if self.activity[v] > 1e100 {
-            // Rescale:
-            for (_, x) in self.activity.iter_mut() {
-                *x *= 1e-100;
-            }
-            self.var_inc *= 1e-100;
-        }
 
         // Update order_heap with respect to new activity:
         let mut order_heap = order_heap_data.promote(VarOrder {
@@ -2407,7 +2407,9 @@ impl Eq for Watcher {}
 
 impl<'a> Comparator<Var> for VarOrder<'a> {
     fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
-        PartialOrd::partial_cmp(&self.activity[*rhs], &self.activity[*lhs]).expect("NaN activity")
+        PartialOrd::partial_cmp(&self.activity[*rhs], &self.activity[*lhs])
+            .expect("NaN activity")
+            .then(lhs.cmp(rhs))
     }
 }
 
