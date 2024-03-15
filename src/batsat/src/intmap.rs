@@ -238,12 +238,12 @@ impl<K: AsIndex> ops::Deref for IntSet<K> {
 }
 
 #[derive(Debug, Clone)]
-pub struct HeapData<K: AsIndex> {
-    heap: Vec<K>,
+pub struct HeapData<K: AsIndex, V> {
+    heap: Vec<(K, V)>,
     indices: IntMap<K, i32>,
 }
 
-impl<K: AsIndex> Default for HeapData<K> {
+impl<K: AsIndex, V> Default for HeapData<K, V> {
     fn default() -> Self {
         Self {
             heap: Vec::new(),
@@ -252,7 +252,7 @@ impl<K: AsIndex> Default for HeapData<K> {
     }
 }
 
-impl<K: AsIndex> HeapData<K> {
+impl<K: AsIndex, V> HeapData<K, V> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -266,15 +266,15 @@ impl<K: AsIndex> HeapData<K> {
         self.indices.has(k) && self.indices[k] >= 0
     }
 
-    pub fn promote<Comp: Comparator<K>>(&mut self, comp: Comp) -> Heap<K, Comp> {
+    pub fn promote<Comp: Comparator<(K, V)>>(&mut self, comp: Comp) -> Heap<K, V, Comp> {
         Heap { data: self, comp }
     }
 }
 
-impl<K: AsIndex> ops::Index<usize> for HeapData<K> {
+impl<K: AsIndex, V> ops::Index<usize> for HeapData<K, V> {
     type Output = K;
     fn index(&self, index: usize) -> &Self::Output {
-        &self.heap[index]
+        &self.heap[index].0
     }
 }
 
@@ -322,25 +322,29 @@ pub trait Comparator<T: ?Sized> {
     }
 }
 
+pub trait MemoComparator<K, V>: Comparator<(K, V)> {
+    fn value(&self, k: K) -> V;
+}
+
 #[derive(Debug)]
-pub struct Heap<'a, K: AsIndex + 'a, Comp: Comparator<K>> {
-    data: &'a mut HeapData<K>,
+pub struct Heap<'a, K: AsIndex + 'a, V: 'a, Comp> {
+    data: &'a mut HeapData<K, V>,
     comp: Comp,
 }
 
-impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> ops::Deref for Heap<'a, K, Comp> {
-    type Target = HeapData<K>;
+impl<'a, K: AsIndex + 'a, V: 'a, Comp> ops::Deref for Heap<'a, K, V, Comp> {
+    type Target = HeapData<K, V>;
     fn deref(&self) -> &Self::Target {
         &self.data
     }
 }
-impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> ops::DerefMut for Heap<'a, K, Comp> {
+impl<'a, K: AsIndex + 'a, V: 'a, Comp> ops::DerefMut for Heap<'a, K, V, Comp> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
     }
 }
 
-impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
+impl<'a, K: AsIndex + 'a, V: Copy + 'a, Comp: MemoComparator<K, V>> Heap<'a, K, V, Comp> {
     fn percolate_up(&mut self, mut i: u32) {
         let x = self.heap[i as usize];
         let mut p = parent_index(i);
@@ -348,12 +352,12 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
         while i != 0 && self.comp.lt(&x, &self.heap[p as usize]) {
             self.heap[i as usize] = self.heap[p as usize];
             let tmp = self.heap[p as usize];
-            self.indices[tmp] = i as i32;
+            self.indices[tmp.0] = i as i32;
             i = p;
             p = parent_index(p);
         }
         self.heap[i as usize] = x;
-        self.indices[x] = i as i32;
+        self.indices[x.0] = i as i32;
     }
 
     fn percolate_down(&mut self, mut i: u32) {
@@ -373,20 +377,23 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
             }
             self.heap[i as usize] = self.heap[child as usize];
             let tmp = self.heap[i as usize];
-            self.indices[tmp] = i as i32;
+            self.indices[tmp.0] = i as i32;
             i = child;
         }
         self.heap[i as usize] = x;
-        self.indices[x] = i as i32;
+        self.indices[x.0] = i as i32;
     }
+
     pub fn decrease(&mut self, k: K) {
         debug_assert!(self.in_heap(k));
         let k_index = self.indices[k];
+        self.heap[k_index as usize].1 = self.comp.value(k);
         self.percolate_up(k_index as u32);
     }
     pub fn increase(&mut self, k: K) {
         debug_assert!(self.in_heap(k));
         let k_index = self.indices[k];
+        self.heap[k_index as usize].1 = self.comp.value(k);
         self.percolate_down(k_index as u32);
     }
 
@@ -396,6 +403,7 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
             self.insert(k);
         } else {
             let k_index = self.indices[k];
+            self.heap[k_index as usize].1 = self.comp.value(k);
             self.percolate_up(k_index as u32);
             let k_index = self.indices[k];
             self.percolate_down(k_index as u32);
@@ -407,7 +415,7 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
         debug_assert!(!self.in_heap(k));
 
         self.indices[k] = self.heap.len() as i32;
-        self.heap.push(k);
+        self.data.heap.push((k, self.comp.value(k)));
         let k_index = self.indices[k];
         self.percolate_up(k_index as u32);
     }
@@ -419,7 +427,7 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
         if (k_pos as usize) < self.heap.len() - 1 {
             self.heap[k_pos as usize] = *self.heap.last().unwrap();
             let tmp = self.heap[k_pos as usize];
-            self.indices[tmp] = k_pos as i32;
+            self.indices[tmp.0] = k_pos as i32;
             self.heap.pop().expect("cannot pop from empty heap");
             self.percolate_down(k_pos);
         } else {
@@ -431,31 +439,34 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
         let x = *self.heap.first().expect("heap is empty");
         let lastval = *self.heap.last().expect("heap is empty");
         self.heap[0] = lastval;
-        self.indices[lastval] = 0;
-        self.indices[x] = -1;
+        self.indices[lastval.0] = 0;
+        self.indices[x.0] = -1;
         self.heap.pop().expect("cannot pop from empty heap");
         if self.heap.len() > 1 {
             self.percolate_down(0);
         }
-        x
+        x.0
     }
 
     /// Rebuild the heap from scratch, using the elements in 'ns':
-    pub fn build(&mut self, ns: &[K]) {
+    pub fn build(&mut self, ns: impl Iterator<Item = K>) {
         {
             let data = &mut self.data;
             for &x in &data.heap {
-                data.indices[x] = -1;
+                data.indices[x.0] = -1;
             }
         }
         self.heap.clear();
 
-        for (i, &x) in ns.iter().enumerate() {
-            // TODO: this should probably call reserve instead of relying on it being reserved already.
-            debug_assert!(self.indices.has(x));
-            self.indices[x] = i as i32;
-            self.heap.push(x);
-        }
+        let ns = ns
+            .enumerate()
+            .inspect(|(i, x)| {
+                debug_assert!(self.data.indices.has(*x));
+                self.data.indices[*x] = *i as i32;
+            })
+            .map(|(_, x)| (x, self.comp.value(x)));
+
+        self.data.heap.extend(ns);
 
         let mut i = self.heap.len() as i32 / 2 - 1;
         while i >= 0 {
@@ -469,7 +480,7 @@ impl<'a, K: AsIndex + 'a, Comp: Comparator<K>> Heap<'a, K, Comp> {
         {
             let data = &mut self.data;
             for &x in &data.heap {
-                data.indices[x] = -1;
+                data.indices[x.0] = -1;
             }
         }
         self.heap.clear();

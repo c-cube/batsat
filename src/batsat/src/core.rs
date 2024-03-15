@@ -33,6 +33,7 @@ use {
 
 #[cfg(feature = "logging")]
 use crate::clause::display::Print;
+use crate::intmap::MemoComparator;
 
 /// The main solver structure.
 ///
@@ -67,7 +68,7 @@ struct VarState {
     /// A heuristic measurement of the activity of a variable.
     activity: VMap<f64>,
     /// A priority queue of variables ordered with respect to the variable activity.
-    order_heap_data: HeapData<Var>,
+    order_heap_data: HeapData<Var, f64>,
     /// Current assignment for each variable.
     ass: VMap<lbool>,
     /// Stores reason and level for each variable.
@@ -1125,7 +1126,7 @@ impl SolverV {
         self.vars.value_lit(x)
     }
 
-    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
+    fn order_heap(&mut self) -> Heap<Var, f64, VarOrder> {
         self.vars.order_heap()
     }
 
@@ -1789,13 +1790,10 @@ impl SolverV {
     }
 
     fn rebuild_order_heap(&mut self) {
-        let mut vs = vec![];
-        for v in (0..self.num_vars()).map(Var::from_idx) {
-            if self.decision[v] && self.value(v) == lbool::UNDEF {
-                vs.push(v);
-            }
-        }
-        self.order_heap().build(&vs);
+        let vs = (0..self.num_vars())
+            .map(Var::from_idx)
+            .filter(|&v| self.decision[v]);
+        self.vars.rebuild_order_heap(vs);
     }
 
     /// Sort literals of `clause` so that unassigned literals are first,
@@ -2185,7 +2183,7 @@ impl VarState {
         self.trail.push(p);
     }
 
-    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
+    fn order_heap(&mut self) -> Heap<Var, f64, VarOrder> {
         self.order_heap_data.promote(VarOrder {
             activity: &self.activity,
         })
@@ -2200,6 +2198,15 @@ impl VarState {
         if order_heap.in_heap(v) {
             order_heap.decrease(v);
         }
+    }
+
+    fn rebuild_order_heap(&mut self, eligible_vars: impl Iterator<Item = Var>) {
+        let vars = eligible_vars.filter(|x| self.ass[*x] == lbool::UNDEF);
+        self.order_heap_data
+            .promote(VarOrder {
+                activity: &self.activity,
+            })
+            .build(vars);
     }
 
     #[allow(dead_code)]
@@ -2408,11 +2415,19 @@ impl PartialEq for Watcher {
 }
 impl Eq for Watcher {}
 
-impl<'a> Comparator<Var> for VarOrder<'a> {
-    fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
-        PartialOrd::partial_cmp(&self.activity[*rhs], &self.activity[*lhs])
+impl<'a> Comparator<(Var, f64)> for VarOrder<'a> {
+    fn cmp(&self, lhs: &(Var, f64), rhs: &(Var, f64)) -> cmp::Ordering {
+        debug_assert_eq!(self.activity[rhs.0], rhs.1);
+        debug_assert_eq!(self.activity[lhs.0], lhs.1);
+        PartialOrd::partial_cmp(&rhs.1, &lhs.1)
             .expect("NaN activity")
-            .then(lhs.cmp(rhs))
+            .then(lhs.0.cmp(&rhs.0))
+    }
+}
+
+impl<'a> MemoComparator<Var, f64> for VarOrder<'a> {
+    fn value(&self, k: Var) -> f64 {
+        self.activity[k]
     }
 }
 
