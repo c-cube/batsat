@@ -28,7 +28,7 @@ use {
     crate::interface::SolverInterface,
     crate::intmap::{Comparator, Heap, HeapData},
     crate::theory::Theory,
-    std::{cmp, f64, fmt, i32, mem},
+    std::{cmp, fmt, mem},
 };
 
 #[cfg(feature = "logging")]
@@ -66,16 +66,16 @@ pub struct Solver<Cb: Callbacks> {
 /// The current assignments.
 struct VarState {
     /// A heuristic measurement of the activity of a variable.
-    activity: VMap<f64>,
+    activity: VMap<f32>,
     /// A priority queue of variables ordered with respect to the variable activity.
-    order_heap_data: HeapData<Var, f64>,
+    order_heap_data: HeapData<Var, f32>,
     /// Current assignment for each variable.
     ass: VMap<lbool>,
     /// Stores reason and level for each variable.
     vardata: VMap<VarData>,
     /// Amount to bump next variable with.
-    var_inc: f64,
-    var_decay: f64,
+    var_inc: f32,
+    var_decay: f32,
 
     /// Assignment stack; stores all assigments made in the order they were made.
     trail: Vec<Lit>,
@@ -1126,7 +1126,7 @@ impl SolverV {
         self.vars.value_lit(x)
     }
 
-    fn order_heap(&mut self) -> Heap<Var, f64, VarOrder> {
+    fn order_heap(&mut self) -> Heap<Var, f32, VarOrder> {
         self.vars.order_heap()
     }
 
@@ -1226,9 +1226,10 @@ impl SolverV {
             .vardata
             .insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.opts.rnd_init_act {
-            self.vars
-                .activity
-                .insert_default(v, utils::drand(&mut self.opts.random_seed) * 0.00001);
+            self.vars.activity.insert_default(
+                v,
+                (utils::drand(&mut self.opts.random_seed) * 0.00001) as f32,
+            );
         } else {
             self.vars.activity.insert_default(v, 0.0);
         }
@@ -2101,6 +2102,16 @@ impl SolverV {
     }
 }
 
+/// Large f32 that is still small enough that it can't cause another f32 to overflow to infinity
+const THRESHOLD: f32 = 1.0141204e31;
+#[test]
+fn test_threshold() {
+    let f = f32::MAX * 2.0f32.powi(-1 - (f32::MANTISSA_DIGITS as i32));
+    assert_eq!(THRESHOLD, f);
+    // adding THRESHOLD to a float can never make it overflow to infinity
+    assert_eq!(f32::MAX + THRESHOLD, f32::MAX)
+}
+
 impl VarState {
     fn new(opts: &SolverOpts) -> Self {
         Self {
@@ -2157,12 +2168,12 @@ impl VarState {
 
     fn var_decay_activity(&mut self) {
         self.var_inc *= 1.0 / self.var_decay;
-        if self.var_inc > 1e100 {
+        if self.var_inc > THRESHOLD {
             // Rescale:
             for (_, x) in self.activity.iter_mut() {
-                *x *= 1e-100;
+                *x /= THRESHOLD;
             }
-            self.var_inc *= 1e-100;
+            self.var_inc /= THRESHOLD;
         }
     }
 
@@ -2183,7 +2194,7 @@ impl VarState {
         self.trail.push(p);
     }
 
-    fn order_heap(&mut self) -> Heap<Var, f64, VarOrder> {
+    fn order_heap(&mut self) -> Heap<Var, f32, VarOrder> {
         self.order_heap_data.promote(VarOrder {
             activity: &self.activity,
         })
@@ -2332,7 +2343,7 @@ struct Watcher {
 }
 
 struct VarOrder<'a> {
-    activity: &'a VMap<f64>,
+    activity: &'a VMap<f32>,
 }
 
 /// Predicate to test whether a clause has been removed from some lit's watchlist
@@ -2415,8 +2426,8 @@ impl PartialEq for Watcher {
 }
 impl Eq for Watcher {}
 
-impl<'a> Comparator<(Var, f64)> for VarOrder<'a> {
-    fn cmp(&self, lhs: &(Var, f64), rhs: &(Var, f64)) -> cmp::Ordering {
+impl<'a> Comparator<(Var, f32)> for VarOrder<'a> {
+    fn cmp(&self, lhs: &(Var, f32), rhs: &(Var, f32)) -> cmp::Ordering {
         debug_assert_eq!(self.activity[rhs.0], rhs.1);
         debug_assert_eq!(self.activity[lhs.0], lhs.1);
         PartialOrd::partial_cmp(&rhs.1, &lhs.1)
@@ -2425,8 +2436,8 @@ impl<'a> Comparator<(Var, f64)> for VarOrder<'a> {
     }
 }
 
-impl<'a> MemoComparator<Var, f64> for VarOrder<'a> {
-    fn value(&self, k: Var) -> f64 {
+impl<'a> MemoComparator<Var, f32> for VarOrder<'a> {
+    fn value(&self, k: Var) -> f32 {
         self.activity[k]
     }
 }
@@ -2467,7 +2478,7 @@ impl Watcher {
 /// This can be used to tune the solver heuristics.
 #[derive(Clone)]
 pub struct SolverOpts {
-    pub var_decay: f64,
+    pub var_decay: f32,
     pub clause_decay: f64,
     pub random_var_freq: f64,
     pub random_seed: f64,
@@ -2520,7 +2531,7 @@ impl Default for SolverOpts {
 impl SolverOpts {
     /// Check that options are valid.
     pub fn check(&self) -> bool {
-        (0.0 < self.var_decay && self.var_decay < 1.0)
+        (1f32 / THRESHOLD < self.var_decay && self.var_decay < 1.0)
             && (0.0 < self.clause_decay && self.clause_decay < 1.0)
             && (0.0 <= self.random_var_freq && self.random_var_freq <= 1.0)
             && (0.0 < self.random_seed && self.random_seed < f64::INFINITY)
