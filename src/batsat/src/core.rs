@@ -66,6 +66,8 @@ pub struct Solver<Cb: Callbacks> {
 struct VarState {
     /// A heuristic measurement of the activity of a variable.
     activity: VMap<f64>,
+    /// A priority queue of variables ordered with respect to the variable activity.
+    order_heap_data: HeapData<Var>,
     /// Current assignment for each variable.
     ass: VMap<lbool>,
     /// Stores reason and level for each variable.
@@ -116,6 +118,8 @@ struct SolverV {
     // v.activity: VMap<f64>,
     // /// The current assignments.
     // v.assigns: VMap<lbool>,
+    // /// A priority queue of variables ordered with respect to the variable activity.
+    // v.order_heap_data: HeapData<Var>,
     /// The preferred polarity of each variable.
     polarity: VMap<bool>,
     /// The users preferred polarity of each variable.
@@ -125,8 +129,6 @@ struct SolverV {
     // /// Stores reason and level for each variable.
     /// `watches[lit]` is a list of constraints watching 'lit' (will go there if literal becomes true).
     watches_data: OccListsData<Lit, Watcher>,
-    /// A priority queue of variables ordered with respect to the variable activity.
-    order_heap_data: HeapData<Var>,
     /// If `false`, the constraints are already unsatisfiable. No part of the solver state may be used!
     ok: bool,
     /// Amount to bump next clause with.
@@ -1124,9 +1126,7 @@ impl SolverV {
     }
 
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {
-        self.order_heap_data.promote(VarOrder {
-            activity: &self.vars.activity,
-        })
+        self.vars.order_heap()
     }
 
     fn set_decision_var(&mut self, v: Var, b: bool) {
@@ -1177,9 +1177,9 @@ impl SolverV {
         {
             let idx_tmp = utils::irand(
                 &mut self.opts.random_seed,
-                self.order_heap_data.len() as i32,
+                self.vars.order_heap_data.len() as i32,
             ) as usize;
-            next = self.order_heap_data[idx_tmp];
+            next = self.vars.order_heap_data[idx_tmp];
             if self.value(next) == lbool::UNDEF && self.decision[next] {
                 self.rnd_decisions += 1;
             }
@@ -1391,8 +1391,7 @@ impl SolverV {
                 let lvl = self.vars.level(q.var());
                 assert!(lvl <= conflict_level);
                 if !self.seen[q.var()].is_seen() && lvl > 0 {
-                    self.vars
-                        .var_bump_activity(&mut self.order_heap_data, q.var());
+                    self.vars.var_bump_activity(q.var());
                     self.seen[q.var()] = Seen::SOURCE;
                     if lvl == conflict_level {
                         // at conflict level: need to eliminate this lit by resolution
@@ -2074,7 +2073,6 @@ impl SolverV {
             decision: VMap::new(),
             // v.vardata: VMap::new(),
             watches_data: OccListsData::new(),
-            order_heap_data: HeapData::new(),
             ok: true,
             cla_inc: 1.0,
             // v.var_inc: 1.0,
@@ -2115,6 +2113,7 @@ impl VarState {
             var_decay: opts.var_decay,
             trail: vec![],
             trail_lim: vec![],
+            order_heap_data: HeapData::new(),
         }
     }
 
@@ -2186,14 +2185,18 @@ impl VarState {
         self.trail.push(p);
     }
 
+    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
+        self.order_heap_data.promote(VarOrder {
+            activity: &self.activity,
+        })
+    }
+
     /// Increase a variable with the current 'bump' value.
-    fn var_bump_activity(&mut self, order_heap_data: &mut HeapData<Var>, v: Var) {
+    fn var_bump_activity(&mut self, v: Var) {
         self.activity[v] += self.var_inc;
 
         // Update order_heap with respect to new activity:
-        let mut order_heap = order_heap_data.promote(VarOrder {
-            activity: &self.activity,
-        });
+        let mut order_heap = self.order_heap();
         if order_heap.in_heap(v) {
             order_heap.decrease(v);
         }
