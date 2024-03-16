@@ -25,15 +25,14 @@ use {
         self, lbool, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, Lit, OccLists,
         OccListsData, VMap, Var,
     },
+    crate::heap::{Comparator, Heap, HeapData, MemoComparator},
     crate::interface::SolverInterface,
-    crate::intmap::{Comparator, Heap, HeapData},
     crate::theory::Theory,
     std::{cmp, fmt, mem},
 };
 
 #[cfg(feature = "logging")]
 use crate::clause::display::Print;
-use crate::intmap::MemoComparator;
 
 /// The main solver structure.
 ///
