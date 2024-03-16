@@ -462,7 +462,6 @@ impl<Cb: Callbacks> Solver<Cb> {
             self.remove_satisfied(ClauseSetSelect::Original); // remove satisfied normal clauses
         }
         self.check_garbage();
-        self.v.rebuild_order_heap();
 
         self.v.simp_db_assigns = self.v.num_assigns() as i32;
         // (shouldn't depend on stats really, but it will do for now)
@@ -1790,13 +1789,6 @@ impl SolverV {
         confl
     }
 
-    fn rebuild_order_heap(&mut self) {
-        let vs = (0..self.num_vars())
-            .map(Var::from_idx)
-            .filter(|&v| self.decision[v]);
-        self.vars.rebuild_order_heap(vs);
-    }
-
     /// Sort literals of `clause` so that unassigned literals are first,
     /// followed by literals in decreasing assignment level
     fn sort_clause_lits(&self, clause: &mut [Lit]) {
@@ -1934,10 +1926,10 @@ impl SolverV {
             self.insert_var_order(x);
         }
         self.qhead = trail_lim_level as i32;
-        self.vars.trail.resize(trail_lim_level, Lit::UNDEF);
+        self.vars.trail.truncate(trail_lim_level);
         // eprintln!("decision_level {} -> {}", self.trail_lim.len(), level);
         self.th_st.clear();
-        self.vars.trail_lim.resize(level as usize, 0);
+        self.vars.trail_lim.truncate(level as usize);
     }
 
     /// Detach a clause from watcher lists.
@@ -2211,15 +2203,6 @@ impl VarState {
         }
     }
 
-    fn rebuild_order_heap(&mut self, eligible_vars: impl Iterator<Item = Var>) {
-        let vars = eligible_vars.filter(|x| self.ass[*x] == lbool::UNDEF);
-        self.order_heap_data
-            .promote(VarOrder {
-                activity: &self.activity,
-            })
-            .build(vars);
-    }
-
     #[allow(dead_code)]
     fn iter_trail<'a>(&'a self) -> impl Iterator<Item = Lit> + 'a {
         self.trail.iter().map(|l| *l)
@@ -2360,8 +2343,6 @@ enum Seen {
 }
 
 mod utils {
-    use super::*;
-
     /// Finite subsequences of the Luby-sequence:
     ///
     /// > 0: 1

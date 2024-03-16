@@ -448,33 +448,6 @@ impl<'a, K: AsIndex + 'a, V: Copy + 'a, Comp: MemoComparator<K, V>> Heap<'a, K, 
         x.0
     }
 
-    /// Rebuild the heap from scratch, using the elements in 'ns':
-    pub fn build(&mut self, ns: impl Iterator<Item = K>) {
-        {
-            let data = &mut self.data;
-            for &x in &data.heap {
-                data.indices[x.0] = -1;
-            }
-        }
-        self.heap.clear();
-
-        let ns = ns
-            .enumerate()
-            .inspect(|(i, x)| {
-                debug_assert!(self.data.indices.has(*x));
-                self.data.indices[*x] = *i as i32;
-            })
-            .map(|(_, x)| (x, self.comp.value(x)));
-
-        self.data.heap.extend(ns);
-
-        let mut i = self.heap.len() as i32 / 2 - 1;
-        while i >= 0 {
-            self.percolate_down(i as u32);
-            i -= 1;
-        }
-    }
-
     pub fn clear_dispose(&mut self, dispose: bool) {
         // TODO: shouldn't the 'indices' map also be dispose-cleared?
         {
