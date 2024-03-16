@@ -192,14 +192,14 @@ impl Default for AsyncInterrupt {
 
 impl AsyncInterrupt {
     /// Return an [`AsyncInterruptHandle`] that can be used to interrupt the solver
-    fn get_handle(&self) -> AsyncInterruptHandle {
+    pub fn get_handle(&self) -> AsyncInterruptHandle {
         AsyncInterruptHandle(self.0.clone())
     }
 }
 
 impl AsyncInterruptHandle {
     /// Interrupt the solver
-    fn interrupt_async(&self) {
+    pub fn interrupt_async(&self) {
         self.0.store(true, Ordering::SeqCst)
     }
 }
