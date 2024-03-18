@@ -2165,7 +2165,7 @@ impl VarState {
             for (_, x) in self.activity.iter_mut() {
                 *x *= scale;
             }
-            for (_, x) in self.order_heap_data.heap.iter_mut() {
+            for (_, x) in self.order_heap_data.heap_mut().iter_mut() {
                 *x *= scale
             }
             self.var_inc *= scale;
@@ -2410,10 +2410,24 @@ impl PartialEq for Watcher {
 }
 impl Eq for Watcher {}
 
+impl<'a> VarOrder<'a> {
+    fn check_activity(&self, var: Var) -> f32 {
+        if var == Var::UNDEF {
+            0.0
+        } else {
+            self.activity[var]
+        }
+    }
+}
+
 impl<'a> Comparator<(Var, f32)> for VarOrder<'a> {
+    fn max_value(&self) -> (Var, f32) {
+        (Var::UNDEF, 0.0)
+    }
+
     fn cmp(&self, lhs: &(Var, f32), rhs: &(Var, f32)) -> cmp::Ordering {
-        debug_assert_eq!(self.activity[rhs.0], rhs.1);
-        debug_assert_eq!(self.activity[lhs.0], lhs.1);
+        debug_assert_eq!(self.check_activity(rhs.0), rhs.1);
+        debug_assert_eq!(self.check_activity(lhs.0), lhs.1);
         PartialOrd::partial_cmp(&rhs.1, &lhs.1)
             .expect("NaN activity")
             .then(lhs.0.cmp(&rhs.0))
