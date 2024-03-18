@@ -3,7 +3,7 @@ use std::{cmp, ops};
 
 #[derive(Debug, Clone)]
 pub struct HeapData<K: AsIndex, V> {
-    heap: Vec<(K, V)>,
+    pub(crate) heap: Vec<(K, V)>,
     indices: IntMap<K, i32>,
 }
 

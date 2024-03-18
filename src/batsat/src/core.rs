@@ -2160,11 +2160,15 @@ impl VarState {
     fn var_decay_activity(&mut self) {
         self.var_inc *= 1.0 / self.var_decay;
         if self.var_inc > THRESHOLD {
+            let scale = 2.0_f32.powi(f32::MIN_EXP);
             // Rescale:
             for (_, x) in self.activity.iter_mut() {
-                *x /= THRESHOLD;
+                *x *= scale;
             }
-            self.var_inc /= THRESHOLD;
+            for (_, x) in self.order_heap_data.heap.iter_mut() {
+                *x *= scale
+            }
+            self.var_inc *= scale;
         }
     }
 
