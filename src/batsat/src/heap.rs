@@ -155,7 +155,7 @@ impl<'a, K: AsIndex + 'a, V: Copy + 'a, Comp: MemoComparator<K, V>> Heap<'a, K, 
         let x = self.heap[i as usize];
         let mut p = parent_index(i);
 
-        while i != ROOT && self.comp.lt(&x, &self.heap[p as usize]) {
+        while i != ROOT && self.comp.le(&x, &self.heap[p as usize]) {
             self.heap[i as usize] = self.heap[p as usize];
             let tmp = self.heap[p as usize];
             self.indices[tmp.0] = i as i32;
@@ -166,44 +166,36 @@ impl<'a, K: AsIndex + 'a, V: Copy + 'a, Comp: MemoComparator<K, V>> Heap<'a, K, 
         self.indices[x.0] = i as i32;
     }
 
-    #[inline]
-    fn bundle(&self, i: u32) -> (u32, (K, V)) {
-        (i, self.heap[i as usize])
-    }
-
-    #[inline]
-    fn min(&self, x: (u32, (K, V)), y: (u32, (K, V))) -> (u32, (K, V)) {
-        if self.comp.lt(&x.1, &y.1) {
-            x
-        } else {
-            y
-        }
-    }
-
     fn percolate_down(&mut self, mut i: u32) {
         let x = self.heap[i as usize];
         let len = (self.next_slot + 3) & (usize::MAX - 3); // round up to nearest multiple of 4
                                                            // since the heap is padded with maximum values we can pretend that these are part of the
                                                            // heap but never swap with them
-        assert!(len <= self.heap.len()); // hopefully this lets us eliminate bounds checks
-        while (right_index(i) as usize) < len {
+        let heap = &mut self.data.heap[..len];
+        loop {
+            let bundle = |x| (x, heap[x as usize]);
+            let min =
+                |x: (u32, (K, V)), y: (u32, (K, V))| if self.comp.le(&x.1, &y.1) { x } else { y };
             let left_index = left_index(i);
-            let b0 = self.bundle(left_index);
-            let b1 = self.bundle(left_index + 1);
-            let b2 = self.bundle(left_index + 2);
-            let b3 = self.bundle(left_index + 3);
-            let b01 = self.min(b0, b1);
-            let b23 = self.min(b2, b3);
-            let (child, min) = self.min(b01, b23);
-            if !self.comp.lt(&min, &x) {
+            if left_index as usize + 3 >= heap.len() {
                 break;
             }
-            self.heap[i as usize] = min;
-            self.indices[min.0] = i as i32;
+            let b0 = bundle(left_index);
+            let b1 = bundle(left_index + 1);
+            let b2 = bundle(left_index + 2);
+            let b3 = bundle(left_index + 3);
+            let b01 = min(b0, b1);
+            let b23 = min(b2, b3);
+            let (child, min) = min(b01, b23);
+            if !self.comp.le(&min, &x) {
+                break;
+            }
+            heap[i as usize] = min;
+            self.data.indices[min.0] = i as i32;
             i = child;
         }
-        self.heap[i as usize] = x;
-        self.indices[x.0] = i as i32;
+        heap[i as usize] = x;
+        self.data.indices[x.0] = i as i32;
     }
 
     pub fn decrease(&mut self, k: K) {
@@ -249,10 +241,6 @@ const ROOT: u32 = 3;
 #[inline(always)]
 fn left_index(i: u32) -> u32 {
     (i - 2) << 2
-}
-#[inline(always)]
-fn right_index(i: u32) -> u32 {
-    left_index(i) + 3
 }
 #[inline(always)]
 fn parent_index(i: u32) -> u32 {

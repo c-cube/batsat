@@ -2432,6 +2432,38 @@ impl<'a> Comparator<(Var, f32)> for VarOrder<'a> {
             .expect("NaN activity")
             .then(lhs.0.cmp(&rhs.0))
     }
+
+    fn le(&self, lhs: &(Var, f32), rhs: &(Var, f32)) -> bool {
+        // 0 if lhs.0 <= rhs.0, 1 otherwise
+        let v_diff = (rhs.0.idx().wrapping_sub(lhs.0.idx())) >> (u32::BITS - 1);
+        let a_diff = lhs.1 - rhs.1;
+        let a_diff_b = a_diff.to_bits() as i32;
+        let diff = a_diff_b.wrapping_sub(v_diff as i32);
+        let res = diff >= 0;
+        debug_assert_eq!(res, self.cmp(lhs, rhs).is_le());
+        res
+        // if rhs.1 < lhs.1 {
+        //     // a_diff is positive and so a_diff_b >= 0
+        //     // since a_diff != 0.0, a_diff_b != 0 (that would corrispond to +0.0)
+        //     // subtracting v_diff will keep it positive so diff >= 0
+        //     true
+        // } else if rhs.1 == lhs.1 {
+        //     // since the activitly levels are always positive a_diff = +0
+        //     // this will make a_diff_b = 0
+        //     if lhs.0 <= rhs.0 {
+        //         // v_diff = 0, so diff = 0 - 0 = 0 so diff >= 0
+        //         true
+        //     } else {
+        //         // v_diff = 1, so diff = 0 - 1 = -1 so !(diff >= 0)
+        //         false
+        //     }
+        // } else{
+        //     // a_diff is negative a_diff_b <= 0
+        //     // since a_diff != 0.0, a_diff_b != i32::MIN (that would corrispond to -0.0)
+        //     // this prevents the subtraction from underflowing so !(diff >= 0)
+        //     false
+        // }
+    }
 }
 
 impl<'a> MemoComparator<Var, f32> for VarOrder<'a> {
