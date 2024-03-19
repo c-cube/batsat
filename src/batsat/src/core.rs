@@ -25,7 +25,7 @@ use {
         self, lbool, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, Lit, OccLists,
         OccListsData, VMap, Var,
     },
-    crate::heap::{Comparator, Heap, HeapData, MemoComparator},
+    crate::heap::{CachedKeyComparator, Heap, HeapData},
     crate::interface::SolverInterface,
     crate::theory::Theory,
     std::{cmp, fmt, mem},
@@ -67,7 +67,7 @@ struct VarState {
     /// A heuristic measurement of the activity of a variable.
     activity: VMap<f32>,
     /// A priority queue of variables ordered with respect to the variable activity.
-    order_heap_data: HeapData<Var, f32>,
+    order_heap_data: HeapData<Var, VarOrderKey>,
     /// Current assignment for each variable.
     ass: VMap<lbool>,
     /// Stores reason and level for each variable.
@@ -1124,7 +1124,7 @@ impl SolverV {
         self.vars.value_lit(x)
     }
 
-    fn order_heap(&mut self) -> Heap<Var, f32, VarOrder> {
+    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
         self.vars.order_heap()
     }
 
@@ -1178,7 +1178,7 @@ impl SolverV {
                 &mut self.opts.random_seed,
                 self.vars.order_heap_data.len() as i32,
             ) as usize;
-            next = self.vars.order_heap_data[idx_tmp];
+            next = self.vars.order_heap_data[idx_tmp].var();
             if self.value(next) == lbool::UNDEF && self.decision[next] {
                 self.rnd_decisions += 1;
             }
@@ -2165,8 +2165,8 @@ impl VarState {
             for (_, x) in self.activity.iter_mut() {
                 *x *= scale;
             }
-            for (_, x) in self.order_heap_data.heap_mut().iter_mut() {
-                *x *= scale
+            for x in self.order_heap_data.heap_mut().iter_mut() {
+                x.scale_activity(scale)
             }
             self.var_inc *= scale;
         }
@@ -2189,7 +2189,7 @@ impl VarState {
         self.trail.push(p);
     }
 
-    fn order_heap(&mut self) -> Heap<Var, f32, VarOrder> {
+    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
         self.order_heap_data.promote(VarOrder {
             activity: &self.activity,
         })
@@ -2410,47 +2410,42 @@ impl PartialEq for Watcher {
 }
 impl Eq for Watcher {}
 
-impl<'a> VarOrder<'a> {
-    fn check_activity(&self, var: Var) -> f32 {
-        if var == Var::UNDEF {
-            0.0
-        } else {
-            self.activity[var]
-        }
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+struct VarOrderKey(u64);
+
+impl VarOrderKey {
+    #[inline]
+    fn new(var: Var, activity: f32) -> Self {
+        VarOrderKey((!(activity.to_bits() as u64) << u32::BITS) | (var.idx() as u64))
+    }
+
+    fn var(self) -> Var {
+        Var::unsafe_from_idx(self.0 as u32)
+    }
+
+    fn activity(self) -> f32 {
+        f32::from_bits(!((self.0 >> u32::BITS) as u32))
+    }
+
+    fn scale_activity(&mut self, scale: f32) {
+        *self = VarOrderKey::new(self.var(), self.activity() * scale)
     }
 }
+impl<'a> CachedKeyComparator<Var> for VarOrder<'a> {
+    type Key = VarOrderKey;
 
-const COMP_MASK: u64 = (u32::MAX as u64) << u32::BITS;
-impl<'a> Comparator<(Var, f32)> for VarOrder<'a> {
-    type Comp = u64;
-
-    #[inline]
-    fn max_value(&self) -> (Var, f32) {
-        (Var::UNDEF, 0.0)
+    fn cache_key(&self, t: Var) -> Self::Key {
+        VarOrderKey::new(t, self.activity[t])
     }
 
-    #[inline]
-    fn to_cmp_form(&self, v: &(Var, f32)) -> u64 {
-        debug_assert_eq!(self.check_activity(v.0), v.1);
-        let x = ((v.1.to_bits() as u64) << u32::BITS) | (v.0.idx() as u64);
-        x ^ COMP_MASK
+    fn max_key(&self) -> Self::Key {
+        VarOrderKey::new(Var::UNDEF, 0.0)
     }
 
-    #[inline]
-    fn from_cmp_form(&self, c: Self::Comp) -> (Var, f32) {
-        let c = c ^ COMP_MASK;
-        let v = Var::unsafe_from_idx((c & (u32::MAX as u64)) as u32);
-        let a = f32::from_bits((c >> u32::BITS) as u32);
-        (v, a)
+    fn un_cache_key(&self, k: Self::Key) -> Var {
+        k.var()
     }
 }
-
-impl<'a> MemoComparator<Var, f32> for VarOrder<'a> {
-    fn value(&self, k: Var) -> f32 {
-        self.activity[k]
-    }
-}
-
 impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
     #[inline]
     fn deleted(&self, w: &Watcher) -> bool {
