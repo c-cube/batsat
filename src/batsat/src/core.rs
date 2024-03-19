@@ -1916,7 +1916,7 @@ impl SolverV {
         debug_assert!(self.decision_level() > level);
         let trail_lim_last = *self.vars.trail_lim.last().expect("trail_lim is empty") as usize;
         let trail_lim_level = self.vars.trail_lim[level as usize] as usize;
-        for c in (trail_lim_level..self.vars.trail.len()).rev() {
+        for c in trail_lim_level..self.vars.trail.len() {
             let x = self.vars.trail[c].var();
             self.vars.ass[x] = lbool::UNDEF;
             if self.opts.phase_saving > 1 || (self.opts.phase_saving == 1 && c > trail_lim_last) {
