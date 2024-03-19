@@ -56,8 +56,15 @@ impl<K: AsIndex, V> ops::Index<usize> for HeapData<K, V> {
 }
 
 pub trait Comparator<T: ?Sized> {
+    type Comp: Ord;
+
     fn max_value(&self) -> T;
-    fn cmp(&self, lhs: &T, rhs: &T) -> cmp::Ordering;
+    fn to_cmp_form(&self, v: &T) -> Self::Comp;
+    fn from_cmp_form(&self, c: Self::Comp) -> T;
+
+    fn cmp(&self, lhs: &T, rhs: &T) -> cmp::Ordering {
+        self.to_cmp_form(&lhs).cmp(&self.to_cmp_form(&rhs))
+    }
     fn max(&self, lhs: T, rhs: T) -> T
     where
         T: Sized,
@@ -151,11 +158,13 @@ impl<'a, K: AsIndex + 'a, V: Copy + 'a, Comp: MemoComparator<K, V>> Heap<'a, K, 
         self.next_slot += 1;
         slot as u32
     }
+
     fn percolate_up(&mut self, mut i: u32) {
         let x = self.heap[i as usize];
+        let xc = self.comp.to_cmp_form(&x);
         let mut p = parent_index(i);
 
-        while i != ROOT && self.comp.le(&x, &self.heap[p as usize]) {
+        while i != ROOT && xc < self.comp.to_cmp_form(&self.heap[p as usize]) {
             self.heap[i as usize] = self.heap[p as usize];
             let tmp = self.heap[p as usize];
             self.indices[tmp.0] = i as i32;
@@ -167,33 +176,34 @@ impl<'a, K: AsIndex + 'a, V: Copy + 'a, Comp: MemoComparator<K, V>> Heap<'a, K, 
     }
 
     fn percolate_down(&mut self, mut i: u32) {
-        let x = self.heap[i as usize];
+        let x = self.comp.to_cmp_form(&self.heap[i as usize]);
         let len = (self.next_slot + 3) & (usize::MAX - 3); // round up to nearest multiple of 4
                                                            // since the heap is padded with maximum values we can pretend that these are part of the
                                                            // heap but never swap with them
         let heap = &mut self.data.heap[..len];
         loop {
-            let bundle = |x| (x, heap[x as usize]);
-            let min =
-                |x: (u32, (K, V)), y: (u32, (K, V))| if self.comp.le(&x.1, &y.1) { x } else { y };
+            let min = |x: (u32, Comp::Comp), y: (u32, Comp::Comp)| if x.1 < y.1 { x } else { y };
             let left_index = left_index(i);
-            if left_index as usize + 3 >= heap.len() {
+            let Some(arr) = heap.get(left_index as usize..left_index as usize + 4) else {
                 break;
-            }
-            let b0 = bundle(left_index);
-            let b1 = bundle(left_index + 1);
-            let b2 = bundle(left_index + 2);
-            let b3 = bundle(left_index + 3);
+            };
+            let bundle = |x| (left_index + x, self.comp.to_cmp_form(&arr[x as usize]));
+            let b0 = bundle(0);
+            let b1 = bundle(1);
+            let b2 = bundle(2);
+            let b3 = bundle(3);
             let b01 = min(b0, b1);
             let b23 = min(b2, b3);
             let (child, min) = min(b01, b23);
-            if !self.comp.le(&min, &x) {
+            if min > x {
                 break;
             }
+            let min = self.comp.from_cmp_form(min);
             heap[i as usize] = min;
             self.data.indices[min.0] = i as i32;
             i = child;
         }
+        let x = self.comp.from_cmp_form(x);
         heap[i as usize] = x;
         self.data.indices[x.0] = i as i32;
     }

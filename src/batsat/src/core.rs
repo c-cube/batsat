@@ -2420,49 +2420,28 @@ impl<'a> VarOrder<'a> {
     }
 }
 
+const COMP_MASK: u64 = (u32::MAX as u64) << u32::BITS;
 impl<'a> Comparator<(Var, f32)> for VarOrder<'a> {
+    type Comp = u64;
+
+    #[inline]
     fn max_value(&self) -> (Var, f32) {
         (Var::UNDEF, 0.0)
     }
 
-    fn cmp(&self, lhs: &(Var, f32), rhs: &(Var, f32)) -> cmp::Ordering {
-        debug_assert_eq!(self.check_activity(rhs.0), rhs.1);
-        debug_assert_eq!(self.check_activity(lhs.0), lhs.1);
-        PartialOrd::partial_cmp(&rhs.1, &lhs.1)
-            .expect("NaN activity")
-            .then(lhs.0.cmp(&rhs.0))
+    #[inline]
+    fn to_cmp_form(&self, v: &(Var, f32)) -> u64 {
+        debug_assert_eq!(self.check_activity(v.0), v.1);
+        let x = ((v.1.to_bits() as u64) << u32::BITS) | (v.0.idx() as u64);
+        x ^ COMP_MASK
     }
 
-    fn le(&self, lhs: &(Var, f32), rhs: &(Var, f32)) -> bool {
-        // 0 if lhs.0 <= rhs.0, 1 otherwise
-        let v_diff = (rhs.0.idx().wrapping_sub(lhs.0.idx())) >> (u32::BITS - 1);
-        let a_diff = lhs.1 - rhs.1;
-        let a_diff_b = a_diff.to_bits() as i32;
-        let diff = a_diff_b.wrapping_sub(v_diff as i32);
-        let res = diff >= 0;
-        debug_assert_eq!(res, self.cmp(lhs, rhs).is_le());
-        res
-        // if rhs.1 < lhs.1 {
-        //     // a_diff is positive and so a_diff_b >= 0
-        //     // since a_diff != 0.0, a_diff_b != 0 (that would corrispond to +0.0)
-        //     // subtracting v_diff will keep it positive so diff >= 0
-        //     true
-        // } else if rhs.1 == lhs.1 {
-        //     // since the activitly levels are always positive a_diff = +0
-        //     // this will make a_diff_b = 0
-        //     if lhs.0 <= rhs.0 {
-        //         // v_diff = 0, so diff = 0 - 0 = 0 so diff >= 0
-        //         true
-        //     } else {
-        //         // v_diff = 1, so diff = 0 - 1 = -1 so !(diff >= 0)
-        //         false
-        //     }
-        // } else{
-        //     // a_diff is negative a_diff_b <= 0
-        //     // since a_diff != 0.0, a_diff_b != i32::MIN (that would corrispond to -0.0)
-        //     // this prevents the subtraction from underflowing so !(diff >= 0)
-        //     false
-        // }
+    #[inline]
+    fn from_cmp_form(&self, c: Self::Comp) -> (Var, f32) {
+        let c = c ^ COMP_MASK;
+        let v = Var::unsafe_from_idx((c & (u32::MAX as u64)) as u32);
+        let a = f32::from_bits((c >> u32::BITS) as u32);
+        (v, a)
     }
 }
 
