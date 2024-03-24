@@ -152,6 +152,14 @@ pub trait SolverInterface {
     ///
     /// Precondition: last result was `Unsat`
     fn unsat_core_contains_var(&self, v: Var) -> bool;
+
+    /// Increment the assertion level
+    fn push(&mut self);
+
+    /// Reduces the assertion level by `n` and forget any clauses added at a higher level
+    fn pop(&mut self, n: u32);
+
+    fn assertion_level(&self) -> u32;
 }
 
 /// Result of calling [`SolverInterface::solve_limited_th_full`], contains the unsat-core

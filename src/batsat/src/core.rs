@@ -58,6 +58,7 @@ pub struct Solver<Cb: Callbacks> {
     learnts: Vec<CRef>,
 
     v: SolverV,
+    assertion_level: u32,
     tmp_c_th: Vec<Lit>,     // used for theory conflict
     tmp_c_add_cl: Vec<Lit>, // used for adding clauses during search
 }
@@ -129,8 +130,8 @@ struct SolverV {
     // /// Stores reason and level for each variable.
     /// `watches[lit]` is a list of constraints watching 'lit' (will go there if literal becomes true).
     watches_data: OccListsData<Lit, Watcher>,
-    /// If `false`, the constraints are already unsatisfiable. No part of the solver state may be used!
-    ok: bool,
+    /// Minimum assertion level that has a conflict (u32::MAX if there is no conflict)
+    ok: u32,
     /// Amount to bump next clause with.
     cla_inc: f64,
     // /// Amount to bump next variable with.
@@ -273,6 +274,8 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
 
     // in the API, we can only add clauses at level 0
     fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
+        debug_assert_eq!(self.v.assumptions.len(), self.assertion_level as usize);
+        clause.extend(self.v.assumptions.last().copied().map(|l| !l));
         debug!("add toplevel clause {:?}", clause);
         debug_assert_eq!(
             self.v.decision_level(),
@@ -299,13 +302,14 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         th: &mut Th,
         assumps: &[Lit],
     ) -> lbool {
-        self.v.assumptions.clear();
+        debug_assert_eq!(self.v.assumptions.len(), self.assertion_level() as usize);
         self.v.assumptions.extend_from_slice(assumps);
         self.solve_internal(th)
     }
 
     fn pop_model<Th: Theory>(&mut self, th: &mut Th) {
-        self.cancel_until(th, 0)
+        self.cancel_until(th, 0);
+        self.v.assumptions.truncate(self.assertion_level as usize);
     }
 
     fn raw_value_lit(&self, l: Lit) -> lbool {
@@ -329,7 +333,8 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         &self.model
     }
     fn is_ok(&self) -> bool {
-        self.v.ok
+        debug_assert_eq!(self.v.ok > self.assertion_level, self.v.ok == u32::MAX);
+        self.v.ok > self.assertion_level
     }
 
     fn num_vars(&self) -> u32 {
@@ -391,6 +396,43 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
     fn proved_at_lvl_0(&self) -> &[Lit] {
         self.v.vars.proved_at_lvl_0()
     }
+
+    fn push(&mut self) {
+        debug_assert_eq!(self.v.decision_level(), 0);
+        let level_var = self.new_var(lbool::UNDEF, false);
+        self.v.assumptions.push(Lit::new(level_var, false));
+        self.assertion_level += 1;
+    }
+
+    fn pop(&mut self, n: u32) {
+        debug_assert_eq!(self.v.decision_level(), 0);
+        debug_assert_eq!(self.assertion_level() as usize, self.v.assumptions.len());
+        if n == 0 {
+            return;
+        }
+
+        let new_level = self
+            .assertion_level()
+            .checked_sub(n)
+            .expect("Can't pop past level 0");
+        if new_level < self.v.ok {
+            self.v.ok = u32::MAX
+        }
+
+        self.assertion_level = new_level;
+
+        for l in self.v.assumptions.drain(new_level as usize..) {
+            if self.v.vars.value_lit(l) != lbool::FALSE {
+                // If it is not already false, make this literal false so clauses containing
+                // its negation can be garbage collected
+                self.v.vars.unchecked_enqueue(!l, CRef::UNDEF)
+            }
+        }
+    }
+
+    fn assertion_level(&self) -> u32 {
+        self.assertion_level
+    }
 }
 
 impl<Cb: Callbacks + Default> Default for Solver<Cb> {
@@ -427,6 +469,7 @@ impl<Cb: Callbacks> Solver<Cb> {
             clauses: vec![],
             learnts: vec![],
             v: SolverV::new(&opts),
+            assertion_level: 0,
             tmp_c_th: vec![],
             tmp_c_add_cl: vec![],
         }
@@ -447,8 +490,8 @@ impl<Cb: Callbacks> Solver<Cb> {
     fn simplify_internal<Th>(&mut self, _: &mut Th) -> bool {
         debug_assert_eq!(self.v.decision_level(), 0);
 
-        if !self.v.ok || self.v.propagate().is_some() {
-            self.v.ok = false;
+        if self.v.ok == 0 || self.v.propagate().is_some() {
+            self.v.ok = 0;
             return false;
         }
 
@@ -485,7 +528,7 @@ impl<Cb: Callbacks> Solver<Cb> {
         nof_conflicts: i32,
         tmp_learnt: &mut Vec<Lit>,
     ) -> lbool {
-        debug_assert!(self.v.ok);
+        debug_assert!(self.v.ok > 0);
         let mut conflict_c = 0;
         self.v.starts += 1;
 
@@ -582,7 +625,9 @@ impl<Cb: Callbacks> Solver<Cb> {
                         // Dummy decision level, since `p` is true already:
                         self.new_decision_level(th);
                     } else if self.v.value_lit(p) == lbool::FALSE {
-                        // conflict at level 0 because of `p`, unsat
+                        // Dummy decision level, corresponding to the conflict
+                        self.new_decision_level(th);
+                        // conflict at current level because of `p`, unsat
                         let mut conflict = mem::replace(&mut self.conflict, LSet::new());
                         self.v.analyze_final(th, !p, &mut conflict);
                         self.cb.on_new_clause(&conflict, clause::Kind::Learnt);
@@ -652,7 +697,7 @@ impl<Cb: Callbacks> Solver<Cb> {
             // directly propagate the unit clause at level 0
             self.v.vars.unchecked_enqueue(learnt.clause[0], CRef::UNDEF);
         } else if learnt.clause.is_empty() {
-            self.v.ok = false;
+            self.v.ok = 0;
         } else {
             // propagate the lit, justified by `cr`
             let cr = self.v.ca.alloc_with_learnt(learnt.clause, true);
@@ -767,7 +812,7 @@ impl<Cb: Callbacks> Solver<Cb> {
         assert!(self.v.decision_level() == 0);
         self.model.clear();
         self.conflict.clear();
-        if !self.v.ok {
+        if !self.is_ok() {
             return lbool::FALSE;
         }
 
@@ -818,11 +863,14 @@ impl<Cb: Callbacks> Solver<Cb> {
             for i in 0..num_vars {
                 self.model[i as usize] = self.v.value(Var::from_idx(i));
             }
-        } else if status == lbool::FALSE && self.conflict.len() == 0 {
+        } else if status == lbool::FALSE && self.v.decision_level() <= self.assertion_level {
             // NOTE: we may return `false` without an empty conflict in case we had assumptions. In
-            // this case `self.conflict` contains the unsat-core but adding new clauses might
-            // succeed in the absence of these assumptions.
-            self.v.ok = false;
+            // this case `self.v.decision_level()` will be set to the number of assumptions required
+            // to produce the conflict. If it is greater that the assertion level then these were
+            // user provided assumptions that will not be used in the next call to `solve_internal`.
+            // Otherwise, these assumptions come from the assertion_level so the solver should
+            // continue returning false until the next call to pop_th
+            self.v.ok = self.v.decision_level();
         }
 
         debug!("res: {:?}", status);
@@ -989,7 +1037,7 @@ impl<Cb: Callbacks> Solver<Cb> {
     ///
     /// Precondition: `clause` is sorted for some ordering on `Lit`
     fn add_clause_(&mut self, clause: &mut Vec<Lit>) -> bool {
-        if !self.v.ok {
+        if self.v.ok == 0 {
             return false;
         }
 
@@ -1012,7 +1060,7 @@ impl<Cb: Callbacks> Solver<Cb> {
 
         clause.resize(j, Lit::UNDEF);
         if clause.is_empty() {
-            self.v.ok = false;
+            self.v.ok = 0;
             return false;
         } else if clause.len() == 1 {
             self.v.vars.unchecked_enqueue(clause[0], CRef::UNDEF);
@@ -1028,7 +1076,7 @@ impl<Cb: Callbacks> Solver<Cb> {
     /// Add clause during search
     fn add_clause_during_search<Th: Theory>(&mut self, th: &mut Th, clause: &mut Vec<Lit>) -> bool {
         debug!("add internal clause {:?}", clause);
-        if !self.v.ok {
+        if self.v.ok == 0 {
             return false;
         }
         if clause.len() == 1 {
@@ -2063,7 +2111,7 @@ impl SolverV {
             decision: VMap::new(),
             // v.vardata: VMap::new(),
             watches_data: OccListsData::new(),
-            ok: true,
+            ok: u32::MAX,
             cla_inc: 1.0,
             // v.var_inc: 1.0,
             qhead: 0,
