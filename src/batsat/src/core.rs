@@ -421,6 +421,12 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
 
         self.assertion_level = new_level;
 
+        let old_num_vars = self.v.assumptions[new_level as usize].var().idx();
+
+        for v in (old_num_vars..self.num_vars()).map(Var::from_idx) {
+            self.v.set_decision_var(v, false)
+        }
+
         for l in self.v.assumptions.drain(new_level as usize..) {
             if self.v.vars.value_lit(l) != lbool::FALSE {
                 // If it is not already false, make this literal false so clauses containing
