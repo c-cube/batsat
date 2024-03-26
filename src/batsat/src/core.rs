@@ -299,9 +299,11 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         th: &mut Th,
         assumps: &[Lit],
     ) -> lbool {
-        self.v.assumptions.clear();
+        let old_len = self.v.assumptions.len();
         self.v.assumptions.extend_from_slice(assumps);
-        self.solve_internal(th)
+        let res = self.solve_internal(th);
+        self.v.assumptions.truncate(old_len);
+        res
     }
 
     fn pop_model<Th: Theory>(&mut self, th: &mut Th) {
@@ -390,6 +392,18 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
 
     fn proved_at_lvl_0(&self) -> &[Lit] {
         self.v.vars.proved_at_lvl_0()
+    }
+
+    fn set_decision_var(&mut self, v: Var, dvar: bool) {
+        self.v.set_decision_var(v, dvar)
+    }
+
+    fn assumptions(&mut self) -> &[Lit] {
+        &self.v.assumptions
+    }
+
+    fn assumptions_mut(&mut self) -> &mut Vec<Lit> {
+        &mut self.v.assumptions
     }
 }
 
