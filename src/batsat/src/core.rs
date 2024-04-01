@@ -716,6 +716,9 @@ impl<Cb: Callbacks> Solver<Cb> {
             TheoryCall::Final => th.final_check(&mut th_arg),
         }
         if let TheoryConflict::Clause { costly } = th_arg.conflict {
+            if th_arg.lits.is_empty() {
+                return Err(ConflictAtLevel0);
+            }
             // borrow magic
             let mut local_confl_cl = vec![];
             mem::swap(&mut local_confl_cl, th_arg.lits);
@@ -2313,9 +2316,6 @@ impl<'a> TheoryArg<'a> {
     ///     This is a hint for the SAT solver to keep the theory lemma that corresponds
     ///     to `c` along with the actual learnt clause.
     pub fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
-        if lits.len() == 0 {
-            panic!("conflicts must have a least one literal")
-        }
         if self.is_ok() {
             self.conflict = TheoryConflict::Clause { costly };
             self.lits.clear();
