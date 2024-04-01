@@ -24,7 +24,7 @@ use {
         alloc::{self, RegionAllocator},
         intmap::{AsIndex, IntMap, IntMapBool, IntSet},
     },
-    std::{fmt, iter::DoubleEndedIterator, ops, slice, u32},
+    std::{fmt, iter::DoubleEndedIterator, ops, slice},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,7 +42,7 @@ impl fmt::Debug for Var {
 }
 
 impl Var {
-    pub const UNDEF: Var = Var(!0);
+    pub const UNDEF: Var = Var(u32::MAX / 2);
     #[inline(always)]
     pub(crate) fn from_idx(idx: u32) -> Self {
         debug_assert!(idx < u32::MAX / 2, "Var::from_idx: index too large");
