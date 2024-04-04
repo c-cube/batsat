@@ -25,10 +25,10 @@ use {
         self, lbool, CRef, ClauseAllocator, ClauseRef, DeletePred, LSet, Lit, OccLists,
         OccListsData, VMap, Var,
     },
+    crate::heap::{CachedKeyComparator, Heap, HeapData},
     crate::interface::SolverInterface,
-    crate::intmap::{Comparator, Heap, HeapData},
     crate::theory::Theory,
-    std::{cmp, f64, fmt, i32, mem},
+    std::{cmp, fmt, mem},
 };
 
 #[cfg(feature = "logging")]
@@ -65,14 +65,16 @@ pub struct Solver<Cb: Callbacks> {
 /// The current assignments.
 struct VarState {
     /// A heuristic measurement of the activity of a variable.
-    activity: VMap<f64>,
+    activity: VMap<f32>,
+    /// A priority queue of variables ordered with respect to the variable activity.
+    order_heap_data: HeapData<Var, VarOrderKey>,
     /// Current assignment for each variable.
     ass: VMap<lbool>,
     /// Stores reason and level for each variable.
     vardata: VMap<VarData>,
     /// Amount to bump next variable with.
-    var_inc: f64,
-    var_decay: f64,
+    var_inc: f32,
+    var_decay: f32,
 
     /// Assignment stack; stores all assigments made in the order they were made.
     trail: Vec<Lit>,
@@ -116,6 +118,8 @@ struct SolverV {
     // v.activity: VMap<f64>,
     // /// The current assignments.
     // v.assigns: VMap<lbool>,
+    // /// A priority queue of variables ordered with respect to the variable activity.
+    // v.order_heap_data: HeapData<Var>,
     /// The preferred polarity of each variable.
     polarity: VMap<bool>,
     /// The users preferred polarity of each variable.
@@ -125,8 +129,6 @@ struct SolverV {
     // /// Stores reason and level for each variable.
     /// `watches[lit]` is a list of constraints watching 'lit' (will go there if literal becomes true).
     watches_data: OccListsData<Lit, Watcher>,
-    /// A priority queue of variables ordered with respect to the variable activity.
-    order_heap_data: HeapData<Var>,
     /// If `false`, the constraints are already unsatisfiable. No part of the solver state may be used!
     ok: bool,
     /// Amount to bump next clause with.
@@ -297,9 +299,11 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         th: &mut Th,
         assumps: &[Lit],
     ) -> lbool {
-        self.v.assumptions.clear();
+        let old_len = self.v.assumptions.len();
         self.v.assumptions.extend_from_slice(assumps);
-        self.solve_internal(th)
+        let res = self.solve_internal(th);
+        self.v.assumptions.truncate(old_len);
+        res
     }
 
     fn pop_model<Th: Theory>(&mut self, th: &mut Th) {
@@ -389,6 +393,18 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
     fn proved_at_lvl_0(&self) -> &[Lit] {
         self.v.vars.proved_at_lvl_0()
     }
+
+    fn set_decision_var(&mut self, v: Var, dvar: bool) {
+        self.v.set_decision_var(v, dvar)
+    }
+
+    fn assumptions(&mut self) -> &[Lit] {
+        &self.v.assumptions
+    }
+
+    fn assumptions_mut(&mut self) -> &mut Vec<Lit> {
+        &mut self.v.assumptions
+    }
 }
 
 impl<Cb: Callbacks + Default> Default for Solver<Cb> {
@@ -459,7 +475,6 @@ impl<Cb: Callbacks> Solver<Cb> {
             self.remove_satisfied(ClauseSetSelect::Original); // remove satisfied normal clauses
         }
         self.check_garbage();
-        self.v.rebuild_order_heap();
 
         self.v.simp_db_assigns = self.v.num_assigns() as i32;
         // (shouldn't depend on stats really, but it will do for now)
@@ -701,6 +716,9 @@ impl<Cb: Callbacks> Solver<Cb> {
             TheoryCall::Final => th.final_check(&mut th_arg),
         }
         if let TheoryConflict::Clause { costly } = th_arg.conflict {
+            if th_arg.lits.is_empty() {
+                return Err(ConflictAtLevel0);
+            }
             // borrow magic
             let mut local_confl_cl = vec![];
             mem::swap(&mut local_confl_cl, th_arg.lits);
@@ -1124,9 +1142,7 @@ impl SolverV {
     }
 
     fn order_heap(&mut self) -> Heap<Var, VarOrder> {
-        self.order_heap_data.promote(VarOrder {
-            activity: &self.vars.activity,
-        })
+        self.vars.order_heap()
     }
 
     fn set_decision_var(&mut self, v: Var, b: bool) {
@@ -1177,9 +1193,9 @@ impl SolverV {
         {
             let idx_tmp = utils::irand(
                 &mut self.opts.random_seed,
-                self.order_heap_data.len() as i32,
+                self.vars.order_heap_data.len() as i32,
             ) as usize;
-            next = self.order_heap_data[idx_tmp];
+            next = self.vars.order_heap_data[idx_tmp].var();
             if self.value(next) == lbool::UNDEF && self.decision[next] {
                 self.rnd_decisions += 1;
             }
@@ -1225,9 +1241,10 @@ impl SolverV {
             .vardata
             .insert_default(v, VarData::new(CRef::UNDEF, 0));
         if self.opts.rnd_init_act {
-            self.vars
-                .activity
-                .insert_default(v, utils::drand(&mut self.opts.random_seed) * 0.00001);
+            self.vars.activity.insert_default(
+                v,
+                (utils::drand(&mut self.opts.random_seed) * 0.00001) as f32,
+            );
         } else {
             self.vars.activity.insert_default(v, 0.0);
         }
@@ -1391,8 +1408,7 @@ impl SolverV {
                 let lvl = self.vars.level(q.var());
                 assert!(lvl <= conflict_level);
                 if !self.seen[q.var()].is_seen() && lvl > 0 {
-                    self.vars
-                        .var_bump_activity(&mut self.order_heap_data, q.var());
+                    self.vars.var_bump_activity(q.var());
                     self.seen[q.var()] = Seen::SOURCE;
                     if lvl == conflict_level {
                         // at conflict level: need to eliminate this lit by resolution
@@ -1599,7 +1615,7 @@ impl SolverV {
                     out_conflict.insert(!lit);
                 } else if reason == CRef::SPECIAL {
                     // resolution with propagation reason
-                    let lits = th.explain_propagation(lit);
+                    let lits = th.explain_propagation_final(lit);
                     for &p in lits {
                         if self.vars.level(p.var()) > 0 {
                             self.seen[p.var()] = Seen::SOURCE;
@@ -1789,16 +1805,6 @@ impl SolverV {
         confl
     }
 
-    fn rebuild_order_heap(&mut self) {
-        let mut vs = vec![];
-        for v in (0..self.num_vars()).map(Var::from_idx) {
-            if self.decision[v] && self.value(v) == lbool::UNDEF {
-                vs.push(v);
-            }
-        }
-        self.order_heap().build(&vs);
-    }
-
     /// Sort literals of `clause` so that unassigned literals are first,
     /// followed by literals in decreasing assignment level
     fn sort_clause_lits(&self, clause: &mut [Lit]) {
@@ -1927,7 +1933,7 @@ impl SolverV {
         debug_assert!(self.decision_level() > level);
         let trail_lim_last = *self.vars.trail_lim.last().expect("trail_lim is empty") as usize;
         let trail_lim_level = self.vars.trail_lim[level as usize] as usize;
-        for c in (trail_lim_level..self.vars.trail.len()).rev() {
+        for c in trail_lim_level..self.vars.trail.len() {
             let x = self.vars.trail[c].var();
             self.vars.ass[x] = lbool::UNDEF;
             if self.opts.phase_saving > 1 || (self.opts.phase_saving == 1 && c > trail_lim_last) {
@@ -1936,10 +1942,10 @@ impl SolverV {
             self.insert_var_order(x);
         }
         self.qhead = trail_lim_level as i32;
-        self.vars.trail.resize(trail_lim_level, Lit::UNDEF);
+        self.vars.trail.truncate(trail_lim_level);
         // eprintln!("decision_level {} -> {}", self.trail_lim.len(), level);
         self.th_st.clear();
-        self.vars.trail_lim.resize(level as usize, 0);
+        self.vars.trail_lim.truncate(level as usize);
     }
 
     /// Detach a clause from watcher lists.
@@ -2074,7 +2080,6 @@ impl SolverV {
             decision: VMap::new(),
             // v.vardata: VMap::new(),
             watches_data: OccListsData::new(),
-            order_heap_data: HeapData::new(),
             ok: true,
             cla_inc: 1.0,
             // v.var_inc: 1.0,
@@ -2105,6 +2110,16 @@ impl SolverV {
     }
 }
 
+/// Large f32 that is still small enough that it can't cause another f32 to overflow to infinity
+const THRESHOLD: f32 = 1.0141204e31;
+#[test]
+fn test_threshold() {
+    let f = f32::MAX * 2.0f32.powi(-1 - (f32::MANTISSA_DIGITS as i32));
+    assert_eq!(THRESHOLD, f);
+    // adding THRESHOLD to a float can never make it overflow to infinity
+    assert_eq!(f32::MAX + THRESHOLD, f32::MAX)
+}
+
 impl VarState {
     fn new(opts: &SolverOpts) -> Self {
         Self {
@@ -2115,6 +2130,7 @@ impl VarState {
             var_decay: opts.var_decay,
             trail: vec![],
             trail_lim: vec![],
+            order_heap_data: HeapData::new(),
         }
     }
 
@@ -2160,6 +2176,17 @@ impl VarState {
 
     fn var_decay_activity(&mut self) {
         self.var_inc *= 1.0 / self.var_decay;
+        if self.var_inc > THRESHOLD {
+            let scale = 2.0_f32.powi(f32::MIN_EXP);
+            // Rescale:
+            for (_, x) in self.activity.iter_mut() {
+                *x *= scale;
+            }
+            for x in self.order_heap_data.heap_mut().iter_mut() {
+                x.scale_activity(scale)
+            }
+            self.var_inc *= scale;
+        }
     }
 
     #[inline(always)]
@@ -2179,21 +2206,18 @@ impl VarState {
         self.trail.push(p);
     }
 
+    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
+        self.order_heap_data.promote(VarOrder {
+            activity: &self.activity,
+        })
+    }
+
     /// Increase a variable with the current 'bump' value.
-    fn var_bump_activity(&mut self, order_heap_data: &mut HeapData<Var>, v: Var) {
+    fn var_bump_activity(&mut self, v: Var) {
         self.activity[v] += self.var_inc;
-        if self.activity[v] > 1e100 {
-            // Rescale:
-            for (_, x) in self.activity.iter_mut() {
-                *x *= 1e-100;
-            }
-            self.var_inc *= 1e-100;
-        }
 
         // Update order_heap with respect to new activity:
-        let mut order_heap = order_heap_data.promote(VarOrder {
-            activity: &self.activity,
-        });
+        let mut order_heap = self.order_heap();
         if order_heap.in_heap(v) {
             order_heap.decrease(v);
         }
@@ -2292,9 +2316,6 @@ impl<'a> TheoryArg<'a> {
     ///     This is a hint for the SAT solver to keep the theory lemma that corresponds
     ///     to `c` along with the actual learnt clause.
     pub fn raise_conflict(&mut self, lits: &[Lit], costly: bool) {
-        if lits.len() == 0 {
-            panic!("conflicts must have a least one literal")
-        }
         if self.is_ok() {
             self.conflict = TheoryConflict::Clause { costly };
             self.lits.clear();
@@ -2322,7 +2343,7 @@ struct Watcher {
 }
 
 struct VarOrder<'a> {
-    activity: &'a VMap<f64>,
+    activity: &'a VMap<f32>,
 }
 
 /// Predicate to test whether a clause has been removed from some lit's watchlist
@@ -2339,8 +2360,6 @@ enum Seen {
 }
 
 mod utils {
-    use super::*;
-
     /// Finite subsequences of the Luby-sequence:
     ///
     /// > 0: 1
@@ -2405,12 +2424,42 @@ impl PartialEq for Watcher {
 }
 impl Eq for Watcher {}
 
-impl<'a> Comparator<Var> for VarOrder<'a> {
-    fn cmp(&self, lhs: &Var, rhs: &Var) -> cmp::Ordering {
-        PartialOrd::partial_cmp(&self.activity[*rhs], &self.activity[*lhs]).expect("NaN activity")
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+struct VarOrderKey(u64);
+
+impl VarOrderKey {
+    #[inline]
+    fn new(var: Var, activity: f32) -> Self {
+        VarOrderKey((!(activity.to_bits() as u64) << u32::BITS) | (var.idx() as u64))
+    }
+
+    fn var(self) -> Var {
+        Var::unsafe_from_idx(self.0 as u32)
+    }
+
+    fn activity(self) -> f32 {
+        f32::from_bits(!((self.0 >> u32::BITS) as u32))
+    }
+
+    fn scale_activity(&mut self, scale: f32) {
+        *self = VarOrderKey::new(self.var(), self.activity() * scale)
     }
 }
+impl<'a> CachedKeyComparator<Var> for VarOrder<'a> {
+    type Key = VarOrderKey;
 
+    fn cache_key(&self, t: Var) -> Self::Key {
+        VarOrderKey::new(t, self.activity[t])
+    }
+
+    fn max_key(&self) -> Self::Key {
+        VarOrderKey::new(Var::UNDEF, 0.0)
+    }
+
+    fn un_cache_key(&self, k: Self::Key) -> Var {
+        k.var()
+    }
+}
 impl<'a> DeletePred<Watcher> for WatcherDeleted<'a> {
     #[inline]
     fn deleted(&self, w: &Watcher) -> bool {
@@ -2447,7 +2496,7 @@ impl Watcher {
 /// This can be used to tune the solver heuristics.
 #[derive(Clone)]
 pub struct SolverOpts {
-    pub var_decay: f64,
+    pub var_decay: f32,
     pub clause_decay: f64,
     pub random_var_freq: f64,
     pub random_seed: f64,
@@ -2500,7 +2549,7 @@ impl Default for SolverOpts {
 impl SolverOpts {
     /// Check that options are valid.
     pub fn check(&self) -> bool {
-        (0.0 < self.var_decay && self.var_decay < 1.0)
+        (1f32 / THRESHOLD < self.var_decay && self.var_decay < 1.0)
             && (0.0 < self.clause_decay && self.clause_decay < 1.0)
             && (0.0 <= self.random_var_freq && self.random_var_freq <= 1.0)
             && (0.0 < self.random_seed && self.random_seed < f64::INFINITY)
