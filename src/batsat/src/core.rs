@@ -1615,7 +1615,7 @@ impl SolverV {
                     out_conflict.insert(!lit);
                 } else if reason == CRef::SPECIAL {
                     // resolution with propagation reason
-                    let lits = th.explain_propagation(lit);
+                    let lits = th.explain_propagation_final(lit);
                     for &p in lits {
                         if self.vars.level(p.var()) > 0 {
                             self.seen[p.var()] = Seen::SOURCE;
