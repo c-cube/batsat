@@ -74,7 +74,6 @@ struct VarState {
     vardata: VMap<VarData>,
     /// Amount to bump next variable with.
     var_inc: f32,
-    var_decay: f32,
 
     /// Assignment stack; stores all assigments made in the order they were made.
     trail: Vec<Lit>,
@@ -446,6 +445,22 @@ impl<Cb: Callbacks> Solver<Cb> {
         }
     }
 
+    /// Returns the options that are currently being used
+    pub fn options(&self) -> SolverOpts {
+        self.v.opts.clone()
+    }
+
+    /// Tries to set the options being used to `new_opts`
+    /// If `new_opts` aren't valid, returns `Err(())` and leaves the options unchanged
+    pub fn set_options(&mut self, new_opts: SolverOpts) -> Result<(), ()> {
+        if new_opts.check() {
+            self.v.opts = new_opts;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     /// Begins a new decision level.
     fn new_decision_level<Th: Theory>(&mut self, th: &mut Th) {
         trace!("new decision level {}", 1 + self.v.decision_level());
@@ -520,7 +535,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                     .analyze(Conflict::BCP(confl), &self.learnts, tmp_learnt, th);
                 self.add_learnt_and_backtrack(th, learnt, clause::Kind::Learnt);
 
-                self.v.vars.var_decay_activity();
+                self.v.vars.var_decay_activity(self.v.opts.var_decay);
                 self.v.cla_decay_activity();
 
                 self.v.learntsize_adjust_cnt -= 1;
@@ -2050,7 +2065,7 @@ impl SolverV {
     fn new(opts: &SolverOpts) -> Self {
         Self {
             opts: opts.clone(),
-            vars: VarState::new(opts),
+            vars: VarState::new(),
             num_clauses: 0,
             num_learnts: 0,
             clauses_literals: 0,
@@ -2121,13 +2136,12 @@ fn test_threshold() {
 }
 
 impl VarState {
-    fn new(opts: &SolverOpts) -> Self {
+    fn new() -> Self {
         Self {
             ass: VMap::new(),
             vardata: VMap::new(),
             activity: VMap::new(),
             var_inc: 1.0,
-            var_decay: opts.var_decay,
             trail: vec![],
             trail_lim: vec![],
             order_heap_data: HeapData::new(),
@@ -2174,8 +2188,8 @@ impl VarState {
         self.vardata[x].reason
     }
 
-    fn var_decay_activity(&mut self) {
-        self.var_inc *= 1.0 / self.var_decay;
+    fn var_decay_activity(&mut self, decay: f32) {
+        self.var_inc *= 1.0 / decay;
         if self.var_inc > THRESHOLD {
             let scale = 2.0_f32.powi(f32::MIN_EXP);
             // Rescale:
