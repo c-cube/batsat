@@ -18,6 +18,7 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
+use bytemuck::{Pod, Zeroable};
 use std::cmp;
 use std::fmt;
 use std::marker::PhantomData;
@@ -74,7 +75,8 @@ impl<T: Copy> ops::IndexMut<Ref<T>> for RegionAllocator<T> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+#[repr(transparent)]
 /// A reference to a `T` value living in the allocator.
 ///
 /// The reference is invariant in `T`.
