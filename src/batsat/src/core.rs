@@ -1739,11 +1739,11 @@ impl SolverV {
 
             // eprintln!("propagating trail[{}] = {:?}", self.qhead, p);
             self.qhead += 1;
-            let watches_data_ptr: *mut OccListsData<_, _> = &mut self.watches_data;
             // let ws = self.watches().lookup_mut(p);
-            let ws = self
-                .watches_data
-                .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca });
+            let mut ws = mem::take(
+                self.watches_data
+                    .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca }),
+            );
             // eprintln!("watcher of {:?} = {:?}", p, ws);
             let mut i: usize = 0;
             let mut j: usize = 0;
@@ -1786,9 +1786,8 @@ impl SolverV {
                         c[k] = false_lit;
 
                         // self.watches()[!c[1]].push(w);
-                        // safe because `!c[1]!=p`, so watches are not aliased
                         debug_assert_ne!(!c[1], p);
-                        unsafe { &mut (*watches_data_ptr)[!c[1]] }.push(w);
+                        self.watches_data[!c[1]].push(w);
                         continue 'clauses;
                     }
                 }
@@ -1813,6 +1812,7 @@ impl SolverV {
             }
             let dummy = Watcher::DUMMY;
             ws.resize(j, dummy);
+            self.watches_data.reinsert_taken(p, ws);
         }
         self.propagations += num_props as u64;
         self.simp_db_props -= num_props as i64;
