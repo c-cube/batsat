@@ -819,11 +819,6 @@ impl<K: AsIndex, V> OccListsData<K, V> {
         &mut self.occs[idx]
     }
 
-    pub fn reinsert_taken(&mut self, idx: K, v: OccVec<V>) {
-        debug_assert!(self.occs[idx].is_empty());
-        self.occs[idx] = v;
-    }
-
     /// Cleanup entries marked as `dirty` (remove elements for which the predicate
     /// specifies they're deleted)
     pub fn clean_all_pred<P: DeletePred<V>>(&mut self, pred: &P) {

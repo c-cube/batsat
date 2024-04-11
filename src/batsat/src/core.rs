@@ -1740,16 +1740,16 @@ impl SolverV {
             // eprintln!("propagating trail[{}] = {:?}", self.qhead, p);
             self.qhead += 1;
             // let ws = self.watches().lookup_mut(p);
-            let mut ws = mem::take(
-                self.watches_data
-                    .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca }),
-            );
+            let ws = self
+                .watches_data
+                .lookup_mut_pred(p, &WatcherDeleted { ca: &self.ca });
             // eprintln!("watcher of {:?} = {:?}", p, ws);
             let mut i: usize = 0;
             let mut j: usize = 0;
             let end: usize = ws.len();
             num_props += 1;
             'clauses: while i < end {
+                let ws = &mut self.watches_data[p];
                 // Try to avoid inspecting the clause:
                 let blocker = ws[i].blocker;
                 if self.vars.value_lit(blocker) == lbool::TRUE {
@@ -1791,6 +1791,7 @@ impl SolverV {
                         continue 'clauses;
                     }
                 }
+                let ws = &mut self.watches_data[p];
 
                 // Did not find watch -- clause is unit under assignment:
                 ws[j] = w;
@@ -1810,9 +1811,9 @@ impl SolverV {
                     self.vars.unchecked_enqueue(first, cr);
                 }
             }
+            let ws = &mut self.watches_data[p];
             let dummy = Watcher::DUMMY;
             ws.resize(j, dummy);
-            self.watches_data.reinsert_taken(p, ws);
         }
         self.propagations += num_props as u64;
         self.simp_db_props -= num_props as i64;
