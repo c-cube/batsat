@@ -17,11 +17,13 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 #![forbid(unsafe_code)]
+#![no_std]
 //! Batsat
 //!
 //! A SAT solver in rust, originally reimplement from Minisat 2.2 (which is in C++),
 //! and evolved from there.
 
+extern crate no_std_compat as std;
 //======== LOG ============
 
 // stubs when logging is not enabled
@@ -49,6 +51,8 @@ pub mod alloc;
 pub mod callbacks;
 pub mod clause;
 pub mod core;
+
+#[cfg(feature = "std")]
 pub mod dimacs;
 pub mod drat;
 mod heap;

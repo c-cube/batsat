@@ -1,5 +1,5 @@
 //! DRAT proofs
-
+use no_std_compat::prelude::v1::*;
 use {
     crate::{clause::ClauseIterable, Lit},
     std::{fmt, i32},

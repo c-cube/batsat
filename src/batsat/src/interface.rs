@@ -1,9 +1,9 @@
 /* Main Interface */
-
 use crate::{
     clause::{lbool, Lit, Var},
     theory::{self, Theory},
 };
+use no_std_compat::prelude::v1::*;
 
 /// Main interface for a solver: it makes it possible to add clauses,
 /// allocate variables, and check for satisfiability
@@ -201,6 +201,7 @@ impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> SolverModel<'a, S, T
 #[cfg(test)]
 mod test {
     use crate::*;
+    use no_std_compat::prelude::v1::*;
     #[test]
     fn test_reg7() {
         let mut solver: Solver<callbacks::Basic> =

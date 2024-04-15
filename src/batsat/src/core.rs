@@ -18,7 +18,7 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
-
+use no_std_compat::prelude::v1::*;
 use {
     crate::callbacks::{Callbacks, ProgressStatus},
     crate::clause::{
@@ -33,6 +33,7 @@ use {
 
 #[cfg(feature = "logging")]
 use crate::clause::display::Print;
+use crate::core::utils::LubyIter;
 
 /// The main solver structure.
 ///
@@ -360,6 +361,7 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         res
     }
 
+    #[cfg(feature = "std")]
     fn print_stats(&self) {
         println!("c restarts              : {}", self.v.starts);
         println!("c conflicts             : {:<12}", self.v.conflicts);
@@ -375,6 +377,9 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
             (self.v.max_literals - self.v.tot_literals) as f64 * 100.0 / self.v.max_literals as f64
         );
     }
+
+    #[cfg(not(feature = "std"))]
+    fn print_stats(&self) {}
 
     fn unsat_core(&self) -> &[Lit] {
         self.conflict.as_slice()
@@ -819,13 +824,9 @@ impl<Cb: Callbacks> Solver<Cb> {
         self.cb.on_start();
 
         // Search:
-        let mut curr_restarts: i32 = 0;
+        let mut rest_base: f64 = 1.0;
+        let mut luby_state = LubyIter::new();
         loop {
-            let rest_base = if self.v.opts.luby_restart {
-                utils::luby(self.v.opts.restart_inc, curr_restarts)
-            } else {
-                f64::powi(self.v.opts.restart_inc, curr_restarts)
-            };
             let nof_clauses = (rest_base * self.v.opts.restart_first as f64) as i32;
             status = self.search(th, nof_clauses, &mut tmp_learnt);
             if !self.within_budget() {
@@ -835,9 +836,13 @@ impl<Cb: Callbacks> Solver<Cb> {
             if status != lbool::UNDEF {
                 break;
             } else {
-                info!("search.restart({})", curr_restarts);
-                curr_restarts += 1;
+                info!("search.restart");
                 self.cb.on_restart();
+                if self.v.opts.luby_restart {
+                    luby_state.step(&mut rest_base, self.v.opts.restart_inc);
+                } else {
+                    rest_base *= self.v.opts.restart_inc;
+                };
             }
         }
 
@@ -2046,6 +2051,7 @@ impl SolverV {
     fn progress_estimate(&self) -> f64 {
         let mut progress = 0.0;
         let f = 1.0 / self.num_vars() as f64;
+        let mut f_pow_i = 1.0;
 
         for i in 0..self.decision_level() + 1 {
             let beg: i32 = if i == 0 {
@@ -2058,7 +2064,8 @@ impl SolverV {
             } else {
                 self.vars.trail_lim[i as usize]
             };
-            progress += f64::powi(f, i as i32) * (end - beg) as f64;
+            progress += f_pow_i * (end - beg) as f64;
+            f_pow_i *= f;
         }
 
         progress / self.num_vars() as f64
@@ -2136,6 +2143,24 @@ fn test_threshold() {
     assert_eq!(f32::MAX + THRESHOLD, f32::MAX)
 }
 
+/// multiply a positive float `f` by 0.5f32.powi(`pow2`)
+/// truncates to positive 0 instead of using sub-normal numbers
+#[inline]
+fn scale_down_float(f: f32, pow2: u32) -> f32 {
+    f32::from_bits(
+        f.to_bits()
+            .saturating_sub(pow2 << (f32::MANTISSA_DIGITS - 1)),
+    )
+}
+
+#[test]
+fn test_scale_down_float() {
+    assert_eq!(scale_down_float(42.0, 10), 42.0 * 0.5f32.powi(10));
+    let actual = scale_down_float(42.0, 140);
+    let expect = 42.0 * 0.5_f32.powi(140);
+    assert!(0.0 <= actual && actual <= expect && expect < f32::MIN_POSITIVE)
+}
+
 impl VarState {
     fn new() -> Self {
         Self {
@@ -2192,15 +2217,15 @@ impl VarState {
     fn var_decay_activity(&mut self, decay: f32) {
         self.var_inc *= 1.0 / decay;
         if self.var_inc > THRESHOLD {
-            let scale = 2.0_f32.powi(f32::MIN_EXP);
+            let scale = -f32::MIN_EXP as u32;
             // Rescale:
             for (_, x) in self.activity.iter_mut() {
-                *x *= scale;
+                *x = scale_down_float(*x, scale)
             }
             for x in self.order_heap_data.heap_mut().iter_mut() {
-                x.scale_activity(scale)
+                x.map_activity(|activity| scale_down_float(activity, scale))
             }
-            self.var_inc *= scale;
+            self.var_inc = scale_down_float(self.var_inc, scale);
         }
     }
 
@@ -2375,30 +2400,46 @@ enum Seen {
 }
 
 mod utils {
-    /// Finite subsequences of the Luby-sequence:
-    ///
-    /// > 0: 1
-    /// > 1: 1 1 2
-    /// > 2: 1 1 2 1 1 2 4
-    /// > 3: 1 1 2 1 1 2 4 1 1 2 1 1 2 4 8
-    /// ...
-    pub(super) fn luby(y: f64, mut x: i32) -> f64 {
-        // Find the finite subsequence that contains index 'x', and the
-        // size of that subsequence:
-        let mut size = 1;
-        let mut seq = 0;
-        while size < x + 1 {
-            seq += 1;
-            size = 2 * size + 1;
+
+    /// See https://www.cs.ubc.ca/~nickhar/papers/PostOrderHeap/FUN04-PostOrderHeap.pdf
+    pub(super) struct LubyIter {
+        /// D_n
+        d: u32,
+        /// 1 << H(n)
+        /// also Luby(n)
+        h: u32,
+    }
+
+    impl LubyIter {
+        #[inline]
+        pub(crate) fn new() -> Self {
+            LubyIter { d: 0, h: 1 }
         }
 
-        while size - 1 != x {
-            size = (size - 1) >> 1;
-            seq -= 1;
-            x = x % size;
+        #[inline]
+        pub(crate) fn step(&mut self, rest_base: &mut f64, restart_inc: f64) {
+            if self.h & self.d == 0 {
+                self.d |= self.h;
+                self.h = 1;
+                *rest_base = 1.0;
+            } else {
+                self.d &= !self.h;
+                self.h <<= 1;
+                *rest_base *= restart_inc;
+            }
         }
+    }
 
-        return f64::powi(y, seq);
+    #[test]
+    fn test_luby() {
+        let luby_seq = [1u32, 1, 2, 1, 1, 2, 4, 1, 1, 2, 1, 1, 2, 4, 8];
+        let mut rest_base = 1.0f64;
+        let restart_inc = 1.5f64;
+        let mut luby_state = LubyIter::new();
+        for luby in luby_seq {
+            assert_eq!(rest_base, restart_inc.powi(luby.ilog2() as i32));
+            luby_state.step(&mut rest_base, restart_inc)
+        }
     }
 
     /// Generate a random double:
@@ -2456,8 +2497,8 @@ impl VarOrderKey {
         f32::from_bits(!((self.0 >> u32::BITS) as u32))
     }
 
-    fn scale_activity(&mut self, scale: f32) {
-        *self = VarOrderKey::new(self.var(), self.activity() * scale)
+    fn map_activity(&mut self, f: impl FnOnce(f32) -> f32) {
+        *self = VarOrderKey::new(self.var(), f(self.activity()))
     }
 }
 impl<'a> CachedKeyComparator<Var> for VarOrder<'a> {

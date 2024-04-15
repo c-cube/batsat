@@ -1,4 +1,5 @@
 use crate::intmap::{AsIndex, IntMap};
+use no_std_compat::prelude::v1::*;
 use std::fmt::Debug;
 use std::{mem, ops};
 

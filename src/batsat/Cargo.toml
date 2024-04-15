@@ -19,11 +19,13 @@ exclude = [
 
 [dependencies]
 
-bit-vec = "0.5.0"
+bit-vec = { version = "0.6.3", default-features = false }
 log = {version="0.4", optional=true}
 bytemuck = { version = "1.14.0", default-features = false, features = ["must_cast", "derive"] }
+no-std-compat = { version = "0.4.1", features = ["alloc"] }
 
 [features]
 
 default=[]
+std = ["no-std-compat/std"]
 logging = ["log"]
