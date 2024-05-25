@@ -101,7 +101,7 @@ impl Lit {
     /// `lit.apply_sign(b)` keeps the same sign if `b==true`, flips sign otherwise
     ///
     /// ```
-    /// use batsat::*;
+    /// use platsat::*;
     /// let mut sat = BasicSolver::default();
     /// let lit1 = Lit::new(sat.new_var_default(), true);
     /// assert_eq!(lit1, lit1.apply_sign(true));
@@ -919,7 +919,7 @@ pub mod display {
         /// just using `x.pp_dimacs()` instead of `x`.
         ///
         /// ```
-        /// use batsat::*;
+        /// use platsat::*;
         /// let v: Vec<Lit> = vec![];
         /// format!("as dimacs: {}", v.pp_dimacs());
         /// ```

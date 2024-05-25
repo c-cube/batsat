@@ -3,24 +3,24 @@ FLAGS ?=
 
 build:
 	@cargo build --release ${FLAGS}
-	@ln -sf target/release/batsat-bin
+	@ln -sf target/release/platsat-bin
 
 build-log:
-	@cd src/batsat-bin && cargo build --release ${FLAGS} --features "logging"
-	@ln -sf target/release/batsat-bin
+	@cd src/platsat-bin && cargo build --release ${FLAGS} --features "logging"
+	@ln -sf target/release/platsat-bin
 
 build-debug:
 	@cargo build ${FLAGS}
-	@ln -sf target/debug/batsat-bin
+	@ln -sf target/debug/platsat-bin
 
 build-debug-log:
-	@cd src/batsat-bin && cargo build ${FLAGS} --features "logging"
-	@ln -sf target/debug/batsat-bin
+	@cd src/platsat-bin && cargo build ${FLAGS} --features "logging"
+	@ln -sf target/debug/platsat-bin
 
 dev: build test
 
 build-ipasir:
-	@cargo build --release -p batsat-ipasir
+	@cargo build --release -p platsat-ipasir
 
 check: prebuild
 	@cargo check ${FLAGS} --all --all-features
@@ -43,7 +43,7 @@ test-rust: prebuild
 	@cargo test --release --all-features
 
 check-build-sudoku:
-	@cargo check -p batsat-sudoku
+	@cargo check -p platsat-sudoku
 
 
 SUDOKU_BENCHS_FAST= ./benchs/sudoku/sudoku.txt
@@ -62,13 +62,13 @@ TEST_OPTS?= -j $(J)
 TEST_TOOL=benchpress
 $(TEST_TOOL)-basic: build
 	@mkdir -p snapshots
-	@benchpress run --prover batsat --prover minisat \
+	@benchpress run --prover platsat --prover minisat \
 	  -c benchs/benchpress.sexp benchs/basic/ -t 10 --progress \
 	  --csv snapshots/bench-basic-$(DATE)-csv $(TEST_OPTS)
 
 $(TEST_TOOL)-sat: build
 	@benchpress run -c benchs/benchpress.sexp -j 4 --timeout 10 --progress \
-		benchs/ -p minisat -p batsat
+		benchs/ -p minisat -p platsat
 
 .PHONY: prebuild check release clean
 

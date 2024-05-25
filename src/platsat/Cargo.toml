@@ -1,10 +1,10 @@
 [package]
-name = "batsat"
+name = "platsat"
 version = "0.5.0"
-authors = ["Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
+authors = ["David Ewert", "Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
 description = "Extensible SAT solver in Rust"
-homepage = "https://github.com/c-cube/batsat"
-repository = "https://github.com/c-cube/batsat"
+homepage = "https://github.com/dewert99/platsat"
+repository = "https://github.com/dewert99/platsat"
 readme = "../../README.md"
 keywords = ["sat", "minisat"]
 categories = ["algorithms"]

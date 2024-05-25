@@ -2,16 +2,16 @@
 resolver = "2"
 
 members = [
-  "src/batsat",
-  "src/batsat-bin",
-  "src/batsat-ipasir",
-  "src/batsat-sudoku",
+    "src/platsat",
+    "src/platsat-bin",
+    "src/platsat-ipasir",
+    "src/platsat-sudoku",
 ]
 
 default-members = [
-  "src/batsat",
-  "src/batsat-bin",
-  "src/batsat-ipasir",
+    "src/platsat",
+    "src/platsat-bin",
+    "src/platsat-ipasir",
 ]
 
 [profile.release]

@@ -19,10 +19,10 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-extern crate batsat;
 extern crate clap;
 extern crate cpu_time;
 extern crate flate2;
+extern crate platsat;
 
 #[cfg(not(feature = "logging"))]
 #[macro_use]
@@ -44,11 +44,11 @@ extern crate env_logger;
 #[macro_use]
 extern crate log;
 
-use batsat::{
-    drat, lbool, Callbacks, ClauseKind, Lit, ProgressStatus, Solver, SolverInterface, SolverOpts,
-};
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
+use platsat::{
+    drat, lbool, Callbacks, ClauseKind, Lit, ProgressStatus, Solver, SolverInterface, SolverOpts,
+};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::mem;
@@ -59,7 +59,7 @@ mod system;
 
 fn main() {
     env_logger::init();
-    debug!("batsat-bin: start");
+    debug!("platsat-bin: start");
     let exitcode = main2().unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1)
@@ -178,7 +178,7 @@ type MSolver = Solver<CB>; // specialized solver
 fn main2() -> io::Result<i32> {
     let resource = system::ResourceMeasure::new();
 
-    let matches = App::new("batsat-bin")
+    let matches = App::new("platsat-bin")
         .version("0.3.1")
         .author("Simon Cruanes")
         .about("Adaptation of MiniSat/RatSat in Rust")
@@ -493,6 +493,6 @@ fn read_input<R: BufRead>(
             "c |                                                                             |"
         );
     }
-    batsat::dimacs::parse(&mut input, solver, is_strict, incremental)?;
+    platsat::dimacs::parse(&mut input, solver, is_strict, incremental)?;
     Ok(())
 }

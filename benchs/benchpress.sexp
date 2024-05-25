@@ -1,8 +1,8 @@
 
 (prover
-  (name batsat)
+  (name platsat)
   (version "git:.")
-  (cmd "$cur_dir/../batsat-bin --cpu-lim $timeout $file")
+  (cmd "$cur_dir/../platsat-bin --cpu-lim $timeout $file")
   (unknown "INDETERMINATE")
   (unsat "s UNSATISFIABLE")
   (sat "s SATISFIABLE"))

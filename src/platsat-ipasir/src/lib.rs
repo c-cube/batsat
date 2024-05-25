@@ -1,15 +1,15 @@
 /// # IPASIR
 ///
-/// API for batsat following the [IPASIR](https://github.com/biotomas/ipasir) convention.
+/// API for platsat following the [IPASIR](https://github.com/biotomas/ipasir) convention.
 /// See `ipasir` directory at the root of the project
-extern crate batsat;
+extern crate platsat;
 
-use batsat::{self as sat, lbool, Lit, SolverInterface, Var};
+use platsat::{self as sat, lbool, Lit, SolverInterface, Var};
 use std::boxed::Box;
 use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
 
-static NAME: &'static str = "batsat-0.2\0";
+static NAME: &'static str = "platsat-0.2\0";
 
 /// The wrapper around a solver. It contains partial clauses, assumptions, etc.
 struct IpasirSolver {
@@ -76,7 +76,7 @@ impl CB {
     }
 }
 
-impl batsat::Callbacks for CB {
+impl platsat::Callbacks for CB {
     fn on_new_clause(&mut self, lits: &[Lit], kind: sat::ClauseKind) {
         if self.learn_cb.is_none() {
             return;

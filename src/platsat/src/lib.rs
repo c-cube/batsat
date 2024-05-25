@@ -18,7 +18,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 #![forbid(unsafe_code)]
 #![no_std]
-//! Batsat
+//! Platsat
 //!
 //! A SAT solver in rust, originally reimplement from Minisat 2.2 (which is in C++),
 //! and evolved from there.

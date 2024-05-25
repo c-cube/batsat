@@ -5,7 +5,7 @@ use {
         grid::{Cell, CellValue, Grid, Position},
         BRef,
     },
-    batsat::{self as sat, lbool, theory, Lit as BLit, SolverInterface},
+    platsat::{self as sat, lbool, theory, Lit as BLit, SolverInterface},
     std::collections::HashMap,
 };
 

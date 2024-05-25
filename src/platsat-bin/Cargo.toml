@@ -1,10 +1,10 @@
 [package]
-name = "batsat-bin"
+name = "platsat-bin"
 version = "0.0.3"
 authors = ["Simon Cruanes", "Masaki Hara <ackie.h.gmai@gmail.com>"]
 description = "SAT solver in Rust"
-homepage = "https://github.com/c-cube/batsat"
-repository = "https://github.com/c-cube/batsat"
+homepage = "https://github.com/dewert99/platsat"
+repository = "https://github.com/dewert99/platsat"
 readme = "README.md"
 keywords = ["sat", "dimacs"]
 categories = ["algorithms", "command-line-utilities"]
@@ -18,8 +18,8 @@ publish = false
 clap = { version = "^2.31", default-features=false}
 flate2 = "1.0"
 cpu-time = "0.1"
-batsat = {version="^0.5", path="../batsat", features = ["std"]}
-#batsat = {version="^0.2", path="../batsat", features=["logging"]}
+platsat = {version="^0.5", path= "../platsat", features = ["std"]}
+#platsat = {version="^0.2", path="../platsat", features=["logging"]}
 
 log = {version = "0.4", optional=true}
 env_logger = {version="0.5", optional=true, default-features=false}
@@ -27,4 +27,4 @@ env_logger = {version="0.5", optional=true, default-features=false}
 [features]
 
 default = []
-logging = [ "log", "env_logger", "batsat/logging" ]
+logging = [ "log", "env_logger", "platsat/logging" ]

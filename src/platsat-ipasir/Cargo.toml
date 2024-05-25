@@ -1,5 +1,5 @@
 [package]
-name = "batsat-ipasir"
+name = "platsat-ipasir"
 version = "0.1.0"
 authors = ["Simon Cruanes <simon.cruanes.2007@m4x.org>"]
 
@@ -10,4 +10,4 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 
-batsat = { path = "../batsat/" }
+platsat = { path = "../platsat/" }

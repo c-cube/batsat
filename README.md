@@ -1,8 +1,5 @@
-# BatSat [![Build](https://github.com/c-cube/batsat/actions/workflows/rust.yml/badge.svg)](https://github.com/c-cube/batsat/actions/workflows/rust.yml) [![Latest Version]](https://crates.io/crates/batsat)
-
-[Latest Version]: https://img.shields.io/crates/v/batsat.svg
-
-This is a Rust SAT solver forked from [ratsat](https://github.com/qnighy/ratsat), a reimplementation of MiniSat.
+# PlatSat
+This is a Rust SAT solver forked from [batsat](https://github.com/c-cube/batsat) forked from [ratsat](https://github.com/qnighy/ratsat), a reimplementation of MiniSat.
 
 For reference, a [simple benchmark](https://benchpress.cedeela.fr/show/res-20220112T143715-921dc3ad-f9fa-493d-8a08-540eecad9827.sqlite/) comparing it to minisat on a set of (easy) problems.
 
@@ -23,3 +20,5 @@ to extend batsat further and to provide the following features:
 - [x] OCaml bindings
 - [x] templated API to write SMT solvers
 - [ ] simplification techniques from Minisat+ (as an optional internal structure)
+
+Platsat extends batsat by making it safe (`#![forbid(unsafe_code)]`) and `no_std`, as well as improving the SMT solver API

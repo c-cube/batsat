@@ -1,7 +1,7 @@
 
 all:
 	@cargo build --release
-	@cp ../../target/release/libbatsat_ipasir.a libipasirbatsat.a
+	@cp ../../target/release/libplatsat_ipasir.a libipasirplatsat.a
 
 clean:
 	@cargo clean
