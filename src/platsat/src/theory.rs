@@ -1,5 +1,6 @@
 use {crate::clause::Lit, std::default::Default};
 
+use crate::core::ExplainTheoryArg;
 /// Argument passed to the Theory
 pub use crate::core::TheoryArg;
 
@@ -40,17 +41,21 @@ pub trait Theory {
     ///
     /// `p` is the literal that has been propagated by the theory in a prefix
     /// of the current trail.
-    fn explain_propagation(&mut self, p: Lit) -> &[Lit];
+    ///
+    /// ## Returns
+    /// - `lits` a clause that is a tautology of the theory (ie a lemma).
+    ///   `lits[0]` must be `p`, and all other elements in `lits` must be false in the current model
+    fn explain_propagation_clause(&mut self, p: Lit, st: &mut ExplainTheoryArg) -> &[Lit];
 
-    /// Similar to `explain_propagation` but theories should prefer larger older explanations
+    /// Similar to `explain_propagation_clause` but theories should prefer larger older explanations
     /// For example, if a theory knows `(a && b) => c` and `c => d` and is asked to explain `d`,
-    /// `explain_propagation` may prefer to explain using `[c]` to generate a better clause, but
-    /// `explain_propagation_final` may as well explain using `[a, b]` since otherwise it would just
-    /// be asked to explain `c` anyway.
+    /// `explain_propagation_clause` may prefer to explain using `[c]` to generate a better clause,
+    /// but `explain_propagation_clause_final` may as well explain using `[a, b]` since otherwise
+    /// it would just be asked to explain `c` anyway.
     ///
     /// The default implementation just calls `explain_propagation`
-    fn explain_propagation_final(&mut self, p: Lit) -> &[Lit] {
-        self.explain_propagation(p)
+    fn explain_propagation_clause_final(&mut self, p: Lit, st: &mut ExplainTheoryArg) -> &[Lit] {
+        self.explain_propagation_clause(p, st)
     }
 }
 
@@ -83,7 +88,7 @@ impl Theory for EmptyTheory {
     fn n_levels(&self) -> usize {
         self.0
     }
-    fn explain_propagation(&mut self, _p: Lit) -> &[Lit] {
+    fn explain_propagation_clause(&mut self, _p: Lit, _: &mut ExplainTheoryArg) -> &[Lit] {
         unreachable!()
     }
 }

@@ -7,7 +7,21 @@ For reference, a [simple benchmark](https://benchpress.cedeela.fr/show/res-20220
 
 MIT licensed.
 
-## Features and Goals
+## Platsat changes
+
+- `#![forbid(unsafe_code)]`
+- `no_std`
+- added API to make implementing `push`/`pop` easier
+- optimized adding lemmas from an SMT theory 
+
+### BREAKING CHANGES
+- renamed `Theory::explain_propagation` to `Theory::explain_propagation_clause` and changed the required form of the explanation
+
+
+Platsat extends batsat by making it safe () and , as well as improving the SMT solver API
+
+
+## Batsat Features and Goals
 
 Batsat is originally based on ratsat, a clone of minisat. However we want
 to extend batsat further and to provide the following features:
@@ -19,6 +33,3 @@ to extend batsat further and to provide the following features:
 - [x] debug framework using `log` (optional)
 - [x] OCaml bindings
 - [x] templated API to write SMT solvers
-- [ ] simplification techniques from Minisat+ (as an optional internal structure)
-
-Platsat extends batsat by making it safe (`#![forbid(unsafe_code)]`) and `no_std`, as well as improving the SMT solver API
