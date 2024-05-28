@@ -1,5 +1,6 @@
 //! A sudoku solver.
 
+use platsat::core::ExplainTheoryArg;
 use {
     crate::{
         grid::{Cell, CellValue, Grid, Position},
@@ -319,9 +320,17 @@ impl Solver0 {
 }
 
 impl sat::Theory for Solver0 {
-    #[inline]
-    fn n_levels(&self) -> usize {
-        self.grid.n_levels()
+    fn final_check(&mut self, arg: &mut theory::TheoryArg) {
+        debug!("final-check");
+        assert!(self.ok());
+        let trail = &arg.model()[..];
+        self.update_grid(trail);
+        self.check_full();
+
+        trace!("fully updated grid:\n{}", self.grid.render());
+        self.check_constraints(arg);
+
+        self.return_res(arg)
     }
     #[inline]
     fn create_level(&mut self) {
@@ -338,17 +347,9 @@ impl sat::Theory for Solver0 {
         }
     }
 
-    fn final_check(&mut self, arg: &mut theory::TheoryArg) {
-        debug!("final-check");
-        assert!(self.ok());
-        let trail = &arg.model()[..];
-        self.update_grid(trail);
-        self.check_full();
-
-        trace!("fully updated grid:\n{}", self.grid.render());
-        self.check_constraints(arg);
-
-        self.return_res(arg)
+    #[inline]
+    fn n_levels(&self) -> usize {
+        self.grid.n_levels()
     }
 
     fn partial_check(&mut self, arg: &mut theory::TheoryArg) {
@@ -367,7 +368,7 @@ impl sat::Theory for Solver0 {
         self.return_res(arg)
     }
 
-    fn explain_propagation(&mut self, p: BLit) -> &[BLit] {
+    fn explain_propagation_clause(&mut self, p: BLit, _: &mut ExplainTheoryArg) -> &[BLit] {
         assert!(self.propagate);
         let ((line, col), _n) = self.lm.lit_to_pred[p.var()];
 
@@ -378,10 +379,11 @@ impl sat::Theory for Solver0 {
             if col_full {
                 // we can explain propagation using the whole column
                 self.lits.clear();
+                self.lits.push(p);
                 for i in (0..9).filter(|&j| j != line) {
                     let pos = (i, col);
                     if let Cell::Full(n) = self.grid[pos] {
-                        self.lits.push(self.lm.find((pos, n)));
+                        self.lits.push(!self.lm.find((pos, n)));
                     } else {
                         unreachable!()
                     }
