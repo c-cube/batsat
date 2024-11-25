@@ -43,7 +43,13 @@ pub trait SolverInterface {
 
     /// Add a clause to the solver. Returns `false` if the solver is in
     /// an `UNSAT` state.
-    fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool;
+    fn add_clause(&mut self, clause: impl IntoIterator<Item = Lit>) -> bool;
+
+    /// Add a clause to the solver. Returns `false` if the solver is in
+    /// an `UNSAT` state.
+    fn add_clause_reuse(&mut self, clause: &mut Vec<Lit>) -> bool {
+        self.add_clause(clause.iter().copied())
+    }
 
     /// Simplify the clause database according to the current top-level assigment. Currently, the only
     /// thing done here is the removal of satisfied clauses, but more things can be put here.
@@ -157,13 +163,16 @@ pub trait SolverInterface {
     /// (NOTE! This has effects on the meaning of a SATISFIABLE result).
     fn set_decision_var(&mut self, v: Var, dvar: bool);
 
-    /// Get access to the set of assumptions that will be implicitly added to calls to
-    /// [`SolverInterface::solve_limited_th`]
-    fn assumptions(&mut self) -> &[Lit];
+    /// Pushes a new assertion level, clauses are always added to the highest assertion level and
+    /// are removed when it is
+    fn push_th<Th: Theory>(&mut self, th: &mut Th);
 
-    /// Get mutable access to the set of assumptions that will be implicitly added to calls to
-    /// [`SolverInterface::solve_limited_th`]
-    fn assumptions_mut(&mut self) -> &mut Vec<Lit>;
+    fn pop_th<Th: Theory>(&mut self, th: &mut Th) {
+        self.pop_n_th(th, 1);
+    }
+
+    /// Removes `n` assertion levels
+    fn pop_n_th<Th: Theory>(&mut self, th: &mut Th, n: u32);
 }
 
 /// Result of calling [`SolverInterface::solve_limited_th_full`], contains the unsat-core
