@@ -11,7 +11,9 @@ MIT licensed.
 
 - `#![forbid(unsafe_code)]`
 - `no_std`
-- added API to make implementing `push`/`pop` easier
+- added `push`/`pop` API
+- gave out more access to internal scratch buffer
+  * this helps users avoid needing their own additional scratch buffer(s) 
 - optimized adding lemmas from an SMT theory 
 
 ### BREAKING CHANGES

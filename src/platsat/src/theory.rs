@@ -45,7 +45,11 @@ pub trait Theory {
     /// ## Returns
     /// - `lits` a clause that is a tautology of the theory (ie a lemma).
     ///   `lits[0]` must be `p`, and all other elements in `lits` must be false in the current model
-    fn explain_propagation_clause(&mut self, p: Lit, st: &mut ExplainTheoryArg) -> &[Lit];
+    fn explain_propagation_clause<'a>(
+        &'a mut self,
+        p: Lit,
+        st: &'a mut ExplainTheoryArg,
+    ) -> &'a [Lit];
 
     /// Similar to `explain_propagation_clause` but theories should prefer larger older explanations
     /// For example, if a theory knows `(a && b) => c` and `c => d` and is asked to explain `d`,
@@ -54,7 +58,11 @@ pub trait Theory {
     /// it would just be asked to explain `c` anyway.
     ///
     /// The default implementation just calls `explain_propagation`
-    fn explain_propagation_clause_final(&mut self, p: Lit, st: &mut ExplainTheoryArg) -> &[Lit] {
+    fn explain_propagation_clause_final<'a>(
+        &'a mut self,
+        p: Lit,
+        st: &'a mut ExplainTheoryArg,
+    ) -> &'a [Lit] {
         self.explain_propagation_clause(p, st)
     }
 }
