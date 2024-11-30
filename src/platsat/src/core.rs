@@ -856,10 +856,9 @@ impl<Cb: Callbacks> Solver<Cb> {
             let mut has_propagated = th_arg.has_propagated;
 
             if self.v.th_st.num_lemmas() > 0 {
+                self.flush_th_lemmas(th);
                 has_propagated = true;
             }
-
-            self.flush_th_lemmas(th);
 
             return if has_propagated {
                 Ok(lbool::UNDEF)
