@@ -18,6 +18,7 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
+use bytemuck::cast_vec;
 use no_std_compat::prelude::v1::*;
 use {
     crate::callbacks::{Callbacks, ProgressStatus},
@@ -53,10 +54,10 @@ pub struct Solver<Cb: Callbacks> {
 
     cb: Cb, // the callbacks
 
-    /// List of problem clauses.
+    /// List of learnt and problem clauses.
     clauses: Vec<CRef>,
-    /// List of learnt clauses.
-    learnts: Vec<CRef>,
+
+    learnt: u32,
 
     v: SolverV,
 }
@@ -89,8 +90,6 @@ struct SolverV {
     max_learnts: f64,
     learntsize_adjust_confl: f64,
     learntsize_adjust_cnt: i32,
-
-    remove_satisfied: bool,
 
     // Statistics: (read-only member variable)
     solves: u64,
@@ -367,7 +366,7 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         self.model.clear();
         self.conflict.clear();
         self.clauses.clear();
-        self.learnts.clear();
+        self.learnt = 0;
     }
 
     fn solve_limited_preserving_trail_th<Th: Theory>(
@@ -537,7 +536,7 @@ impl<Cb: Callbacks> Solver<Cb> {
             conflict: LSet::new(),
             cb,
             clauses: vec![],
-            learnts: vec![],
+            learnt: 0,
             v: SolverV::new(&opts),
         }
     }
@@ -586,10 +585,7 @@ impl<Cb: Callbacks> Solver<Cb> {
             return true;
         }
 
-        self.remove_satisfied(ClauseSetSelect::Learnt); // Remove satisfied learnt clauses
-        if self.v.remove_satisfied {
-            self.remove_satisfied(ClauseSetSelect::Original); // remove satisfied normal clauses
-        }
+        self.remove_satisfied(); // Remove satisfied learnt clauses
         self.check_garbage();
 
         self.v.simp_db_assigns = self.v.num_assigns() as i32;
@@ -633,7 +629,7 @@ impl<Cb: Callbacks> Solver<Cb> {
 
                 let learnt = self
                     .v
-                    .analyze(Conflict::BCP(confl), &self.learnts, tmp_learnt, th);
+                    .analyze(Conflict::BCP(confl), &self.clauses, tmp_learnt, th);
                 self.add_learnt_and_backtrack(th, learnt, clause::Kind::Learnt);
 
                 self.v.vars.var_decay_activity(self.v.opts.var_decay);
@@ -678,7 +674,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                     return lbool::FALSE;
                 }
 
-                if self.learnts.len() as f64 - self.v.num_assigns() as f64 >= self.v.max_learnts {
+                if self.learnt as f64 - self.v.num_assigns() as f64 > self.v.max_learnts {
                     // Reduce the set of learnt clauses:
                     self.reduce_db();
                 }
@@ -786,9 +782,10 @@ impl<Cb: Callbacks> Solver<Cb> {
         } else {
             // propagate the lit, justified by `cr`
             let cr = self.v.ca.alloc_with_learnt(learnt.clause, true);
-            self.learnts.push(cr);
+            self.clauses.push(cr);
+            self.learnt += 1;
             self.v.attach_clause(cr);
-            self.v.cla_bump_activity(&self.learnts, cr);
+            self.v.cla_bump_activity(&self.clauses, cr);
             self.v.vars.unchecked_enqueue(learnt.clause[0], cr);
         }
 
@@ -869,7 +866,7 @@ impl<Cb: Callbacks> Solver<Cb> {
         if self.v.decision_level() == 0 {
             return Err(ConflictAtLevel0);
         }
-        let learnt = self.v.analyze(r, &self.learnts, tmp_learnt, th);
+        let learnt = self.v.analyze(r, &self.clauses, tmp_learnt, th);
         self.add_learnt_and_backtrack(th, learnt, clause::Kind::Theory);
         Ok(lbool::FALSE)
     }
@@ -952,64 +949,73 @@ impl<Cb: Callbacks> Solver<Cb> {
     /// Remove half of the learnt clauses, minus the clauses locked by the current assignment. Locked
     /// clauses are clauses that are reason to some assignment. Binary clauses are never removed.
     fn reduce_db(&mut self) {
-        let extra_lim = self.v.cla_inc / self.learnts.len() as f64; // Remove any clause below this activity
+        let extra_lim = self.v.cla_inc / self.learnt as f64; // Remove any clause below this activity
+        let mut buf = mem::take(&mut self.v.th_st.tmp_c_th);
+        buf.clear();
+        let mut activities: Vec<f32> = cast_vec(buf);
+        for cr in &self.clauses {
+            let cr = self.v.ca.get_ref(*cr);
+            if cr.learnt() {
+                if cr.size() <= 2 {
+                    activities.push(f32::INFINITY)
+                } else {
+                    activities.push(cr.activity())
+                }
+            }
+        }
+        debug_assert_eq!(activities.len(), self.learnt as usize);
+        let mid_point = activities.len() / 2;
+        let (_, median_activity, _) = activities
+            .select_nth_unstable_by(mid_point, |x, y| x.partial_cmp(y).expect("NaN activity"));
+        let lim = cmp::max_by(*median_activity, extra_lim as f32, |x, y| {
+            x.partial_cmp(y).unwrap()
+        });
+        activities.clear();
+        self.v.th_st.tmp_c_th = cast_vec(activities);
 
         debug!("reduce_db.start");
-
-        {
-            let ca = &self.v.ca;
-            self.learnts.sort_unstable_by(|&x, &y| {
-                let x = ca.get_ref(x);
-                let y = ca.get_ref(y);
-                debug_assert!(x.learnt());
-                debug_assert!(y.learnt());
-                Ord::cmp(&(x.size() <= 2), &(y.size() <= 2)).then(
-                    PartialOrd::partial_cmp(&x.activity(), &y.activity()).expect("NaN activity"),
-                )
-            });
-        }
         // Don't delete binary or locked clauses. From the rest, delete clauses from the first half
         // and clauses with activity smaller than `extra_lim`:
         let mut j = 0;
-        for i in 0..self.learnts.len() {
-            let cr = self.learnts[i];
+        for i in 0..self.clauses.len() {
+            let cr = self.clauses[i];
             let cond = {
                 let c = self.v.ca.get_ref(cr);
-                c.size() > 2
-                    && !self.v.locked(c)
-                    && (i < self.learnts.len() / 2 || (c.activity() as f64) < extra_lim)
+                c.learnt() && c.size() > 2 && !self.v.locked(c) && c.activity() < lim
             };
             if cond {
                 self.v.remove_clause(cr);
                 self.cb.on_delete_clause(self.v.ca.get_ref(cr).lits());
             } else {
-                self.learnts[j] = cr;
+                self.clauses[j] = cr;
                 j += 1;
             }
         }
 
         // self.learnts.resize_default(j);
-        let _deleted = self.learnts.len() - j;
-        self.learnts.resize(j, CRef::UNDEF);
+        let deleted = self.clauses.len() - j;
+        self.clauses.truncate(j);
+        self.learnt -= deleted as u32;
 
-        debug!("reduce_db.done (deleted {})", _deleted);
+        debug!("reduce_db.done (deleted {})", deleted);
 
         self.check_garbage();
     }
 
     /// Shrink the given set to contain only non-satisfied clauses.
-    fn remove_satisfied(&mut self, which: ClauseSetSelect) {
+    fn remove_satisfied(&mut self) {
         assert_eq!(self.v.decision_level(), 0);
-        let cs: &mut Vec<CRef> = match which {
-            ClauseSetSelect::Learnt => &mut self.learnts,
-            ClauseSetSelect::Original => &mut self.clauses,
-        };
+        let cs = &mut self.clauses;
         let self_v = &mut self.v;
         cs.retain(|&cr| {
-            let satisfied = self_v.satisfied(self_v.ca.get_ref(cr));
+            let cr_ref = self_v.ca.get_ref(cr);
+            let satisfied = self_v.satisfied(cr_ref);
             if satisfied {
+                if cr_ref.learnt() {
+                    self.learnt -= 1;
+                }
+                debug!("remove satisfied clause {:?}", cr_ref.lits());
                 self_v.remove_clause(cr);
-                debug!("remove satisfied clause {:?}", self_v.ca.get_ref(cr).lits());
             // we should not need to tell the proof checker to remove the clause
             } else {
                 let amount_shaved = {
@@ -1062,8 +1068,7 @@ impl<Cb: Callbacks> Solver<Cb> {
         // is not precise but should avoid some unnecessary reallocations for the new region:
         let mut to = ClauseAllocator::with_start_cap(self.v.ca.len() - self.v.ca.wasted());
 
-        self.v
-            .reloc_all(&mut self.learnts, &mut self.clauses, &mut to);
+        self.v.reloc_all(&mut self.clauses, &mut to);
 
         self.cb.on_gc(
             (self.v.ca.len() * ClauseAllocator::UNIT_SIZE) as usize,
@@ -1263,7 +1268,7 @@ impl SolverV {
         self.cla_inc *= 1.0 / self.opts.clause_decay;
     }
 
-    fn cla_bump_activity(&mut self, learnts: &[CRef], cr: CRef) {
+    fn cla_bump_activity(&mut self, clauses: &[CRef], cr: CRef) {
         let new_activity = {
             let mut c = self.ca.get_mut(cr);
             let r = c.activity() + self.cla_inc as f32;
@@ -1272,10 +1277,12 @@ impl SolverV {
         };
         if new_activity > 1e20 {
             // Rescale:
-            for &learnt in learnts.iter() {
+            for &learnt in clauses.iter() {
                 let mut c = self.ca.get_mut(learnt);
-                let r = c.activity() * 1e-20;
-                c.set_activity(r);
+                if c.as_clause_ref().learnt() {
+                    let r = c.activity() * 1e-20;
+                    c.set_activity(r);
+                }
             }
             self.cla_inc *= 1e-20;
         }
@@ -1371,7 +1378,7 @@ impl SolverV {
     fn analyze<'a, Th: Theory>(
         &mut self,
         orig: Conflict,
-        learnts: &[CRef],
+        clauses: &[CRef],
         out_learnt: &'a mut Vec<Lit>,
         th: &mut Th,
     ) -> LearntClause<'a> {
@@ -1450,7 +1457,7 @@ impl SolverV {
                     // bump activity if `cr` is a learnt clause
                     let mut c = self.ca.get_ref(cr);
                     if c.learnt() {
-                        self.cla_bump_activity(learnts, cr);
+                        self.cla_bump_activity(clauses, cr);
                         c = self.ca.get_ref(cr); // re-borrow
                     }
 
@@ -1475,7 +1482,7 @@ impl SolverV {
                     // bump activity if `cr` is a learnt clause
                     let mut c = self.ca.get_ref(cr);
                     if c.learnt() {
-                        self.cla_bump_activity(learnts, cr);
+                        self.cla_bump_activity(clauses, cr);
                         c = self.ca.get_ref(cr); // re-borrow
                     }
 
@@ -1891,12 +1898,7 @@ impl SolverV {
     }
 
     /// Move to the given clause allocator, where clause indices might differ
-    fn reloc_all(
-        &mut self,
-        learnts: &mut Vec<CRef>,
-        clauses: &mut Vec<CRef>,
-        to: &mut ClauseAllocator,
-    ) {
+    fn reloc_all(&mut self, clauses: &mut Vec<CRef>, to: &mut ClauseAllocator) {
         macro_rules! is_removed {
             ($ca:expr, $cr:expr) => {
                 $ca.get_ref($cr).mark() == 1
@@ -1932,32 +1934,10 @@ impl SolverV {
             }
         }
 
-        // All learnt:
-        {
-            let mut j = 0;
-            for i in 0..learnts.len() {
-                let mut cr = learnts[i];
-                if !is_removed!(self.ca, cr) {
-                    self.ca.reloc(&mut cr, to);
-                    learnts[j] = cr;
-                    j += 1;
-                }
-            }
-            learnts.resize(j, CRef::UNDEF);
-        }
-
-        // All original:
-        {
-            let mut j = 0;
-            for i in 0..clauses.len() {
-                let mut cr = clauses[i];
-                if !is_removed!(self.ca, cr) {
-                    self.ca.reloc(&mut cr, to);
-                    clauses[j] = cr;
-                    j += 1;
-                }
-            }
-            clauses.resize(j, CRef::UNDEF);
+        // All clauses:
+        for cr in clauses.iter_mut() {
+            debug_assert!(!is_removed!(self.ca, *cr));
+            self.ca.reloc(cr, to);
         }
     }
 
@@ -2139,7 +2119,6 @@ impl SolverV {
             simp_db_assigns: -1,
             simp_db_props: 0,
             progress_estimate: 0.0,
-            remove_satisfied: false, // revert b5464ec81f76db9315dac3276b64614dd59cfe49
             next_var: Var::from_idx(0),
 
             ca: ClauseAllocator::new(),
@@ -2429,12 +2408,6 @@ impl<'a> TheoryArg<'a> {
             self.v.th_st.tmp_c_th.extend_from_slice(lits);
         }
     }
-}
-
-#[derive(Debug)]
-enum ClauseSetSelect {
-    Original,
-    Learnt,
 }
 
 #[derive(Debug, Clone, Copy)]
