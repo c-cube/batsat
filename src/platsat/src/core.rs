@@ -1009,6 +1009,10 @@ impl<Cb: Callbacks> Solver<Cb> {
         let self_v = &mut self.v;
         cs.retain(|&cr| {
             let cr_ref = self_v.ca.get_ref(cr);
+            // TODO investigate why this causes slow down (is garbage_frac to low)
+            if !cr_ref.learnt() {
+                return true;
+            }
             let satisfied = self_v.satisfied(cr_ref);
             if satisfied {
                 if cr_ref.learnt() {
