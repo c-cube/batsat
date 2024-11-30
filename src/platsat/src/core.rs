@@ -491,6 +491,10 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         if self.v.ok > new_len {
             self.v.ok = u32::MAX;
         }
+        let old_num_vars = self.v.assumptions()[new_len as usize].var().idx();
+        for v in (old_num_vars..self.num_vars()).map(Var::unsafe_from_idx) {
+            self.set_decision_var(v, false);
+        }
         self.cancel_until(th, new_len);
         for lit in self.v.th_st.assumptions.drain(new_len as usize..) {
             // Satisfy clauses created at this assertion level

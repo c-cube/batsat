@@ -163,15 +163,16 @@ pub trait SolverInterface {
     /// (NOTE! This has effects on the meaning of a SATISFIABLE result).
     fn set_decision_var(&mut self, v: Var, dvar: bool);
 
-    /// Pushes a new assertion level, clauses are always added to the highest assertion level and
-    /// are removed when it is
+    /// Pushes a new assertion level, clauses and variables are always added to the highest
+    /// assertion level and are removed when it is
     fn push_th<Th: Theory>(&mut self, th: &mut Th);
 
+    /// Removes the most recent assertion level
     fn pop_th<Th: Theory>(&mut self, th: &mut Th) {
         self.pop_n_th(th, 1);
     }
 
-    /// Removes `n` assertion levels
+    /// Removes the `n` most assertion levels
     fn pop_n_th<Th: Theory>(&mut self, th: &mut Th, n: u32);
 }
 
