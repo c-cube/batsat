@@ -55,6 +55,9 @@ pub struct Solver<Cb: Callbacks> {
     cb: Cb, // the callbacks
 
     /// List of learnt and problem clauses.
+    /// Some elements are CRef::UNDEF representing separators of assertion levels
+    /// Clauses not allowed to be moved to lower assertion levels unless they all their literals
+    /// are at that assertion level or lower
     clauses: Vec<CRef>,
 
     learnt: u32,
@@ -301,14 +304,16 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
             clause,
             self.v.assertion_level()
         );
-        debug_assert!(
-            self.v.decision_level() <= self.v.assertion_level(),
-            "add clause at decision level past assumptions"
-        );
 
         if !self.is_ok() {
             return false;
         }
+
+        debug_assert_eq!(
+            self.v.decision_level(),
+            self.v.assertion_level(),
+            "add clause at decision level past assumptions"
+        );
 
         clause.sort_unstable();
 
@@ -497,24 +502,61 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
             let lit = Lit::new(self.new_var(lbool::UNDEF, false), true);
             self.v.th_st.assumptions.push(lit);
         }
+        self.clauses.push(CRef::UNDEF)
     }
 
     fn pop_n_th<Th: Theory>(&mut self, th: &mut Th, n: u32) {
+        if self.is_ok() {
+            debug_assert_eq!(self.v.decision_level(), self.v.assertion_level())
+        }
         let new_len = self.v.assertion_level() - n;
         if self.v.ok > new_len {
             self.v.ok = u32::MAX;
         }
-        let old_num_vars = self.v.assumptions()[new_len as usize].var().idx();
-        for v in (old_num_vars..self.num_vars()).map(Var::unsafe_from_idx) {
-            self.set_decision_var(v, false);
-        }
         self.cancel_until(th, new_len);
-        for lit in self.v.th_st.assumptions.drain(new_len as usize..) {
-            // Satisfy clauses created at this assertion level
-            // without resetting the decision level to 0
-            self.v.vars.ass[lit.var()] = lbool::new(false);
-            self.v.vars.vardata[lit.var()] = VarData::new(CRef::UNDEF, 0);
+        let bound_lit = self.v.assumptions()[new_len as usize];
+        trace!("All literals after {bound_lit:?} should have been removed from the theory");
+        self.v.th_st.assumptions.truncate(new_len as usize);
+        debug_assert!(bound_lit < !bound_lit);
+        let mut i = self.clauses.len();
+        let mut levels_passed = 0;
+        while levels_passed < n {
+            i -= 1;
+            if self.clauses[i] == CRef::UNDEF {
+                levels_passed += 1;
+            }
         }
+        // All clauses before `i` were created at an earlier assertion level so they must not
+        // contain any of the literals we are deleting
+        let mut j = i;
+        while i < self.clauses.len() {
+            let cr = self.clauses[i];
+            i += 1;
+            if cr == CRef::UNDEF {
+                continue;
+            }
+            let cref = self.v.ca.get_ref(cr);
+            if cref.lits().iter().all(|l| *l < bound_lit) {
+                // this clause also doesn't contain any of the literals we are deleting so we can keep it
+                self.clauses[j] = cr;
+                j += 1;
+            } else {
+                if cref.learnt() {
+                    self.learnt -= 1;
+                }
+                self.v.remove_clause(cr);
+            }
+        }
+        self.clauses.truncate(j);
+        let sentinel_lit = !bound_lit;
+        for l in self.v.vars.trail.iter_mut() {
+            if *l >= bound_lit {
+                // Replace any of the literals we are replacing with a sentinel value
+                // to make sure the trail length stays the same
+                *l = sentinel_lit;
+            }
+        }
+        self.v.next_var = Var::from_idx(sentinel_lit.var().idx() + 1);
     }
 }
 
@@ -941,6 +983,9 @@ impl<Cb: Callbacks> Solver<Cb> {
         buf.clear();
         let mut activities: Vec<f32> = cast_vec(buf);
         for cr in &self.clauses {
+            if *cr == CRef::UNDEF {
+                continue;
+            }
             let cr = self.v.ca.get_ref(*cr);
             if cr.learnt() {
                 if cr.size() <= 2 {
@@ -966,7 +1011,7 @@ impl<Cb: Callbacks> Solver<Cb> {
         let mut j = 0;
         for i in 0..self.clauses.len() {
             let cr = self.clauses[i];
-            let cond = {
+            let cond = cr != CRef::UNDEF && {
                 let c = self.v.ca.get_ref(cr);
                 c.learnt() && c.size() > 2 && !self.v.locked(c) && c.activity() < lim
             };
@@ -995,6 +1040,9 @@ impl<Cb: Callbacks> Solver<Cb> {
         let cs = &mut self.clauses;
         let self_v = &mut self.v;
         cs.retain(|&cr| {
+            if cr == CRef::UNDEF {
+                return true;
+            }
             let cr_ref = self_v.ca.get_ref(cr);
             // TODO investigate why this causes slow down (is garbage_frac to low)
             if !cr_ref.learnt() {
@@ -1509,10 +1557,7 @@ impl SolverV {
                 } else if self.seen[q.var()] == Seen::REMOVABLE {
                     // the resolution goes back "up" the trail to `q`, which was
                     // resolved again. This is wrong.
-                    panic!(
-                        "possible cycle in conflict graph between {:?} and {:?}",
-                        p, q
-                    );
+                    panic!("possible cycle in conflict graph between");
                 }
             }
             // Select next literal in the trail to look at:
@@ -1926,8 +1971,10 @@ impl SolverV {
 
         // All clauses:
         for cr in clauses.iter_mut() {
-            debug_assert!(!is_removed!(self.ca, *cr));
-            self.ca.reloc(cr, to);
+            if *cr != CRef::UNDEF {
+                debug_assert!(!is_removed!(self.ca, *cr));
+                self.ca.reloc(cr, to);
+            }
         }
     }
 
