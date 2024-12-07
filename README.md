@@ -15,6 +15,7 @@ MIT licensed.
 - gave out more access to internal scratch buffer
   * this helps users avoid needing their own additional scratch buffer(s) 
 - optimized adding lemmas from an SMT theory 
+- modified the behaviour of simplify to include theory propagations
 
 ### BREAKING CHANGES
 - renamed `Theory::explain_propagation` to `Theory::explain_propagation_clause` and changed the required form of the explanation
