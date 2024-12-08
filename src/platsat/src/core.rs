@@ -531,13 +531,6 @@ impl<Cb: Callbacks> Solver<Cb> {
     }
 }
 
-// partial check, or final check?
-#[derive(Copy, Clone)]
-enum TheoryCall {
-    Partial,
-    Final,
-}
-
 // main algorithm
 impl<Cb: Callbacks> Solver<Cb> {
     /// Create a new solver with the given options and callbacks.
@@ -607,7 +600,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                 return Some(Conflict::BCP(conf));
             }
 
-            match self.call_theory(th, TheoryCall::Partial) {
+            match self.call_theory::<_, false>(th) {
                 Ok(true) => {}
                 Ok(false) => return None,
                 Err(conf) => return Some(conf),
@@ -725,7 +718,7 @@ impl<Cb: Callbacks> Solver<Cb> {
 
                     if next == Lit::UNDEF {
                         // no decision? time for a theory final-check
-                        let th_res = self.call_theory(th, TheoryCall::Final);
+                        let th_res = self.call_theory::<_, true>(th);
 
                         match th_res {
                             // Model found and validated by the theory
@@ -817,8 +810,10 @@ impl<Cb: Callbacks> Solver<Cb> {
     /// Returns `Ok(true)` if the theory propagated something, `Ok(false)` if
     /// the theory accepted the model without propagations, and `Err(conf)` if the theory
     /// rejected the model
-    #[inline]
-    fn call_theory<Th: Theory>(&mut self, th: &mut Th, k: TheoryCall) -> Result<bool, Conflict> {
+    fn call_theory<Th: Theory, const FINAL: bool>(
+        &mut self,
+        th: &mut Th,
+    ) -> Result<bool, Conflict> {
         let mut th_arg = {
             TheoryArg {
                 v: &mut self.v,
@@ -827,9 +822,9 @@ impl<Cb: Callbacks> Solver<Cb> {
             }
         };
         // call theory
-        match k {
-            TheoryCall::Partial => th.partial_check(&mut th_arg),
-            TheoryCall::Final => th.final_check(&mut th_arg),
+        match FINAL {
+            false => th.partial_check(&mut th_arg),
+            true => th.final_check(&mut th_arg),
         }
         if let TheoryConflict::Clause { costly } = th_arg.conflict {
             // borrow magic
