@@ -560,6 +560,39 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
     }
 }
 
+#[derive(Clone)]
+pub struct CheckPoint {
+    trail_len: u32,
+    clause_num: u32,
+    next_var: Var,
+    ok: u32,
+}
+
+impl<Cb: Callbacks> Solver<Cb> {
+    pub fn checkpoint(&self) -> CheckPoint {
+        CheckPoint {
+            trail_len: self.v.vars.trail.len() as u32,
+            clause_num: self.clauses.len() as u32,
+            next_var: self.v.next_var,
+            ok: self.v.ok,
+        }
+    }
+
+    pub fn restore_checkpoint(&mut self, check_point: CheckPoint) {
+        for v in self.v.vars.trail.drain(check_point.trail_len as usize..) {
+            self.v.vars.ass[v.var()] = lbool::UNDEF;
+            self.v.vars.vardata[v.var()] = VarData::default();
+        }
+
+        for cr in self.clauses.drain(check_point.clause_num as usize..) {
+            self.v.remove_clause(cr);
+        }
+
+        self.v.next_var = check_point.next_var;
+        self.v.ok = check_point.ok;
+    }
+}
+
 impl<Cb: Callbacks + Default> Default for Solver<Cb> {
     fn default() -> Self {
         Solver::new(SolverOpts::default(), Default::default())
