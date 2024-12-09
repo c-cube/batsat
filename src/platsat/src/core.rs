@@ -35,6 +35,7 @@ use {
 #[cfg(feature = "logging")]
 use crate::clause::display::Print;
 use crate::core::utils::LubyIter;
+use crate::exact_sized_chain::ExactSizedChain;
 
 /// The main solver structure.
 ///
@@ -339,25 +340,35 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         }
 
         clause.resize(j, Lit::UNDEF);
-        if clause.is_empty() {
+        self.add_clause_unchecked(clause.iter().copied())
+    }
+
+    fn add_clause_unchecked<I: IntoIterator<Item = Lit>>(&mut self, clause: I) -> bool
+    where
+        I::IntoIter: ExactSizeIterator,
+    {
+        let mut clause = clause.into_iter();
+
+        if clause.len() == 0 {
             self.v.ok = self.v.assertion_level();
             return false;
         } else if clause.len() == 1 {
-            let lit = clause[0];
+            let lit = clause.next().unwrap();
             let cr = if let Some(x) = self.v.assumptions().last() {
-                let cr = self.v.ca.alloc_with_learnt(&[lit, !*x], false);
+                let cr = self.v.ca.alloc_with_learnt([lit, !*x].into_iter(), false);
                 self.clauses.push(cr);
                 self.v.attach_clause(cr);
                 cr
             } else {
                 CRef::UNDEF
             };
-            self.v.vars.unchecked_enqueue(clause[0], cr);
+            self.v.vars.unchecked_enqueue(lit, cr);
         } else {
-            if let Some(x) = self.v.assumptions().last() {
-                clause.push(!*x)
-            };
-            let cr = self.v.ca.alloc_with_learnt(clause, false);
+            let extra = self.v.assumptions().last().map(|x| !*x);
+            let cr = self
+                .v
+                .ca
+                .alloc_with_learnt(ExactSizedChain(clause.chain(extra)), false);
             self.clauses.push(cr);
             self.v.attach_clause(cr);
         }
@@ -855,7 +866,10 @@ impl<Cb: Callbacks> Solver<Cb> {
             self.v.ok = 0;
         } else {
             // propagate the lit, justified by `cr`
-            let cr = self.v.ca.alloc_with_learnt(learnt.clause, true);
+            let cr = self
+                .v
+                .ca
+                .alloc_with_learnt(learnt.clause.iter().copied(), true);
             self.clauses.push(cr);
             self.learnt += 1;
             self.v.attach_clause(cr);
@@ -1216,7 +1230,7 @@ impl<Cb: Callbacks> Solver<Cb> {
             self.cancel_until(th, 0); // only at level 0
             self.v.vars.unchecked_enqueue(clause[0], CRef::UNDEF);
         } else {
-            let cr = self.v.ca.alloc_with_learnt(clause, false);
+            let cr = self.v.ca.alloc_with_learnt(clause.iter().copied(), false);
             self.clauses.push(cr);
             self.v.attach_clause(cr);
         }

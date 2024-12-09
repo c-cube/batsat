@@ -667,25 +667,29 @@ impl ClauseAllocator {
     pub fn wasted(&self) -> u32 {
         self.ra.wasted()
     }
-    pub(crate) fn alloc_with_learnt(&mut self, clause: &[Lit], learnt: bool) -> CRef {
+    pub(crate) fn alloc_with_learnt(
+        &mut self,
+        clause: impl ExactSizeIterator<Item = Lit>,
+        learnt: bool,
+    ) -> CRef {
         let use_extra = learnt | self.extra_clause_field;
-        let cid = self.ra.alloc(1 + clause.len() as u32 + use_extra as u32);
-        *self.ra[cid].header_mut() =
-            ClauseHeader::new(0, learnt, use_extra, false, clause.len() as u32);
+        let clause_len = clause.len() as u32;
+        let cid = self.ra.alloc(1 + clause_len + use_extra as u32);
+        *self.ra[cid].header_mut() = ClauseHeader::new(0, learnt, use_extra, false, clause_len);
         let clause_ptr = cid + 1;
-        for (i, &lit) in clause.iter().enumerate() {
+        for (i, lit) in clause.enumerate() {
             *self.ra[clause_ptr + i as u32].lit_mut() = lit;
         }
         if use_extra {
             if learnt {
-                *self.ra[clause_ptr + clause.len() as u32].f32_mut() = 0.0;
+                *self.ra[clause_ptr + clause_len].f32_mut() = 0.0;
             } else {
                 // NOTE: not used right now, but can be used to accelerate `lit_redundant`
                 let mut abstraction: u32 = 0;
-                for &lit in clause {
-                    abstraction |= 1 << (lit.var().idx() & 31);
+                for &data in self.ra.subslice(clause_ptr, clause_len) {
+                    abstraction |= 1 << (data.lit().var().idx() & 31);
                 }
-                self.ra[clause_ptr + clause.len() as u32].0 = abstraction;
+                self.ra[clause_ptr + clause_len].0 = abstraction;
             }
         }
 

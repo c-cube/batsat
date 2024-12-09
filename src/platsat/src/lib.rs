@@ -55,6 +55,7 @@ pub mod core;
 #[cfg(feature = "std")]
 pub mod dimacs;
 pub mod drat;
+mod exact_sized_chain;
 mod heap;
 pub mod interface;
 pub mod intmap;

@@ -43,6 +43,15 @@ pub trait SolverInterface {
 
     /// Add a clause to the solver. Returns `false` if the solver is in
     /// an `UNSAT` state.
+    ///
+    /// Requires that the clause is in sorted order, contains no duplicate variables,
+    /// and all of its variables are undefined in the current model
+    fn add_clause_unchecked<I: IntoIterator<Item = Lit>>(&mut self, clause: I) -> bool
+    where
+        I::IntoIter: ExactSizeIterator;
+
+    /// Add a clause to the solver. Returns `false` if the solver is in
+    /// an `UNSAT` state.
     fn add_clause(&mut self, clause: impl IntoIterator<Item = Lit>) -> bool;
 
     /// Add a clause to the solver. Returns `false` if the solver is in
