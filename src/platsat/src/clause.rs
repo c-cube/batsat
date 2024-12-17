@@ -19,6 +19,7 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 use bytemuck::{must_cast, must_cast_mut, must_cast_ref, must_cast_slice, Pod, Zeroable};
+use default_vec2::ConstDefault;
 use no_std_compat::prelude::v1::*;
 use {
     crate::{
@@ -62,16 +63,20 @@ impl Var {
     }
 }
 
-impl AsIndex for Var {
-    fn as_index(self) -> usize {
+impl Into<usize> for Var {
+    fn into(self) -> usize {
         self.0 as usize
     }
-    fn from_index(index: usize) -> Self {
+}
+
+impl From<usize> for Var {
+    fn from(index: usize) -> Self {
         Var(index as u32)
     }
 }
 
 pub type VMap<V> = IntMap<Var, V>;
+pub type VMapBool = IntMapBool<Var>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Pod, Zeroable)]
 #[repr(transparent)]
@@ -152,13 +157,16 @@ impl ops::BitXorAssign<bool> for Lit {
     }
 }
 
-impl AsIndex for Lit {
+impl Into<usize> for Lit {
     #[inline(always)]
-    fn as_index(self) -> usize {
+    fn into(self) -> usize {
         self.0 as usize
     }
+}
+
+impl From<usize> for Lit {
     #[inline(always)]
-    fn from_index(index: usize) -> Self {
+    fn from(index: usize) -> Self {
         Lit(index as u32)
     }
 }
@@ -187,8 +195,12 @@ impl fmt::Debug for lbool {
 }
 impl Default for lbool {
     fn default() -> Self {
-        lbool(0)
+        lbool::UNDEF
     }
+}
+
+impl ConstDefault for lbool {
+    const DEFAULT: &'static Self = &lbool::UNDEF;
 }
 
 impl lbool {
@@ -787,7 +799,7 @@ pub type OccVec<V> = Vec<V>;
 #[derive(Debug, Clone)]
 /// List of occurrences of objects of type `K` (e.g. literals) in values
 /// of type `V` (e.g. clauses)
-pub struct OccListsData<K: AsIndex, V> {
+pub(crate) struct OccListsData<K: AsIndex, V> {
     occs: IntMap<K, OccVec<V>>,
     dirty: IntMapBool<K>,
     dirties: Vec<K>, // to know what keys to examine in `clean_all_pred`
@@ -796,17 +808,15 @@ pub struct OccListsData<K: AsIndex, V> {
 impl<K: AsIndex, V> OccListsData<K, V> {
     pub fn new() -> Self {
         Self {
-            occs: IntMap::new(),
-            dirty: IntMapBool::new(),
+            occs: IntMap::default(),
+            dirty: IntMapBool::default(),
             dirties: Vec::new(),
         }
     }
 
     /// Initialize occurrence list for the given `idx`
     pub fn init(&mut self, idx: K) {
-        self.occs.reserve_default(idx);
-        self.occs[idx].clear();
-        self.dirty.reserve(idx);
+        self.occs.get_mut(idx).clear();
     }
 
     /// Obtain a fully usable occurrence list using the given predicate
@@ -817,10 +827,10 @@ impl<K: AsIndex, V> OccListsData<K, V> {
     /// `oclist.lookup_mut_pred(idx, p)` returns an up-to-date list of occurrences
     /// for `idx`. It will clean up the occurrence list with `p` if it's dirty.
     pub fn lookup_mut_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) -> &mut OccVec<V> {
-        if self.dirty[idx] {
+        if self.dirty.contains_mut(idx) {
             self.clean_pred(idx, pred);
         }
-        &mut self.occs[idx]
+        self.occs.get_mut(idx)
     }
 
     /// Cleanup entries marked as `dirty` (remove elements for which the predicate
@@ -828,9 +838,9 @@ impl<K: AsIndex, V> OccListsData<K, V> {
     pub fn clean_all_pred<P: DeletePred<V>>(&mut self, pred: &P) {
         for &x in &self.dirties {
             // Dirties may contain duplicates so check here if a variable is already cleaned:
-            if self.dirty[x] {
-                self.occs[x].retain(|x| !pred.deleted(x));
-                self.dirty.set(x, false);
+            if self.dirty.contains_mut(x) {
+                self.occs.get_mut(x).retain(|x| !pred.deleted(x));
+                self.dirty.remove(x);
             }
         }
         self.dirties.clear();
@@ -838,63 +848,31 @@ impl<K: AsIndex, V> OccListsData<K, V> {
 
     /// Cleanup entry at `idx`
     pub fn clean_pred<P: DeletePred<V>>(&mut self, idx: K, pred: &P) {
-        self.occs[idx].retain(|x| !pred.deleted(x));
-        self.dirty.set(idx, false);
+        self.occs.get_mut(idx).retain(|x| !pred.deleted(x));
+        self.dirty.remove(idx);
     }
 
     /// Mark index `K` as dirty, so it can be cleaned up later
     pub fn smudge(&mut self, idx: K) {
-        if !self.dirty[idx] {
-            self.dirty.insert(idx);
+        if self.dirty.insert(idx) {
             self.dirties.push(idx);
         }
     }
 
-    /// Reset internal data
-    pub fn clear(&mut self) {
-        self.occs.clear();
-        self.dirty.clear();
-        self.dirties.clear();
-    }
-
-    /// Reset internal data and free memory
-    pub fn free(&mut self) {
-        self.occs.free();
-        self.dirty.free();
-        self.dirties.clear();
-        self.dirties.shrink_to_fit();
-    }
-}
-
-impl<K: AsIndex, V> ops::Index<K> for OccListsData<K, V> {
-    type Output = OccVec<V>;
-    fn index(&self, index: K) -> &Self::Output {
-        &self.occs[index]
-    }
-}
-impl<K: AsIndex, V> ops::IndexMut<K> for OccListsData<K, V> {
-    fn index_mut(&mut self, index: K) -> &mut Self::Output {
-        &mut self.occs[index]
+    pub fn get_mut(&mut self, index: K) -> &mut OccVec<V> {
+        self.occs.get_mut(index)
     }
 }
 
 /// Packs together an occurrence list and the filtering predicate
-pub struct OccLists<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> {
+pub(crate) struct OccLists<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> {
     data: &'a mut OccListsData<K, V>,
     pred: P,
 }
 
 impl<'a, K: AsIndex + 'a, V: 'a, P: DeletePred<V>> OccLists<'a, K, V, P> {
-    pub fn lookup_mut(&mut self, idx: K) -> &mut OccVec<V> {
-        self.data.lookup_mut_pred(idx, &self.pred)
-    }
-
     pub fn clean_all(&mut self) {
         self.data.clean_all_pred(&self.pred)
-    }
-
-    pub fn clean(&mut self, idx: K) {
-        self.data.clean_pred(idx, &self.pred)
     }
 }
 

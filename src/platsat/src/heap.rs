@@ -1,4 +1,6 @@
 use crate::intmap::{AsIndex, IntMap};
+use core::fmt::Formatter;
+use default_vec2::ConstDefault;
 use no_std_compat::prelude::v1::*;
 use std::fmt::Debug;
 use std::{mem, ops};
@@ -8,7 +10,32 @@ use std::{mem, ops};
 pub struct HeapData<K: AsIndex, V> {
     heap: Box<[V]>,
     next_slot: usize,
-    indices: IntMap<K, i32>,
+    indices: IntMap<K, HeapIndex>,
+}
+
+#[derive(Copy, Clone)]
+struct HeapIndex(i32);
+
+impl Debug for HeapIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Default for HeapIndex {
+    fn default() -> Self {
+        HeapIndex(-1)
+    }
+}
+
+impl HeapIndex {
+    fn idx(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl ConstDefault for HeapIndex {
+    const DEFAULT: &'static Self = &HeapIndex(-1);
 }
 
 impl<K: AsIndex, V> Default for HeapData<K, V> {
@@ -16,7 +43,7 @@ impl<K: AsIndex, V> Default for HeapData<K, V> {
         Self {
             heap: Box::new([]),
             next_slot: 0,
-            indices: IntMap::new(),
+            indices: IntMap::default(),
         }
     }
 }
@@ -32,7 +59,7 @@ impl<K: AsIndex, V> HeapData<K, V> {
         self.next_slot <= ROOT as usize
     }
     pub fn in_heap(&self, k: K) -> bool {
-        self.indices.has(k) && self.indices[k] >= 0
+        self.indices[k].0 >= 0
     }
 
     pub fn promote<Comp: CachedKeyComparator<K, Key = V>>(&mut self, comp: Comp) -> Heap<K, Comp> {
@@ -121,12 +148,12 @@ impl<'a, K: AsIndex + 'a, Comp: CachedKeyComparator<K>> Heap<'a, K, Comp> {
         while i != ROOT && x < self.heap[p as usize] {
             self.heap[i as usize] = self.heap[p as usize];
             let tmp = self.heap[p as usize];
-            self.data.indices[self.comp.un_cache_key(tmp)] = i as i32;
+            self.data.indices[self.comp.un_cache_key(tmp)] = HeapIndex(i as i32);
             i = p;
             p = parent_index(p);
         }
         self.heap[i as usize] = x;
-        self.data.indices[self.comp.un_cache_key(x)] = i as i32;
+        self.data.indices[self.comp.un_cache_key(x)] = HeapIndex(i as i32);
     }
 
     fn percolate_down(&mut self, mut i: u32) {
@@ -153,25 +180,24 @@ impl<'a, K: AsIndex + 'a, Comp: CachedKeyComparator<K>> Heap<'a, K, Comp> {
                 break;
             }
             heap[i as usize] = min;
-            self.data.indices[self.comp.un_cache_key(min)] = i as i32;
+            self.data.indices[self.comp.un_cache_key(min)] = HeapIndex(i as i32);
             i = child;
         }
         heap[i as usize] = x;
-        self.data.indices[self.comp.un_cache_key(x)] = i as i32;
+        self.data.indices[self.comp.un_cache_key(x)] = HeapIndex(i as i32);
     }
 
     pub fn decrease(&mut self, k: K) {
         debug_assert!(self.in_heap(k));
         let k_index = self.indices[k];
-        self.heap[k_index as usize] = self.comp.cache_key(k);
-        self.percolate_up(k_index as u32);
+        self.heap[k_index.idx()] = self.comp.cache_key(k);
+        self.percolate_up(k_index.0 as u32);
     }
 
     pub fn insert(&mut self, k: K) {
-        self.indices.reserve(k, -1);
         debug_assert!(!self.in_heap(k));
         let k_index = self.heap_push(self.comp.cache_key(k));
-        self.indices[k] = k_index as i32;
+        self.indices[k] = HeapIndex(k_index as i32);
         self.percolate_up(k_index);
     }
 
@@ -181,7 +207,7 @@ impl<'a, K: AsIndex + 'a, Comp: CachedKeyComparator<K>> Heap<'a, K, Comp> {
         let last = self.next_slot - 1;
         self.next_slot = last;
         let x_var = self.comp.un_cache_key(x);
-        self.indices[x_var] = -1;
+        self.indices[x_var] = HeapIndex::default();
         if self.is_empty() {
             self.heap[last] = self.comp.max_key();
             return x_var;
@@ -189,7 +215,7 @@ impl<'a, K: AsIndex + 'a, Comp: CachedKeyComparator<K>> Heap<'a, K, Comp> {
         let lastval = self.heap[last];
         self.heap[last] = self.comp.max_key();
         self.heap[ROOT as usize] = lastval;
-        self.data.indices[self.comp.un_cache_key(lastval)] = ROOT as i32;
+        self.data.indices[self.comp.un_cache_key(lastval)] = HeapIndex(ROOT as i32);
         self.percolate_down(ROOT);
         self.comp.un_cache_key(x)
     }

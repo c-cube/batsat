@@ -16,6 +16,7 @@ MIT licensed.
   * this helps users avoid needing their own additional scratch buffer(s) 
 - optimized adding lemmas from an SMT theory 
 - modified the behaviour of simplify to include theory propagations
+- Changed helper types `VMap`, `IntMap`, ect. to use `default-vec2`
 
 ### BREAKING CHANGES
 - renamed `Theory::explain_propagation` to `Theory::explain_propagation_clause` and changed the required form of the explanation

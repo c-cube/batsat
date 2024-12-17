@@ -52,7 +52,7 @@ impl IpasirSolver {
             let v = self.solver.new_var_default();
             self.vars[i] = v;
             // reverse mapping
-            self.solver.cb_mut().lit_to_int.insert(v, x as c_int, 0);
+            *self.solver.cb_mut().lit_to_int.get_mut(v) = x as c_int;
         }
         self.vars[x]
     }
@@ -70,7 +70,7 @@ impl CB {
         CB {
             basic: sat::BasicCallbacks::new(),
             lits: vec![],
-            lit_to_int: sat::VMap::new(),
+            lit_to_int: sat::VMap::default(),
             learn_cb: None,
         }
     }
@@ -92,7 +92,7 @@ impl platsat::Callbacks for CB {
 
         self.lits.clear();
         for lit in lits {
-            let mut i = self.lit_to_int[lit.var()];
+            let mut i = *self.lit_to_int.get_mut(lit.var());
             if !lit.sign() {
                 i = -i
             }

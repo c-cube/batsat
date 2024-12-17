@@ -19,6 +19,7 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 use bytemuck::cast_vec;
+use default_vec2::ConstDefault;
 use no_std_compat::prelude::v1::*;
 use {
     crate::callbacks::{Callbacks, ProgressStatus},
@@ -34,6 +35,7 @@ use {
 
 #[cfg(feature = "logging")]
 use crate::clause::display::Print;
+use crate::clause::VMapBool;
 use crate::core::utils::LubyIter;
 use crate::exact_sized_chain::ExactSizedChain;
 
@@ -122,11 +124,11 @@ struct SolverV {
     // /// A priority queue of variables ordered with respect to the variable activity.
     // v.order_heap_data: HeapData<Var>,
     /// The preferred polarity of each variable.
-    polarity: VMap<bool>,
+    polarity: VMapBool,
     /// The users preferred polarity of each variable.
     user_pol: VMap<lbool>,
     /// Declares if a variable is eligible for selection in the decision heuristic.
-    decision: VMap<bool>,
+    decision: VMapBool,
     // /// Stores reason and level for each variable.
     /// `watches[lit]` is a list of constraints watching 'lit' (will go there if literal becomes true).
     watches_data: OccListsData<Lit, Watcher>,
@@ -1335,17 +1337,14 @@ impl SolverV {
     }
 
     fn set_decision_var(&mut self, v: Var, b: bool) {
-        if b && !self.decision[v] {
-            self.dec_vars += 1;
-        } else if !b && self.decision[v] {
-            self.dec_vars -= 1;
-        }
-        self.decision[v] = b;
+        let old_contains = self.decision.set(v, b);
+        self.dec_vars += b as u64;
+        self.dec_vars -= old_contains as u64;
         self.insert_var_order(v);
     }
 
     fn insert_var_order(&mut self, x: Var) {
-        if !self.order_heap().in_heap(x) && self.decision[x] {
+        if !self.order_heap().in_heap(x) && self.decision.contains_mut(x) {
             self.order_heap().insert(x);
         }
     }
@@ -1387,13 +1386,16 @@ impl SolverV {
                 self.vars.order_heap_data.len() as i32,
             ) as usize;
             next = self.vars.order_heap_data[idx_tmp].var();
-            if self.value(next) == lbool::UNDEF && self.decision[next] {
+            if self.value(next) == lbool::UNDEF && self.decision.contains_mut(next) {
                 self.rnd_decisions += 1;
             }
         }
 
         // Activity based decision:
-        while next == Var::UNDEF || self.value(next) != lbool::UNDEF || !self.decision[next] {
+        while next == Var::UNDEF
+            || self.value(next) != lbool::UNDEF
+            || !self.decision.contains_mut(next)
+        {
             let mut order_heap = self.order_heap();
             if order_heap.is_empty() {
                 next = Var::UNDEF;
@@ -1411,7 +1413,7 @@ impl SolverV {
         } else if self.opts.rnd_pol {
             Lit::new(next, utils::drand(&mut self.opts.random_seed) < 0.5)
         } else {
-            Lit::new(next, self.polarity[next])
+            Lit::new(next, self.polarity.contains_mut(next))
         }
     }
 
@@ -1424,22 +1426,16 @@ impl SolverV {
         self.next_var = Var::from_idx(self.next_var.idx() + 1);
         self.watches().init(Lit::new(v, false));
         self.watches().init(Lit::new(v, true));
-        self.vars.ass.insert_default(v, lbool::UNDEF);
-        self.vars
-            .vardata
-            .insert_default(v, VarData::new(CRef::UNDEF, 0));
-        if self.opts.rnd_init_act {
-            self.vars.activity.insert_default(
-                v,
-                (utils::drand(&mut self.opts.random_seed) * 0.00001) as f32,
-            );
+        *self.vars.ass.get_mut(v) = lbool::UNDEF;
+        *self.vars.vardata.get_mut(v) = VarData::default();
+        *self.vars.activity.get_mut(v) = if self.opts.rnd_init_act {
+            (utils::drand(&mut self.opts.random_seed) * 0.00001) as f32
         } else {
-            self.vars.activity.insert_default(v, 0.0);
-        }
-        self.seen.insert_default(v, Seen::UNDEF);
-        self.polarity.insert_default(v, false);
-        self.user_pol.insert_default(v, upol);
-        self.decision.reserve_default(v);
+            0.0
+        };
+        *self.seen.get_mut(v) = Seen::UNDEF;
+        self.polarity.remove(v);
+        *self.user_pol.get_mut(v) = upol;
         let len = self.vars.trail.len();
         if v.idx() as usize > len {
             self.vars.trail.reserve(v.idx() as usize + 1 - len);
@@ -1807,7 +1803,7 @@ impl SolverV {
         }
 
         self.seen[p.var()] = Seen::UNDEF;
-        debug_assert!(self.seen.iter().all(|(_, &s)| s == Seen::UNDEF));
+        debug_assert!(self.seen.iter().all(|&s| s == Seen::UNDEF));
     }
 
     /// Check if `p` can be removed from a conflict clause `C`.
@@ -1907,7 +1903,7 @@ impl SolverV {
             let end: usize = ws.len();
             num_props += 1;
             'clauses: while i < end {
-                let ws = &mut self.watches_data[p];
+                let ws = self.watches_data.get_mut(p);
                 // Try to avoid inspecting the clause:
                 let blocker = ws[i].blocker;
                 if self.vars.value_lit(blocker) == lbool::TRUE {
@@ -1945,11 +1941,11 @@ impl SolverV {
 
                         // self.watches()[!c[1]].push(w);
                         debug_assert_ne!(!c[1], p);
-                        self.watches_data[!c[1]].push(w);
+                        self.watches_data.get_mut(!c[1]).push(w);
                         continue 'clauses;
                     }
                 }
-                let ws = &mut self.watches_data[p];
+                let ws = self.watches_data.get_mut(p);
 
                 // Did not find watch -- clause is unit under assignment:
                 ws[j] = w;
@@ -1969,7 +1965,7 @@ impl SolverV {
                     self.vars.unchecked_enqueue(first, cr);
                 }
             }
-            let ws = &mut self.watches_data[p];
+            let ws = self.watches_data.get_mut(p);
             let dummy = Watcher::DUMMY;
             ws.resize(j, dummy);
         }
@@ -1991,7 +1987,7 @@ impl SolverV {
         for v in (0..self.num_vars()).map(Var::from_idx) {
             for s in 0..2 {
                 let p = Lit::new(v, s != 0);
-                for watch in &mut self.watches_data[p] {
+                for watch in self.watches_data.get_mut(p) {
                     self.ca.reloc(&mut watch.cref, to);
                 }
             }
@@ -2032,8 +2028,8 @@ impl SolverV {
             debug_assert!(c.size() > 1);
             (c[0], c[1], c.learnt(), c.size())
         };
-        self.watches()[!c0].push(Watcher::new(cr, c1));
-        self.watches()[!c1].push(Watcher::new(cr, c0));
+        self.watches().get_mut(!c0).push(Watcher::new(cr, c1));
+        self.watches().get_mut(!c1).push(Watcher::new(cr, c0));
         if learnt {
             self.num_learnts += 1;
             self.learnts_literals += size as u64;
@@ -2052,7 +2048,7 @@ impl SolverV {
             let x = self.vars.trail[c].var();
             self.vars.ass[x] = lbool::UNDEF;
             if self.opts.phase_saving > 1 || (self.opts.phase_saving == 1 && c > trail_lim_last) {
-                self.polarity[x] = self.vars.trail[c].sign();
+                self.polarity.set(x, self.vars.trail[c].sign());
             }
             self.insert_var_order(x);
         }
@@ -2079,16 +2075,18 @@ impl SolverV {
         if strict {
             // watches[!c0].remove_item(&Watcher::new(cr, c1));
             // watches[!c1].remove_item(&Watcher::new(cr, c0));
-            let pos = watches[!c0]
+            let pos = watches
+                .get_mut(!c0)
                 .iter()
                 .position(|x| x == &Watcher::new(cr, c1))
                 .expect("Watcher not found");
-            watches[!c0].remove(pos);
-            let pos = watches[!c1]
+            watches.get_mut(!c0).remove(pos);
+            let pos = watches
+                .get_mut(!c1)
                 .iter()
                 .position(|x| x == &Watcher::new(cr, c0))
                 .expect("Watcher not found");
-            watches[!c1].remove(pos);
+            watches.get_mut(!c1).remove(pos);
         } else {
             watches.smudge(!c0);
             watches.smudge(!c1);
@@ -2191,9 +2189,9 @@ impl SolverV {
             max_literals: 0,
             tot_literals: 0,
 
-            polarity: VMap::new(),
-            user_pol: VMap::new(),
-            decision: VMap::new(),
+            polarity: VMapBool::default(),
+            user_pol: VMap::default(),
+            decision: VMapBool::default(),
             // v.vardata: VMap::new(),
             watches_data: OccListsData::new(),
             ok: u32::MAX,
@@ -2207,7 +2205,7 @@ impl SolverV {
 
             ca: ClauseAllocator::new(),
 
-            seen: VMap::new(),
+            seen: VMap::default(),
             minimize_stack: vec![],
             analyze_toclear: vec![],
             max_learnts: 0.0,
@@ -2254,9 +2252,9 @@ fn test_scale_down_float() {
 impl VarState {
     fn new() -> Self {
         Self {
-            ass: VMap::new(),
-            vardata: VMap::new(),
-            activity: VMap::new(),
+            ass: VMap::default(),
+            vardata: VMap::default(),
+            activity: VMap::default(),
             var_inc: 1.0,
             trail: vec![],
             trail_lim: vec![],
@@ -2309,7 +2307,7 @@ impl VarState {
         if self.var_inc > THRESHOLD {
             let scale = -f32::MIN_EXP as u32;
             // Rescale:
-            for (_, x) in self.activity.iter_mut() {
+            for x in self.activity.iter_mut() {
                 *x = scale_down_float(*x, scale)
             }
             for x in self.order_heap_data.heap_mut().iter_mut() {
@@ -2344,7 +2342,7 @@ impl VarState {
 
     /// Increase a variable with the current 'bump' value.
     fn var_bump_activity(&mut self, v: Var) {
-        self.activity[v] += self.var_inc;
+        *self.activity.get_mut(v) += self.var_inc;
 
         // Update order_heap with respect to new activity:
         let mut order_heap = self.order_heap();
@@ -2582,11 +2580,15 @@ mod utils {
 
 impl Default for VarData {
     fn default() -> Self {
-        Self {
-            reason: CRef::UNDEF,
-            level: 0,
-        }
+        *Self::DEFAULT
     }
+}
+
+impl ConstDefault for VarData {
+    const DEFAULT: &'static Self = &Self {
+        reason: CRef::UNDEF,
+        level: 0,
+    };
 }
 
 impl VarData {
@@ -2629,7 +2631,7 @@ impl<'a> CachedKeyComparator<Var> for VarOrder<'a> {
     type Key = VarOrderKey;
 
     fn cache_key(&self, t: Var) -> Self::Key {
-        VarOrderKey::new(t, self.activity[t])
+        VarOrderKey::new(t, self.activity.get(t))
     }
 
     fn max_key(&self) -> Self::Key {
@@ -2652,6 +2654,10 @@ impl Default for Seen {
     fn default() -> Self {
         Seen::UNDEF
     }
+}
+
+impl ConstDefault for Seen {
+    const DEFAULT: &'static Self = &Seen::UNDEF;
 }
 
 impl Seen {

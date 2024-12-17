@@ -138,13 +138,12 @@ impl Solver0 {
 
     /// Create literals in `SAT`.
     fn create_lits(&mut self, sat: &mut SAT) {
-        let pred_sentinel: Predicate = ((0, 0), 0);
         for (_c, pos) in self.grid.iter() {
             for n in 1..=9 {
                 // variable for `pos=n`
                 let var = sat.new_var_default();
                 self.lm.pred_to_lit.insert((pos, n), BLit::new(var, true));
-                self.lm.lit_to_pred.insert(var, (pos, n), pred_sentinel);
+                *self.lm.lit_to_pred.get_mut(var) = (pos, n);
             }
         }
     }
@@ -158,7 +157,7 @@ impl Solver0 {
         // update `self.grid`, producing conflict in case of incompatible assignments
         for &lit in trail.iter() {
             if lit.sign() {
-                let (pos, n) = self.lm.lit_to_pred[lit.var()];
+                let (pos, n) = *self.lm.lit_to_pred.get_mut(lit.var());
 
                 match self.grid[pos] {
                     Cell::Empty => {
@@ -370,7 +369,7 @@ impl sat::Theory for Solver0 {
 
     fn explain_propagation_clause(&mut self, p: BLit, _: &mut ExplainTheoryArg) -> &[BLit] {
         assert!(self.propagate);
-        let ((line, col), _n) = self.lm.lit_to_pred[p.var()];
+        let ((line, col), _n) = *self.lm.lit_to_pred.get_mut(p.var());
 
         if p.sign() {
             // check if it's in column
@@ -439,7 +438,7 @@ impl LitMap {
     fn new() -> Self {
         LitMap {
             pred_to_lit: HashMap::default(),
-            lit_to_pred: sat::VMap::new(),
+            lit_to_pred: sat::VMap::default(),
         }
     }
 
