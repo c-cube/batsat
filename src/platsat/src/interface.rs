@@ -2,7 +2,7 @@
 use crate::{
     clause::{lbool, Lit, Var},
     theory::{self, Theory},
-    EmptyTheory,
+    EmptyTheory, TheoryArg,
 };
 use internal_iterator::InternalIterator;
 use no_std_compat::prelude::v1::*;
@@ -169,8 +169,16 @@ pub trait SolverInterface {
     /// Removes the `n` most assertion levels
     fn pop_n_th<Th: Theory>(&mut self, th: &mut Th, n: u32);
 
-    // fn with_theory_arg(&mut self, f: impl FnMut(&mut TheoryArg));
+    /// Returns the literals known to be return
+    ///
+    /// Returns the model if it is called between
+    /// [`raw_solve_limited_th`](Self::solve_limited_preserving_trail_th) and [`pop_model`](Self::pop_model)
     fn raw_model(&self) -> &[Lit];
+
+    /// Call some theory function with [`TheoryArg`] handling propagations and added clauses,
+    ///
+    /// If the theory raises a conflict the solver is put into an unsat state
+    fn with_theory_arg(&mut self, f: impl FnOnce(&mut TheoryArg));
 }
 
 /// Result of calling [`SolverInterface::solve_limited_th_full`], contains the unsat-core

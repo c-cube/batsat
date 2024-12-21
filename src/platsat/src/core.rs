@@ -543,6 +543,45 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         }
         self.v.next_var = Var::from_idx(sentinel_lit.var().idx() + 1);
     }
+
+    fn with_theory_arg(&mut self, f: impl FnOnce(&mut TheoryArg)) {
+        if !self.is_ok() {
+            return;
+        }
+        debug_assert_eq!(self.v.decision_level(), self.v.assertion_level());
+        let mut th_arg = {
+            TheoryArg {
+                v: &mut self.v,
+                has_propagated: false,
+                conflict: TheoryConflict::Nil,
+            }
+        };
+        f(&mut th_arg);
+        if let TheoryConflict::Clause { .. } = th_arg.conflict {
+            self.v.ok = self.v.decision_level();
+            return;
+        } else if let TheoryConflict::Prop(p) = th_arg.conflict {
+            debug!("inconsistent theory propagation {:?}", p);
+            self.v.ok = self.v.decision_level();
+            return;
+        } else {
+            debug_assert!(matches!(th_arg.conflict, TheoryConflict::Nil));
+
+            if self.v.th_st.num_lemmas() > 0 {
+                let mut th_st = mem::take(&mut self.v.th_st);
+                let mut c = mem::take(&mut th_st.tmp_c_th);
+                for lemma in th_st.iter_lemmas() {
+                    debug!("add theory lemma {}", lemma.pp_dimacs());
+                    c.clear();
+                    c.extend_from_slice(lemma);
+                    self.add_clause_reuse(&mut c);
+                }
+                th_st.clear(); // be sure to clean up
+                th_st.tmp_c_th = c;
+                self.v.th_st = th_st;
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
