@@ -20,7 +20,7 @@ MIT licensed.
 
 ### BREAKING CHANGES
 - renamed `Theory::explain_propagation` to `Theory::explain_propagation_clause` and changed the required form of the explanation
-
+- Models and unsat cores are now handled lazily so they have a different API
 
 Platsat extends batsat by making it safe () and , as well as improving the SMT solver API
 

@@ -2,7 +2,9 @@
 use crate::{
     clause::{lbool, Lit, Var},
     theory::{self, Theory},
+    EmptyTheory,
 };
+use internal_iterator::InternalIterator;
 use no_std_compat::prelude::v1::*;
 
 /// Main interface for a solver: it makes it possible to add clauses,
@@ -119,7 +121,10 @@ pub trait SolverInterface {
         let res = self.solve_limited_preserving_trail_th(th, assumps);
         if res == lbool::FALSE {
             self.pop_model(th);
-            return SolveResult::Unsat(self.unsat_core());
+            return SolveResult::Unsat(SolverCore {
+                solver: self,
+                theory: th,
+            });
         }
         let model = SolverModel {
             solver: self,
@@ -137,36 +142,16 @@ pub trait SolverInterface {
     /// These literals will keep this value from now on.
     fn proved_at_lvl_0(&self) -> &[Lit];
 
-    /// Query whole model, as a mapping from `Var` to `lbool`.
-    ///
-    /// Precondition: last result was `Sat` (ie `lbool::TRUE`)
-    fn get_model(&self) -> &[lbool];
-
-    /// Query model for var.
-    ///
-    /// Precondition: last result was `Sat` (ie `lbool::TRUE`)
-    fn value_var(&self, v: Var) -> lbool;
-
-    /// Query model for lit.
-    fn value_lit(&self, lit: Lit) -> lbool;
-
     /// Value of this literal if it's assigned at level 0, or `UNDEF` otherwise
     fn value_lvl_0(&self, lit: Lit) -> lbool;
 
-    /// Return unsat core (as a subset of assumptions).
+    /// Calls `f` on the elements of the unsat core (as a subset of assumptions).
     ///
     /// Precondition: last result was `Unsat`
-    fn unsat_core(&self) -> &[Lit];
-
-    /// Does this literal occur in the unsat-core?
-    ///
-    /// Precondition: last result was `Unsat`
-    fn unsat_core_contains_lit(&self, lit: Lit) -> bool;
-
-    /// Does this variable occur in the unsat-core?
-    ///
-    /// Precondition: last result was `Unsat`
-    fn unsat_core_contains_var(&self, v: Var) -> bool;
+    fn unsat_core<'a, Th: Theory>(
+        &'a mut self,
+        th: &'a mut Th,
+    ) -> impl InternalIterator<Item = Lit> + 'a;
 
     /// Sets if a variable can be used in decisions
     /// (NOTE! This has effects on the meaning of a SATISFIABLE result).
@@ -183,14 +168,40 @@ pub trait SolverInterface {
 
     /// Removes the `n` most assertion levels
     fn pop_n_th<Th: Theory>(&mut self, th: &mut Th, n: u32);
+
+    // fn with_theory_arg(&mut self, f: impl FnMut(&mut TheoryArg));
+    fn raw_model(&self) -> &[Lit];
 }
 
 /// Result of calling [`SolverInterface::solve_limited_th_full`], contains the unsat-core
 /// if the solver returned unsat and a [`SolverModel`] otherwise
 pub enum SolveResult<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> {
-    Unsat(&'a [Lit]),
+    Unsat(SolverCore<'a, S, Th>),
     Sat(SolverModel<'a, S, Th>),
     Unknown(SolverModel<'a, S, Th>),
+}
+
+impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> SolveResult<'a, S, Th> {
+    pub fn print_stats(&self) {
+        match self {
+            SolveResult::Unsat(s) => s.solver.print_stats(),
+            SolveResult::Sat(s) => s.solver.print_stats(),
+            SolveResult::Unknown(s) => s.solver.print_stats(),
+        }
+    }
+}
+
+/// State of a [`SolverInterface`] and its [`Theory`] representing an unsat-core
+pub struct SolverCore<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> {
+    solver: &'a mut S,
+    theory: &'a mut Th,
+}
+
+impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> SolverCore<'a, S, Th> {
+    /// Query model for lit.
+    pub fn unsat_core(&mut self) -> impl InternalIterator + '_ {
+        self.solver.unsat_core(self.theory)
+    }
 }
 
 /// State of a [`SolverInterface`] and its [`Theory`] representing a model
@@ -205,7 +216,28 @@ impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> Drop for SolverModel
     }
 }
 
-impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> SolverModel<'a, S, Th> {
+///
+/// Print the model/proof as DIMACS.
+pub struct SolverPrintDimacs<'a, S: SolverInterface + 'a, Th: Theory + 'a = EmptyTheory> {
+    model: SolverModel<'a, S, Th>,
+}
+
+mod dimacs {
+    use super::*;
+    use core::fmt;
+
+    impl<'a, S: SolverInterface, Th: Theory> fmt::Display for SolverPrintDimacs<'a, S, Th> {
+        fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
+            write!(out, "v ")?;
+            for l in self.model.lits() {
+                write!(out, "{l:?} ")?
+            }
+            writeln!(out, "0")
+        }
+    }
+}
+
+impl<'a, S: SolverInterface + 'a, Th: Theory + 'a> SolverModel<'a, S, Th> {
     /// State of the [`Theory`]
     pub fn theory(&self) -> &Th {
         &self.theory
@@ -214,6 +246,14 @@ impl<'a, S: SolverInterface + ?Sized + 'a, Th: Theory + 'a> SolverModel<'a, S, T
     /// Query model for lit.
     pub fn value_lit(&self, l: Lit) -> lbool {
         self.solver.raw_value_lit(l)
+    }
+
+    pub fn lits(&self) -> &[Lit] {
+        self.solver.raw_model()
+    }
+
+    pub fn print_dimacs(self) -> SolverPrintDimacs<'a, S, Th> {
+        SolverPrintDimacs { model: self }
     }
 }
 

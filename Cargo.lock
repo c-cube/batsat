@@ -26,12 +26,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
-name = "bit-vec"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
-
-[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,6 +142,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "internal-iterator"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "969ee3fc68ec2e88eb21434ce4d9b7e1600d1ce92ff974560a6c4a304f5124b9"
+
+[[package]]
 name = "libc"
 version = "0.2.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -182,9 +182,9 @@ checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
 name = "platsat"
 version = "0.5.0"
 dependencies = [
- "bit-vec",
  "bytemuck",
  "default-vec2",
+ "internal-iterator",
  "log",
  "no-std-compat",
 ]
@@ -198,13 +198,6 @@ dependencies = [
  "env_logger",
  "flate2",
  "log",
- "platsat",
-]
-
-[[package]]
-name = "platsat-ipasir"
-version = "0.1.0"
-dependencies = [
  "platsat",
 ]
 
