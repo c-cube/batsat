@@ -46,8 +46,10 @@ extern crate log;
 
 use clap::{App, Arg};
 use flate2::bufread::GzDecoder;
+use platsat::interface::SolveResult;
 use platsat::{
-    drat, lbool, Callbacks, ClauseKind, Lit, ProgressStatus, Solver, SolverInterface, SolverOpts,
+    drat, lbool, Callbacks, ClauseKind, EmptyTheory, Lit, ProgressStatus, Solver, SolverInterface,
+    SolverOpts,
 };
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
@@ -405,52 +407,65 @@ fn main2() -> io::Result<i32> {
         exit(20);
     }
 
-    let ret = solver.solve_limited(&[]);
-    if solver.cb().verbosity > 0 {
-        solver.print_stats();
-        println!("c CPU time              : {:.3}s", resource.cpu_time());
-    }
-    if incremental {
-        return Ok(0);
-    } else if ret == lbool::TRUE {
-        println!("s SATISFIABLE");
+    let verbosity = solver.cb().verbosity;
 
-        // print model
-        if produce_proof && resfile.is_none() {
-            println!("{}", solver.dimacs_model());
+    let mut empty = EmptyTheory::default();
+
+    let mut was_unsat = false;
+    let exitcode = {
+        let ret = solver.solve_limited_th_full(&mut empty, &[]);
+        if verbosity > 0 {
+            ret.print_stats();
+            println!("c CPU time              : {:.3}s", resource.cpu_time());
         }
-    } else if ret == lbool::FALSE {
+
+        if incremental {
+            return Ok(0);
+        }
+        match ret {
+            SolveResult::Sat(model) => {
+                println!("s SATISFIABLE");
+
+                // print model
+                if let Some(resfile) = resfile.as_mut() {
+                    writeln!(resfile, "s SAT")?;
+                    writeln!(resfile, "{}", model.print_dimacs())?;
+                } else if produce_proof {
+                    println!("{}", model.print_dimacs());
+                }
+                10
+            }
+            SolveResult::Unsat(_) => {
+                was_unsat = true;
+                20
+            }
+            SolveResult::Unknown(_) => {
+                println!("s INDETERMINATE");
+                if let Some(resfile) = resfile.as_mut() {
+                    writeln!(resfile, "s INDET")?;
+                }
+                0
+            }
+        }
+    };
+
+    if was_unsat {
         println!("s UNSATISFIABLE");
 
-        if produce_proof && resfile.is_none() {
-            println!("{}", &solver.cb_mut().take_proof().unwrap());
-        }
-    } else {
-        println!("s INDETERMINATE");
-    }
-    if let Some(resfile) = resfile.as_mut() {
-        if ret == lbool::TRUE {
-            writeln!(resfile, "s SAT")?;
-            writeln!(resfile, "{}", solver.dimacs_model())?;
-        } else if ret == lbool::FALSE {
+        if let Some(resfile) = resfile.as_mut() {
             writeln!(resfile, "s UNSAT")?;
             if produce_proof {
                 writeln!(resfile, "{}", &solver.cb_mut().take_proof().unwrap())?;
             }
-        } else {
-            writeln!(resfile, "s INDET")?;
+        } else if produce_proof {
+            println!("{}", &solver.cb_mut().take_proof().unwrap());
         }
+    }
+
+    if let Some(resfile) = resfile.as_mut() {
         resfile.flush()?;
     }
     mem::drop(resfile);
-
-    let exitcode = if ret == lbool::TRUE {
-        10
-    } else if ret == lbool::FALSE {
-        20
-    } else {
-        0
-    };
 
     if !cfg!(debug_assertions) {
         // (faster than "return", which will invoke the destructor for 'Solver')
