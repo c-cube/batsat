@@ -334,10 +334,12 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         let mut clause = clause.into_iter();
 
         if clause.len() == 0 {
+            debug!("add toplevel clause []");
             self.v.ok = self.v.assertion_level();
             return false;
         } else if clause.len() == 1 {
             let lit = clause.next().unwrap();
+            debug!("add toplevel clause [{lit:?}]");
             let cr = if let Some(x) = self.v.assumptions().last() {
                 let cr = self.v.ca.alloc_with_learnt([lit, !*x].into_iter(), false);
                 self.clauses.push(cr);
@@ -353,6 +355,10 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
                 .v
                 .ca
                 .alloc_with_learnt(ExactSizedChain(clause.chain(extra)), false);
+            debug!(
+                "add toplevel clause {:?} ({cr:?})",
+                self.v.ca.get_ref(cr).lits()
+            );
             self.clauses.push(cr);
             self.v.attach_clause(cr);
         }
@@ -889,6 +895,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                 .v
                 .ca
                 .alloc_with_learnt(learnt.clause.iter().copied(), true);
+            debug!("Learnt clause {:?} ({cr:?})", learnt.clause);
             self.clauses.push(cr);
             self.learnt += 1;
             self.v.attach_clause(cr);
