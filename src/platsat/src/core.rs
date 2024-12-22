@@ -759,8 +759,10 @@ impl<Cb: Callbacks> Solver<Cb> {
                 self.v.conflicts += 1;
                 self.handle_conflict(th, tmp_learnt, confl);
 
-                self.v.vars.var_decay_activity(self.v.opts.var_decay);
-                self.v.cla_decay_activity();
+                if let Conflict::BCP(_) = confl {
+                    self.v.vars.var_decay_activity(self.v.opts.var_decay);
+                    self.v.cla_decay_activity();
+                }
 
                 self.v.learntsize_adjust_cnt -= 1;
                 if self.v.learntsize_adjust_cnt == 0 {
