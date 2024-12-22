@@ -200,6 +200,17 @@ impl ExplainTheoryArg {
         self.lemma_offsets.push(idx);
     }
 
+    fn dedup_last_lemma(&mut self, possibly_equal: &[Lit]) {
+        let last_offset = if self.lemma_offsets.len() < 2 {
+            0
+        } else {
+            self.lemma_offsets[self.lemma_offsets.len() - 2]
+        };
+        if &self.lemma_lits[last_offset..] == possibly_equal {
+            self.lemma_offsets.pop();
+        }
+    }
+
     /// Returns a list of lits that are represent the assertion levels created by
     /// [`SolverInterface::push_th`]
     ///
@@ -560,8 +571,8 @@ impl<Cb: Callbacks> SolverInterface for Solver<Cb> {
         if let TheoryConflict::Clause { .. } = th_arg.conflict {
             self.v.ok = self.v.decision_level();
             return;
-        } else if let TheoryConflict::Prop(p) = th_arg.conflict {
-            debug!("inconsistent theory propagation {:?}", p);
+        } else if let TheoryConflict::Prop(_p) = th_arg.conflict {
+            debug!("inconsistent theory propagation {:?}", _p);
             self.v.ok = self.v.decision_level();
             return;
         } else {
@@ -825,8 +836,7 @@ impl<Cb: Callbacks> Solver<Cb> {
                                 if self.v.decision_level() == 0 {
                                     return lbool::FALSE;
                                 }
-                                let learnt = self.v.analyze(confl, &self.clauses, tmp_learnt, th);
-                                self.add_learnt_and_backtrack(th, learnt, clause::Kind::Learnt);
+                                self.handle_conflict(th, tmp_learnt, confl);
                                 continue 'main;
                             }
                         }
@@ -1678,6 +1688,10 @@ impl SolverV {
         debug_assert!(out_learnt
             .iter()
             .all(|&l| self.value_lit(l) == lbool::FALSE));
+        match orig {
+            Conflict::ThLemma { add: true } => self.th_st.dedup_last_lemma(&out_learnt),
+            _ => {}
+        }
         LearntClause {
             backtrack_lvl: btlevel,
             clause: out_learnt,
@@ -2486,6 +2500,14 @@ impl<'a> TheoryArg<'a> {
             self.v.th_st.tmp_c_th.clear();
             self.v.th_st.tmp_c_th.extend_from_slice(lits);
         }
+    }
+
+    /// Must be called after calling [`raise_conflict`](TheoryArg::raise_conflict)
+    ///
+    /// Marks the previously added conflict as costly
+    pub fn make_conflict_costly(&mut self) {
+        debug_assert!(matches!(self.conflict, TheoryConflict::Clause { .. }));
+        self.conflict = TheoryConflict::Clause { costly: true };
     }
 }
 
