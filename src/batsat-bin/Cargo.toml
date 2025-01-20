@@ -18,7 +18,7 @@ publish = false
 clap = { version = "^2.31", default-features=false}
 flate2 = "1.0"
 cpu-time = "0.1"
-batsat = {version="^0.5", path="../batsat"}
+batsat = {version="^0.6", path="../batsat"}
 #batsat = {version="^0.2", path="../batsat", features=["logging"]}
 
 log = {version = "0.4", optional=true}
