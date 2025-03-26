@@ -152,6 +152,18 @@ pub trait SolverInterface {
     ///
     /// Precondition: last result was `Unsat`
     fn unsat_core_contains_var(&self, v: Var) -> bool;
+
+    /// Sets if a variable can be used in decisions
+    /// (NOTE! This has effects on the meaning of a SATISFIABLE result).
+    fn set_decision_var(&mut self, v: Var, dvar: bool);
+
+    /// Get access to the set of assumptions that will be implicitly added to calls to
+    /// [`SolverInterface::solve_limited_th`]
+    fn assumptions(&mut self) -> &[Lit];
+
+    /// Get mutable access to the set of assumptions that will be implicitly added to calls to
+    /// [`SolverInterface::solve_limited_th`]
+    fn assumptions_mut(&mut self) -> &mut Vec<Lit>;
 }
 
 /// Result of calling [`SolverInterface::solve_limited_th_full`], contains the unsat-core

@@ -51,6 +51,7 @@ pub mod clause;
 pub mod core;
 pub mod dimacs;
 pub mod drat;
+mod heap;
 pub mod interface;
 pub mod intmap;
 pub mod theory;
