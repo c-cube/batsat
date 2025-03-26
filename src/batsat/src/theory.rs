@@ -40,7 +40,18 @@ pub trait Theory {
     ///
     /// `p` is the literal that has been propagated by the theory in a prefix
     /// of the current trail.
-    fn explain_propagation(&mut self, _p: Lit) -> &[Lit];
+    fn explain_propagation(&mut self, p: Lit) -> &[Lit];
+
+    /// Similar to `explain_propagation` but theories should prefer larger older explanations
+    /// For example, if a theory knows `(a && b) => c` and `c => d` and is asked to explain `d`,
+    /// `explain_propagation` may prefer to explain using `[c]` to generate a better clause, but
+    /// `explain_propagation_final` may as well explain using `[a, b]` since otherwise it would just
+    /// be asked to explain `c` anyway.
+    ///
+    /// The default implementation just calls `explain_propagation`
+    fn explain_propagation_final(&mut self, p: Lit) -> &[Lit] {
+        self.explain_propagation(p)
+    }
 }
 
 /// Trivial theory that does nothing
