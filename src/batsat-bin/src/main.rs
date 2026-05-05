@@ -142,11 +142,9 @@ impl Callbacks for CB {
         }
     }
 
-    fn on_new_clause(&mut self, c: &[Lit], k: ClauseKind) {
-        match (k, &mut self.proof) {
-            (_, None) => (),
-            (ClauseKind::Axiom, _) => (),
-            (_, Some(p)) => p.create_clause(&c),
+    fn on_new_clause(&mut self, c: &[Lit], _k: ClauseKind) {
+        if let Some(p) = &mut self.proof {
+            p.create_clause(&c)
         }
     }
 
@@ -384,9 +382,10 @@ fn main2() -> io::Result<i32> {
 
     if !solver.simplify() {
         if let Some(resfile) = resfile.as_mut() {
-            writeln!(resfile, "s UNSAT")?;
-            if let Some(p) = &solver.cb().proof {
-                writeln!(resfile, "{}", p)?;
+            if produce_proof {
+                writeln!(resfile, "{}", &solver.cb().proof.as_ref().unwrap())?;
+            } else {
+                writeln!(resfile, "s UNSAT")?;
             }
             resfile.flush()?;
         }
@@ -396,10 +395,6 @@ fn main2() -> io::Result<i32> {
                 "c ==============================================================================="
             );
             println!("c Solved by unit propagation");
-            if let Some(p) = &solver.cb().proof {
-                println!("{}", p);
-            }
-            solver.print_stats();
         }
         println!("s UNSATISFIABLE");
         exit(20);
@@ -433,9 +428,10 @@ fn main2() -> io::Result<i32> {
             writeln!(resfile, "s SAT")?;
             writeln!(resfile, "{}", solver.dimacs_model())?;
         } else if ret == lbool::FALSE {
-            writeln!(resfile, "s UNSAT")?;
             if produce_proof {
                 writeln!(resfile, "{}", &solver.cb_mut().take_proof().unwrap())?;
+            } else {
+                writeln!(resfile, "s UNSAT")?;
             }
         } else {
             writeln!(resfile, "s INDET")?;

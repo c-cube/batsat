@@ -16,14 +16,14 @@ mod proof {
         fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
             for &i in &self.0 {
                 if i == i32::MAX {
-                    out.write_char('d')?
+                    out.write_str("d ")?;
                 } else if i == 0 {
-                    out.write_str(" 0\n")?
+                    out.write_str("0\n")?;
                 } else {
-                    write!(out, " {}", i)?
+                    write!(out, "{} ", i)?;
                 }
             }
-            write!(out, "0")?; // final 0
+            write!(out, "0")?; // final 0 = empty clause
             Ok(())
         }
     }
