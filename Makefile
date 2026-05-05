@@ -5,6 +5,9 @@ build:
 	@cargo build --release ${FLAGS}
 	@ln -sf target/release/batsat-bin
 
+install:
+	cargo install --path=./src/batsat-bin
+
 build-log:
 	@cd src/batsat-bin && cargo build --release ${FLAGS} --features "logging"
 	@ln -sf target/release/batsat-bin
