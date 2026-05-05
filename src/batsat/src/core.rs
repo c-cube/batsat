@@ -1757,7 +1757,7 @@ impl SolverV {
                         // self.watches()[!c[1]].push(w);
                         // safe because `!c[1]!=p`, so watches are not aliased
                         debug_assert_ne!(!c[1], p);
-                        unsafe { &mut (*watches_data_ptr)[!c[1]] }.push(w);
+                        unsafe { (&mut *watches_data_ptr)[!c[1]].push(w) };
                         continue 'clauses;
                     }
                 }
