@@ -15,9 +15,9 @@ publish = false
 
 [dependencies]
 
-clap = { version = "^2.31", default-features=false}
+clap = { version = "^4.6", default-features=false, features=["std", "help", "usage", "suggestions", "error-context"]}
 flate2 = "1.0"
-cpu-time = "0.1"
+cpu-time = "1.0"
 batsat = {version="^0.6", path="../batsat"}
 #batsat = {version="^0.2", path="../batsat", features=["logging"]}
 
