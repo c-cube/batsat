@@ -474,7 +474,7 @@ impl<'a> ClauseMut<'a> {
             }
         }
     }
-    pub fn as_clause_ref(&mut self) -> ClauseRef {
+    pub fn as_clause_ref(&mut self) -> ClauseRef<'_> {
         ClauseRef {
             header: *self.header,
             data: self.data,
@@ -718,7 +718,7 @@ impl ClauseAllocator {
     }
 
     /// Get a mutable reference on the clause `cr` points to
-    pub(crate) fn get_mut(&mut self, cr: CRef) -> ClauseMut {
+    pub(crate) fn get_mut(&mut self, cr: CRef) -> ClauseMut<'_> {
         let header = unsafe { self.ra[cr].header };
         let has_extra = header.has_extra();
         let size = header.size();
@@ -770,7 +770,7 @@ impl<K: AsIndex, V> OccListsData<K, V> {
     }
 
     /// Obtain a fully usable occurrence list using the given predicate
-    pub fn promote<P: DeletePred<V>>(&mut self, pred: P) -> OccLists<K, V, P> {
+    pub fn promote<P: DeletePred<V>>(&mut self, pred: P) -> OccLists<'_, K, V, P> {
         OccLists { data: self, pred }
     }
 
@@ -887,7 +887,7 @@ pub mod display {
         /// let v: Vec<Lit> = vec![];
         /// format!("as dimacs: {}", v.pp_dimacs());
         /// ```
-        fn pp_dimacs(&self) -> PrintWrapper<Self> {
+        fn pp_dimacs(&self) -> PrintWrapper<'_, Self> {
             PrintWrapper(&self)
         }
     }

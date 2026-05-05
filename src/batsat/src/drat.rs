@@ -10,7 +10,7 @@ use {
 pub struct Proof(Vec<i32>);
 
 mod proof {
-    use {super::*, std::fmt::Write};
+    use super::*;
 
     impl fmt::Display for Proof {
         fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {

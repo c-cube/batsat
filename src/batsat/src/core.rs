@@ -970,7 +970,7 @@ impl<Cb: Callbacks> Solver<Cb> {
         &self.cb
     }
 
-    pub fn dimacs_model(&self) -> SolverPrintDimacs<Cb> {
+    pub fn dimacs_model(&self) -> SolverPrintDimacs<'_, Cb> {
         SolverPrintDimacs {
             s: self,
             model: true,
@@ -1123,7 +1123,7 @@ impl SolverV {
         self.vars.value_lit(x)
     }
 
-    fn order_heap(&mut self) -> Heap<Var, VarOrder> {
+    fn order_heap(&mut self) -> Heap<'_, Var, VarOrder<'_>> {
         self.order_heap_data.promote(VarOrder {
             activity: &self.vars.activity,
         })
@@ -1208,7 +1208,7 @@ impl SolverV {
         }
     }
 
-    fn watches(&mut self) -> OccLists<Lit, Watcher, WatcherDeleted> {
+    fn watches(&mut self) -> OccLists<'_, Lit, Watcher, WatcherDeleted<'_>> {
         self.watches_data.promote(WatcherDeleted { ca: &self.ca })
     }
 

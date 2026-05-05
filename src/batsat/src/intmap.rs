@@ -266,7 +266,7 @@ impl<K: AsIndex> HeapData<K> {
         self.indices.has(k) && self.indices[k] >= 0
     }
 
-    pub fn promote<Comp: Comparator<K>>(&mut self, comp: Comp) -> Heap<K, Comp> {
+    pub fn promote<Comp: Comparator<K>>(&mut self, comp: Comp) -> Heap<'_, K, Comp> {
         Heap { data: self, comp }
     }
 }
